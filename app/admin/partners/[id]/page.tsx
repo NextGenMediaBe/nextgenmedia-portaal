@@ -6,6 +6,7 @@ import { formatEuro, formatDate } from '@/lib/utils'
 import { ArrowLeft, Briefcase, CheckCircle2, Clock, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
 import { PartnerLedger } from './partner-ledger'
+import { PartnerActions } from './partner-actions'
 
 /** Commission tier based on months since partnership start */
 function getCommissionTier(createdAt: string): { pct: number; label: string; year: number } {
@@ -93,17 +94,18 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center gap-3">
-        <Link href="/admin/partners" className="p-2 rounded-lg hover:bg-gray-100">
+      <div className="flex items-center gap-3 flex-wrap">
+        <Link href="/admin/partners" className="p-2 rounded-lg hover:bg-gray-100 shrink-0">
           <ArrowLeft className="h-4 w-4" />
         </Link>
         <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-bold truncate">{partner.name}</h1>
           <p className="text-sm text-gray-500">{partner.company ?? partner.email}</p>
         </div>
-        <span className={`status-badge ${partner.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+        <span className={`status-badge shrink-0 ${partner.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
           {partner.active ? 'Actief' : 'Inactief'}
         </span>
+        <PartnerActions partnerId={partner.id} partnerName={partner.name} active={partner.active} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

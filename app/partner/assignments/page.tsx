@@ -10,7 +10,7 @@ export default async function PartnerAssignmentsPage() {
   if (!user) redirect('/login')
 
   const { data: partner } = await supabase
-    .from('freelancers').select('id').eq('user_id', user.id).maybeSingle()
+    .from('freelancers').select('id, hourly_rate').eq('user_id', user.id).maybeSingle()
   if (!partner) redirect('/login')
 
   // Separate queries — avoids PostgREST FK join failures
@@ -20,7 +20,7 @@ export default async function PartnerAssignmentsPage() {
     .eq('freelancer_id', partner.id)
     .order('created_at', { ascending: false })
 
-  // Fetch client names via admin client (bypasses RLS — partners shouldn't have direct client access)
+  // Fetch client names via admin client (partners don't have direct client access via RLS)
   const clientIds = Array.from(new Set((assignments ?? []).map((a) => a.client_id).filter((v): v is string => !!v)))
   let clientMap = new Map<string, string>()
   if (clientIds.length > 0) {
@@ -36,10 +36,11 @@ export default async function PartnerAssignmentsPage() {
     <div className="space-y-6 animate-fade-in">
       <div>
         <h1 className="text-2xl font-bold">Opdrachten</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Uw toegewezen opdrachten van NextGenMedia</p>
+        <p className="text-sm text-gray-500 mt-0.5">Uw opdrachten en voorstellen</p>
       </div>
       <PartnerAssignmentsClient
         partnerId={partner.id}
+        hourlyRate={partner.hourly_rate ?? null}
         initialAssignments={(assignments ?? []).map((a) => ({
           id: a.id,
           title: a.title,
