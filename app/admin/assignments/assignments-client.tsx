@@ -272,7 +272,8 @@ export function AssignmentsClient({
             <p className="text-sm">Geen opdrachten gevonden</p>
           </div>
         ) : (
-          <table className="w-full">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px]">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="table-th">Titel</th>
@@ -335,6 +336,7 @@ export function AssignmentsClient({
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

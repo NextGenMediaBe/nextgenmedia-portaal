@@ -90,7 +90,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
           <h1 className="text-2xl font-bold truncate">{client.company_name}</h1>
           {client.niche && <p className="text-sm text-gray-500">{client.niche}</p>}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {hasSocial && (
             <Link href={`/admin/services/social-media?client=${id}`} className="btn-secondary">
               <Calendar className="h-4 w-4" />
@@ -284,7 +284,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                     Kalender openen
                   </Link>
                 </div>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="text-center p-3 bg-gray-50 rounded-lg">
                     <div className="text-2xl font-bold">{cfg.posts ?? 0}</div>
                     <div className="text-xs text-gray-500 mt-1">Posts/maand</div>

@@ -344,7 +344,7 @@ export function SocialMediaAdmin({
 
       {/* Stats */}
       {selectedClient && (
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {(['draft', 'ready_for_review', 'changes_requested', 'approved'] as SocialContentStatus[]).map((s) => {
             const count = clientItems.filter((it) => it.status === s).length
             const labels: Record<string, string> = {

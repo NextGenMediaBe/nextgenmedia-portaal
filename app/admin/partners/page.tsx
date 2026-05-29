@@ -58,7 +58,8 @@ export default async function PartnersPage() {
             </Link>
           </div>
         ) : (
-          <table className="w-full">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[560px]">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="table-th">Partner</th>
@@ -114,6 +115,7 @@ export default async function PartnersPage() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

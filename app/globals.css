@@ -92,6 +92,19 @@
   }
 }
 
+/* ── Mobile responsive helpers ─────────────────────────────────────────────── */
+
+/* Modals: always fit within the viewport on small screens */
+.modal-panel {
+  @apply max-h-[90dvh] overflow-y-auto;
+}
+
+/* Tables: horizontal scroll wrapper */
+.table-wrap {
+  @apply overflow-x-auto;
+}
+
+/* ── Scrollbar ────────────────────────────────────────────────────────────── */
 /* Scrollbar */
 ::-webkit-scrollbar {
   width: 5px;
