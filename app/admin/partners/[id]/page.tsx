@@ -1,0 +1,346 @@
+export const dynamic = 'force-dynamic'
+
+import { createAdminSupabaseClient } from '@/lib/supabase/server'
+import { notFound } from 'next/navigation'
+import { formatEuro, formatDate } from '@/lib/utils'
+import { ArrowLeft, Briefcase, CheckCircle2, Clock, TrendingUp } from 'lucide-react'
+import Link from 'next/link'
+import { PartnerLedger } from './partner-ledger'
+
+/** Commission tier based on months since partnership start */
+function getCommissionTier(createdAt: string): { pct: number; label: string; year: number } {
+  const months = (Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24 * 30.44)
+  if (months < 12) return { pct: 10, label: 'Jaar 1', year: 1 }
+  if (months < 24) return { pct: 8,  label: 'Jaar 2', year: 2 }
+  return               { pct: 5,  label: 'Jaar 3+', year: 3 }
+}
+
+const STATUS_STYLE: Record<string, string> = {
+  open: 'bg-blue-100 text-blue-700',
+  in_progress: 'bg-purple-100 text-purple-700',
+  completed: 'bg-green-100 text-green-700',
+  cancelled: 'bg-gray-100 text-gray-500',
+}
+const STATUS_LABEL: Record<string, string> = {
+  open: 'Openstaand', in_progress: 'Actief', completed: 'Afgerond', cancelled: 'Geannuleerd',
+}
+
+const LEDGER_KIND_LABEL: Record<string, string> = {
+  payout_owed: 'Uitbetaling aan partner',
+  commission_owed: 'Commissie aan partner',
+  service_billed: 'Partner heeft ons werk',
+  manual_credit: 'Handmatig tegoed',
+  manual_debit: 'Handmatige debet',
+  settlement: 'Afrekening',
+}
+
+export default async function PartnerDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const admin = createAdminSupabaseClient()
+
+  const [
+    { data: partner },
+    { data: assignmentRows },
+    { data: clientRows },
+    { data: ledgerRows },
+    { data: settlementRows },
+  ] = await Promise.all([
+    admin.from('freelancers')
+      .select('id, name, email, phone, company, vat_number, iban, roles, hourly_rate, region, active, created_at, notes')
+      .eq('id', id)
+      .maybeSingle(),
+    admin.from('freelancer_assignments')
+      .select('id, title, status, payout, budget, service_slug, deadline, created_at, client_id')
+      .eq('freelancer_id', id)
+      .order('created_at', { ascending: false }),
+    admin.from('clients').select('id, company_name'),
+    admin.from('partner_ledger_entries')
+      .select('*')
+      .eq('freelancer_id', id)
+      .order('created_at', { ascending: false })
+      .limit(50),
+    admin.from('partner_settlements')
+      .select('*')
+      .eq('freelancer_id', id)
+      .order('created_at', { ascending: false })
+      .limit(10),
+  ])
+
+  if (!partner) notFound()
+
+  const tier = getCommissionTier(partner.created_at)
+  const clientMap = new Map((clientRows ?? []).map((c) => [c.id, c]))
+  const all = (assignmentRows ?? []).map((a) => ({
+    ...a,
+    client: a.client_id ? (clientMap.get(a.client_id) ?? null) : null,
+  }))
+  const completed = all.filter((a) => a.status === 'completed')
+  const active = all.filter((a) => a.status === 'in_progress')
+  const totalEarned = completed.reduce((s, a) => s + (a.payout ?? 0), 0)
+
+  const ledger = (ledgerRows ?? []) as Array<{
+    id: string; kind: string; status: string; amount: number; description: string | null;
+    client_id: string | null; occurred_on: string; created_at: string; settlement_id: string | null;
+  }>
+  const settlements = (settlementRows ?? []) as Array<{
+    id: string; period_start: string; period_end: string; net_amount: number; status: string; notes: string | null; finalized_at: string | null; paid_at: string | null;
+  }>
+
+  const pendingLedger = ledger.filter(l => l.status === 'pending')
+  const pendingOwedToPartner = pendingLedger.filter(l => l.amount > 0).reduce((s, l) => s + l.amount, 0)
+  const pendingOwedByPartner = pendingLedger.filter(l => l.amount < 0).reduce((s, l) => s + Math.abs(l.amount), 0)
+  const netPending = pendingOwedToPartner - pendingOwedByPartner
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      <div className="flex items-center gap-3">
+        <Link href="/admin/partners" className="p-2 rounded-lg hover:bg-gray-100">
+          <ArrowLeft className="h-4 w-4" />
+        </Link>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-2xl font-bold truncate">{partner.name}</h1>
+          <p className="text-sm text-gray-500">{partner.company ?? partner.email}</p>
+        </div>
+        <span className={`status-badge ${partner.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+          {partner.active ? 'Actief' : 'Inactief'}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Info */}
+        <div className="card-base space-y-3">
+          <h2 className="font-semibold text-gray-900">Gegevens</h2>
+          <div className="space-y-2 text-sm">
+            {[
+              ['E-mail', partner.email],
+              partner.phone && ['Telefoon', partner.phone],
+              partner.company && ['Bedrijf', partner.company],
+              partner.vat_number && ['BTW', partner.vat_number],
+              partner.iban && ['IBAN', partner.iban],
+              partner.region && ['Regio', partner.region],
+              ['Partner sinds', formatDate(partner.created_at)],
+            ].filter(Boolean).map(([k, v]) => (
+              <div key={k as string} className="flex justify-between gap-4">
+                <span className="text-gray-500 shrink-0">{k as string}</span>
+                <span className="font-medium text-right break-all">{v as string}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Commission tier */}
+          <div className="pt-2 border-t border-gray-100">
+            <p className="text-xs text-gray-500 mb-2">Commissietrap (automatisch)</p>
+            <div className="flex gap-2">
+              {[
+                { label: 'Jaar 1', pct: 10, active: tier.year === 1 },
+                { label: 'Jaar 2', pct: 8,  active: tier.year === 2 },
+                { label: 'Jaar 3+', pct: 5, active: tier.year >= 3 },
+              ].map(t => (
+                <div
+                  key={t.label}
+                  className={`flex-1 text-center py-2 rounded-lg border text-xs font-medium transition-colors ${
+                    t.active ? 'border-[#fff848] bg-[#fff848]/10 text-black' : 'border-gray-200 text-gray-400'
+                  }`}
+                >
+                  <div className="text-lg font-bold">{t.pct}%</div>
+                  <div>{t.label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {Array.isArray(partner.roles) && partner.roles.length > 0 && (
+            <div className="pt-2 border-t border-gray-100">
+              <p className="text-xs text-gray-500 mb-1.5">Rollen</p>
+              <div className="flex gap-1 flex-wrap">
+                {(partner.roles as string[]).map((r) => (
+                  <span key={r} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{r}</span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Stats */}
+        <div className="lg:col-span-2 space-y-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="stat-card">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Briefcase className="h-3.5 w-3.5 text-gray-400" />
+                <span className="text-xs text-gray-500">Opdrachten</span>
+              </div>
+              <div className="text-2xl font-bold">{all.length}</div>
+            </div>
+            <div className="stat-card">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Clock className="h-3.5 w-3.5 text-purple-500" />
+                <span className="text-xs text-gray-500">Actief</span>
+              </div>
+              <div className="text-2xl font-bold">{active.length}</div>
+            </div>
+            <div className="stat-card">
+              <div className="flex items-center gap-1.5 mb-1">
+                <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                <span className="text-xs text-gray-500">Afgerond</span>
+              </div>
+              <div className="text-2xl font-bold">{completed.length}</div>
+            </div>
+            <div className="stat-card">
+              <div className="text-xs text-gray-500 mb-1">Uitbetaald</div>
+              <div className="text-xl font-bold">{formatEuro(totalEarned)}</div>
+            </div>
+          </div>
+
+          {/* Pending ledger balance */}
+          <div className="card-base">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-sm">Openstaand saldo</h3>
+              <TrendingUp className="h-4 w-4 text-gray-400" />
+            </div>
+            <div className="grid grid-cols-3 gap-3 text-center">
+              <div>
+                <div className="text-xs text-gray-500 mb-0.5">Aan partner</div>
+                <div className="text-lg font-bold text-green-600">{formatEuro(pendingOwedToPartner)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-gray-500 mb-0.5">Van partner</div>
+                <div className="text-lg font-bold text-red-600">{formatEuro(pendingOwedByPartner)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-gray-500 mb-0.5">Netto</div>
+                <div className={`text-lg font-bold ${netPending >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {netPending >= 0 ? '+' : ''}{formatEuro(netPending)}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Ledger actions (Client Component) */}
+      <PartnerLedger
+        partnerId={id}
+        commissionPct={tier.pct}
+        clients={(clientRows ?? []).map(c => ({ id: c.id, company_name: c.company_name }))}
+      />
+
+      {/* Ledger history */}
+      {ledger.length > 0 && (
+        <div className="card-base">
+          <h2 className="font-semibold mb-4">Ledger historie</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="text-left py-2 text-xs text-gray-500 font-medium">Datum</th>
+                  <th className="text-left py-2 text-xs text-gray-500 font-medium">Type</th>
+                  <th className="text-left py-2 text-xs text-gray-500 font-medium">Omschrijving</th>
+                  <th className="text-left py-2 text-xs text-gray-500 font-medium">Klant</th>
+                  <th className="text-right py-2 text-xs text-gray-500 font-medium">Bedrag</th>
+                  <th className="text-left py-2 text-xs text-gray-500 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {ledger.map(l => (
+                  <tr key={l.id} className="hover:bg-gray-50/50">
+                    <td className="py-2.5 text-gray-500 text-xs">{formatDate(l.occurred_on)}</td>
+                    <td className="py-2.5">
+                      <span className="text-xs text-gray-600">{LEDGER_KIND_LABEL[l.kind] ?? l.kind}</span>
+                    </td>
+                    <td className="py-2.5 text-gray-700 max-w-[200px] truncate">{l.description ?? '—'}</td>
+                    <td className="py-2.5 text-gray-500 text-xs">
+                      {l.client_id ? (clientMap.get(l.client_id)?.company_name ?? '—') : '—'}
+                    </td>
+                    <td className={`py-2.5 text-right font-semibold ${l.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {l.amount >= 0 ? '+' : ''}{formatEuro(l.amount)}
+                    </td>
+                    <td className="py-2.5">
+                      <span className={`status-badge text-xs ${
+                        l.status === 'settled' ? 'bg-green-100 text-green-700' :
+                        l.status === 'cancelled' ? 'bg-gray-100 text-gray-500' :
+                        'bg-amber-100 text-amber-700'
+                      }`}>
+                        {l.status === 'settled' ? 'Afgerekend' : l.status === 'cancelled' ? 'Geannuleerd' : 'Openstaand'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Settlements */}
+      {settlements.length > 0 && (
+        <div className="card-base">
+          <h2 className="font-semibold mb-4">Afrekenhistorie</h2>
+          <div className="space-y-2">
+            {settlements.map(s => (
+              <div key={s.id} className="flex items-center justify-between py-2 px-3 rounded-lg bg-gray-50">
+                <div>
+                  <div className="text-sm font-medium">
+                    {formatDate(s.period_start)} → {formatDate(s.period_end)}
+                  </div>
+                  {s.notes && <div className="text-xs text-gray-400">{s.notes}</div>}
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className={`text-sm font-bold ${s.net_amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {s.net_amount >= 0 ? 'Wij betalen: ' : 'Partner betaalt: '}{formatEuro(Math.abs(s.net_amount))}
+                  </span>
+                  <span className={`status-badge text-xs ${
+                    s.status === 'paid' ? 'bg-green-100 text-green-700' :
+                    s.status === 'finalized' ? 'bg-blue-100 text-blue-700' :
+                    'bg-gray-100 text-gray-600'
+                  }`}>
+                    {s.status === 'paid' ? 'Betaald' : s.status === 'finalized' ? 'Definitief' : 'Concept'}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Assignments */}
+      <div className="card-base">
+        <h2 className="font-semibold text-gray-900 mb-4">Opdrachtenhistorie</h2>
+        {all.length === 0 ? (
+          <div className="text-center py-10 text-gray-400">
+            <Briefcase className="h-8 w-8 mx-auto mb-3 opacity-30" />
+            <p className="text-sm">Nog geen opdrachten</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr>
+                  <th className="table-th">Opdracht</th>
+                  <th className="table-th">Klant</th>
+                  <th className="table-th">Status</th>
+                  <th className="table-th">Deadline</th>
+                  <th className="table-th text-right">Uitbetaling</th>
+                </tr>
+              </thead>
+              <tbody>
+                {all.map((a) => (
+                  <tr key={a.id} className="border-t border-gray-50 hover:bg-gray-50/50">
+                    <td className="table-td font-medium">{a.title}</td>
+                    <td className="table-td text-gray-500">{a.client?.company_name ?? '—'}</td>
+                    <td className="table-td">
+                      <span className={`status-badge ${STATUS_STYLE[a.status] ?? 'bg-gray-100 text-gray-500'}`}>
+                        {STATUS_LABEL[a.status] ?? a.status}
+                      </span>
+                    </td>
+                    <td className="table-td text-gray-500">{a.deadline ? formatDate(a.deadline) : '—'}</td>
+                    <td className="table-td text-right font-semibold">{a.payout != null ? formatEuro(a.payout) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

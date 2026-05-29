@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\12401776\\\\Downloads\\\\NextGenMedia Content-Portal \\(1\\)\" -Recurse -Depth 4)",
+      "Bash(Select-Object FullName)",
+      "Bash(ConvertTo-Csv -NoTypeInformation)",
+      "Bash(Out-String)",
+      "Bash(New-Item -ItemType Directory -Force \"C:\\\\Users\\\\12401776\\\\Downloads\\\\NextGenMedia Content-Portal \\(1\\)\\\\app\\\\api\\\\partner\\\\assignments\")",
+      "Bash(Out-Null)",
+      "PowerShell(New-Item -ItemType Directory -Force \"C:\\\\Users\\\\12401776\\\\Downloads\\\\NextGenMedia Content-Portal \\(1\\)\\\\app\\\\api\\\\partner\\\\assignments\")",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(npx tsc *)",
+      "Read(//mnt/c/Users/12401776/Downloads/**)",
+      "Bash(npm run *)",
+      "Bash(sleep 8 && cat /tmp/dev_server.log 2>/dev/null || echo \"checking output file...\")",
+      "Bash(node -e \"const p = require\\('C:/Users/12401776/Downloads/NextGenMedia Content-Portal \\(1\\)/package.json'\\); console.log\\('next:', p.dependencies?.next || p.devDependencies?.next\\)\")",
+      "Bash(node -e \"console.log\\(require\\('./package.json'\\).dependencies.next\\)\")",
+      "Bash(npm install *)",
+      "Bash(node -e \"require\\('pdf-lib'\\); console.log\\('ok'\\)\")",
+      "Bash(del \"C:\\\\Users\\\\12401776\\\\Downloads\\\\NextGenMedia Content-Portal \\(1\\)\\\\app\\\\admin\\\\contracts\\\\[id]\\\\addendum\\\\page.tsx\")",
+      "Bash(del \"C:\\\\Users\\\\12401776\\\\Downloads\\\\NextGenMedia Content-Portal \\(1\\)\\\\app\\\\sign\\\\[token]\\\\receipt\\\\page.tsx\")",
+      "Bash(Remove-Item \"C:\\\\Users\\\\12401776\\\\Downloads\\\\NextGenMedia Content-Portal \\(1\\)\\\\app\\\\admin\\\\contracts\\\\[id]\\\\addendum\\\\page.tsx\" -Force -ErrorAction SilentlyContinue)",
+      "Bash(Remove-Item \"C:\\\\Users\\\\12401776\\\\Downloads\\\\NextGenMedia Content-Portal \\(1\\)\\\\app\\\\sign\\\\[token]\\\\receipt\\\\page.tsx\" -Force -ErrorAction SilentlyContinue)",
+      "Bash(Remove-Item \"C:\\\\Users\\\\12401776\\\\Downloads\\\\NextGenMedia Content-Portal \\(1\\)\\\\app\\\\sign\\\\[token]\\\\receipt\" -Recurse -Force -ErrorAction SilentlyContinue)",
+      "Bash(Remove-Item \"C:\\\\Users\\\\12401776\\\\Downloads\\\\NextGenMedia Content-Portal \\(1\\)\\\\app\\\\admin\\\\contracts\\\\[id]\\\\addendum\" -Recurse -Force -ErrorAction SilentlyContinue)",
+      "Bash(Write-Host \"done\")",
+      "Bash(mkdir -p \"C:\\\\Users\\\\12401776\\\\Downloads\\\\NextGenMedia Content-Portal \\(1\\)\\\\app\\\\api\\\\admin\\\\partners\\\\[id]\\\\ledger\")",
+      "Bash(mkdir -p \"C:\\\\Users\\\\12401776\\\\Downloads\\\\NextGenMedia Content-Portal \\(1\\)\\\\app\\\\api\\\\admin\\\\partners\\\\[id]\\\\settle\")",
+      "Bash(mkdir -p \"C:\\\\Users\\\\12401776\\\\Downloads\\\\NextGenMedia Content-Portal \\(1\\)\\\\app\\\\api\\\\admin\\\\contracts\\\\[id]\\\\analyze\")",
+      "Bash(mkdir -p \"C:\\\\Users\\\\12401776\\\\Downloads\\\\NextGenMedia Content-Portal \\(1\\)\\\\app\\\\api\\\\admin\\\\contracts\\\\[id]\\\\field-values\")",
+      "Bash(del \"C:\\\\Users\\\\12401776\\\\Downloads\\\\NextGenMedia Content-Portal \\(1\\)\\\\app\\\\api\\\\admin\\\\contracts\\\\[id]\\\\analyze\\\\route.ts\")",
+      "Bash(del \"C:\\\\Users\\\\12401776\\\\Downloads\\\\NextGenMedia Content-Portal \\(1\\)\\\\app\\\\api\\\\admin\\\\contracts\\\\[id]\\\\field-values\\\\route.ts\")",
+      "Bash(rm \"C:\\\\Users\\\\12401776\\\\Downloads\\\\NextGenMedia Content-Portal \\(1\\)\\\\app\\\\api\\\\admin\\\\contracts\\\\[id]\\\\analyze\\\\route.ts\" \"C:\\\\Users\\\\12401776\\\\Downloads\\\\NextGenMedia Content-Portal \\(1\\)\\\\app\\\\api\\\\admin\\\\contracts\\\\[id]\\\\field-values\\\\route.ts\")",
+      "Bash(npm uninstall *)",
+      "Bash(npx next *)"
+    ]
+  }
+}
