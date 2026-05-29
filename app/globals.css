@@ -94,7 +94,8 @@
 
 /* ── Mobile responsive helpers ─────────────────────────────────────────────── */
 
-/* Modals: always fit within the viewport on small screens */
+/* All modals: constrain height + scroll on small screens.
+   Apply to every modal's inner panel (the white rounded box). */
 .modal-panel {
   @apply max-h-[90dvh] overflow-y-auto;
 }
@@ -102,6 +103,14 @@
 /* Tables: horizontal scroll wrapper */
 .table-wrap {
   @apply overflow-x-auto;
+}
+
+/* Responsive header rows: stack on mobile when there are many action buttons */
+.page-header {
+  @apply flex items-start justify-between gap-3 flex-wrap;
+}
+.page-header-actions {
+  @apply flex items-center gap-2 flex-wrap;
 }
 
 /* ── Scrollbar ────────────────────────────────────────────────────────────── */

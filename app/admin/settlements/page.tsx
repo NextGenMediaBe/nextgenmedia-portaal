@@ -86,7 +86,7 @@ export default async function SettlementsPage() {
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="stat-card">
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs text-gray-500 uppercase tracking-wide">Totaal te betalen</span>

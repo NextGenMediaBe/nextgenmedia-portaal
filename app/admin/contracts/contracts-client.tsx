@@ -69,12 +69,12 @@ export function ContractsClient({
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold">Contracten</h1>
           <p className="text-sm text-gray-500 mt-0.5">{filtered.length} van {initialContracts.length} contracten</p>
         </div>
-        <Link href="/admin/contracts/new" className="btn-primary">
+        <Link href="/admin/contracts/new" className="btn-primary shrink-0">
           <Plus className="h-4 w-4" />
           Nieuw contract
         </Link>
@@ -124,7 +124,7 @@ export function ContractsClient({
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="stat-card text-center">
           <div className="text-2xl font-bold text-amber-600">{byStatus.pending}</div>
           <div className="text-xs text-gray-400 mt-1">Wachten op handtekening</div>

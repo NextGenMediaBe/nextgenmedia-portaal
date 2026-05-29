@@ -1,8 +1,8 @@
-import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
+import { createClient, createAdminSupabaseClient, trySignedUrl } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { formatDate } from '@/lib/utils'
 import Link from 'next/link'
-import { FileText, CheckCircle2, Download, Eye, ExternalLink, Clock } from 'lucide-react'
+import { FileText, CheckCircle2, Download, Eye, Clock } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,34 +17,35 @@ export default async function PortalContractsPage() {
 
   const admin = createAdminSupabaseClient()
 
-  const { data: contractsRaw } = await admin
+  // Use select('*') so missing columns (e.g. signed_pdf_path before migration) never
+  // cause a silent PostgREST error that returns null data.
+  const { data: contractsRaw, error: fetchErr } = await admin
     .from('contracts')
-    .select('id, title, status, signed_at, sent_at, created_at, access_token, pdf_path, signed_pdf_path')
+    .select('*')
     .eq('client_id', client.id)
     .order('created_at', { ascending: false })
 
+  if (fetchErr) {
+    console.error('[portal/contracts] fetch error:', fetchErr.message)
+  }
+
   const contracts = await Promise.all(
     (contractsRaw ?? []).map(async (c) => {
-      // Signed PDF (with signature embedded)
-      let signedPdfUrl: string | null = null
-      if (c.signed_pdf_path) {
-        const { data } = await admin.storage
-          .from('contracts')
-          .createSignedUrl(c.signed_pdf_path, 3600)
-        signedPdfUrl = data?.signedUrl ?? null
-      }
-      // Original PDF (for viewing before/after signing)
-      let originalPdfUrl: string | null = null
-      if (c.pdf_path) {
-        const { data } = await admin.storage
-          .from('contracts')
-          .createSignedUrl(c.pdf_path, 3600)
-        originalPdfUrl = data?.signedUrl ?? null
-      }
+      // Both signed and original URLs in parallel
+      const [signedPdfUrl, originalPdfUrl] = await Promise.all([
+        // Try stored path, then conventional fallback
+        (async () => {
+          const url = await trySignedUrl(admin, 'contracts', c.signed_pdf_path, 3600 * 24)
+          if (url) return url
+          return trySignedUrl(admin, 'contracts', `signed/${c.id}.pdf`, 3600 * 24)
+        })(),
+        trySignedUrl(admin, 'contracts', c.pdf_path, 3600),
+      ])
       return { ...c, signedPdfUrl, originalPdfUrl }
     })
   )
 
+  // Contracts waiting for signature — include 'sent' and 'viewed'; exclude draft (not yet sent to client)
   const pendingContracts = contracts.filter((c) => ['sent', 'viewed'].includes(c.status))
   const signedContracts = contracts.filter((c) => c.status === 'signed')
   const otherContracts = contracts.filter((c) => !['sent', 'viewed', 'signed'].includes(c.status))
@@ -85,7 +86,7 @@ export default async function PortalContractsPage() {
                 {pendingContracts.map((c) => (
                   <div
                     key={c.id}
-                    className="flex items-center justify-between gap-4 p-4 rounded-xl border-2 border-[#fff848] bg-[#fff848]/5"
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border-2 border-[#fff848] bg-[#fff848]/5"
                   >
                     <div className="flex items-center gap-4 min-w-0">
                       <div className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0 bg-amber-100">
@@ -104,7 +105,7 @@ export default async function PortalContractsPage() {
                           href={c.originalPdfUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="btn-secondary text-xs"
+                          className="btn-secondary text-xs flex-1 sm:flex-none justify-center"
                           title="Bekijk contract"
                         >
                           <Eye className="h-3.5 w-3.5" />
@@ -113,7 +114,7 @@ export default async function PortalContractsPage() {
                       )}
                       <Link
                         href={`/sign/${c.access_token}`}
-                        className="btn-primary text-xs"
+                        className="btn-primary text-xs flex-1 sm:flex-none justify-center"
                       >
                         ✍️ Ondertekenen
                       </Link>

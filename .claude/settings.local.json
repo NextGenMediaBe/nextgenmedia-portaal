@@ -32,7 +32,17 @@
       "Bash(del \"C:\\\\Users\\\\12401776\\\\Downloads\\\\NextGenMedia Content-Portal \\(1\\)\\\\app\\\\api\\\\admin\\\\contracts\\\\[id]\\\\field-values\\\\route.ts\")",
       "Bash(rm \"C:\\\\Users\\\\12401776\\\\Downloads\\\\NextGenMedia Content-Portal \\(1\\)\\\\app\\\\api\\\\admin\\\\contracts\\\\[id]\\\\analyze\\\\route.ts\" \"C:\\\\Users\\\\12401776\\\\Downloads\\\\NextGenMedia Content-Portal \\(1\\)\\\\app\\\\api\\\\admin\\\\contracts\\\\[id]\\\\field-values\\\\route.ts\")",
       "Bash(npm uninstall *)",
-      "Bash(npx next *)"
+      "Bash(npx next *)",
+      "Bash(git checkout *)",
+      "Bash(git push *)",
+      "Bash(gh pr *)",
+      "PowerShell($env:PATH = [System.Environment]::GetEnvironmentVariable\\(\"PATH\",\"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"PATH\",\"User\"\\); gh --version 2>&1)",
+      "Bash(sed -i 's/className=\"grid grid-cols-2 gap-3\"/className=\"grid grid-cols-1 sm:grid-cols-2 gap-3\"/g' app/admin/assignments/assignments-client.tsx app/admin/clients/[id]/client-edit-form.tsx app/admin/contracts/new/page.tsx app/admin/contracts/[id]/setup/signature-zone-editor.tsx app/admin/partners/new/page.tsx app/admin/services/social-media/social-media-admin.tsx)",
+      "Bash(sed -i 's/className=\"grid grid-cols-2 gap-4\"/className=\"grid grid-cols-1 sm:grid-cols-2 gap-4\"/g' app/admin/partners/new/page.tsx)",
+      "Bash(sed -i 's/className=\"grid grid-cols-3 gap-4\"/className=\"grid grid-cols-1 sm:grid-cols-3 gap-4\"/g' app/admin/contracts/contracts-client.tsx app/admin/settlements/page.tsx)",
+      "Bash(sed -i 's/className=\"grid grid-cols-3 gap-3\"/className=\"grid grid-cols-2 sm:grid-cols-3 gap-3\"/g' app/admin/clients/new/page.tsx app/admin/clients/[id]/client-edit-form.tsx app/admin/services/social-media/generate-dialog.tsx)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }

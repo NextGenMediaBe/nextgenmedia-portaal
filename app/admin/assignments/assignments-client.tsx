@@ -129,7 +129,7 @@ function CreateDialog({
           </div>
           <div>
             <label className={lbl}>Rollen *</label>
-            <div className="grid grid-cols-4 gap-1.5 mt-1">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-1">
               {ALL_ROLES.map((r) => (
                 <button
                   key={r}
@@ -157,7 +157,7 @@ function CreateDialog({
               ))}
             </select>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className={lbl}>Klant</label>
               <select className={inp} value={form.client_id} onChange={(e) => setForm((p) => ({ ...p, client_id: e.target.value }))}>
