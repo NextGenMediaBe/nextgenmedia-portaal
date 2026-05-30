@@ -55,6 +55,7 @@ async function getData() {
       freelancer_id: (a.freelancer_id ?? null) as string | null,
       created_at: a.created_at as string,
       origin: inferOrigin(a),
+      deal_type: (a.deal_type ?? 'fixed') as string,
       freelancers: a.freelancer_id ? (freelancerMap.get(a.freelancer_id) ?? null) : null,
       clients: a.client_id ? (clientMap.get(a.client_id) ?? null) : null,
     }))

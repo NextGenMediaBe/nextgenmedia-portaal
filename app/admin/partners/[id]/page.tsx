@@ -63,7 +63,7 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
       .select('*')
       .eq('freelancer_id', id)
       .order('created_at', { ascending: false }),
-    admin.from('clients').select('id, company_name').order('company_name'),
+    admin.from('clients').select('id, company_name, customer_since, created_at').order('company_name'),
     admin.from('partner_ledger_entries')
       .select('*')
       .eq('freelancer_id', id)
@@ -253,9 +253,14 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
       </div>
 
       {/* Commission deals — per referred client, year 1/2/3 % editable */}
+      <div id="commissie" className="scroll-mt-20" />
       <CommissionDeals
         partnerId={id}
-        clients={(clientRows ?? []).map(c => ({ id: c.id, company_name: c.company_name }))}
+        clients={(clientRows ?? []).map((c) => ({
+          id: c.id,
+          company_name: c.company_name,
+          customer_since: (c.customer_since ?? c.created_at ?? null) as string | null,
+        }))}
         deals={commissionDeals}
         generated={generatedByDeal}
       />

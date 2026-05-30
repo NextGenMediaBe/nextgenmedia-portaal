@@ -25,8 +25,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.contact_name !== undefined) patch.contact_name = body.contact_name || null
     if (body.niche !== undefined) patch.niche = body.niche || null
     if (body.website_url !== undefined) patch.website_url = body.website_url || null
+    if (body.customer_since !== undefined) patch.customer_since = body.customer_since || null
 
-    const { error } = await admin.from('clients').update(patch).eq('id', id)
+    // Update resiliently: drop customer_since if the column doesn't exist yet.
+    let { error } = await admin.from('clients').update(patch).eq('id', id)
+    if (error && /customer_since/i.test(error.message ?? '')) {
+      delete patch.customer_since
+      if (Object.keys(patch).length > 0) {
+        ({ error } = await admin.from('clients').update(patch).eq('id', id))
+      } else {
+        error = null
+      }
+    }
     if (error) throw new Error(error.message)
 
     // Handle service updates

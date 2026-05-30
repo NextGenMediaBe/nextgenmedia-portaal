@@ -10,9 +10,20 @@
 
 -- ── clients ──────────────────────────────────────────────────────────────────
 ALTER TABLE public.clients
-  ADD COLUMN IF NOT EXISTS archived_at   timestamptz,
-  ADD COLUMN IF NOT EXISTS revenue_value numeric,
-  ADD COLUMN IF NOT EXISTS revenue_type  text;
+  ADD COLUMN IF NOT EXISTS archived_at    timestamptz,
+  ADD COLUMN IF NOT EXISTS revenue_value  numeric,
+  ADD COLUMN IF NOT EXISTS revenue_type   text,
+  -- Sinds wanneer is dit een klant bij ons (kan vroeger zijn dan created_at).
+  -- Bepaalt het commissiejaar (10/8/5%) voor aangeleverde commissiedeals.
+  ADD COLUMN IF NOT EXISTS customer_since date;
+
+-- Backfill customer_since from created_at where empty
+UPDATE public.clients SET customer_since = created_at::date WHERE customer_since IS NULL;
+
+-- ── contracts: looptijd voor reeds-getekende uploads ─────────────────────────
+ALTER TABLE public.contracts
+  ADD COLUMN IF NOT EXISTS start_date date,
+  ADD COLUMN IF NOT EXISTS end_date   date;
 
 -- ── client_services: portal access defaults to false (admin grants later) ─────
 ALTER TABLE public.client_services

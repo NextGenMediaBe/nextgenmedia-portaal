@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Plus, X, Loader2, HandCoins, Pencil, Trash2, Sparkles } from 'lucide-react'
 import { formatEuro, formatDate, SERVICE_LABELS, commissionYearForDate, commissionAmountForYear, commissionPctForYear } from '@/lib/utils'
 
-type Client = { id: string; company_name: string }
+type Client = { id: string; company_name: string; customer_since: string | null }
 export type CommissionDeal = {
   id: string
   client_id: string | null
@@ -100,7 +100,12 @@ export function CommissionDeals({
       ) : (
         <div className="space-y-3">
           {deals.map((deal) => {
-            const currentYear = commissionYearForDate(deal.start_date)
+            // Commission year is based on how long the CLIENT has been with us
+            // (customer_since), falling back to the deal start date for leads
+            // without a linked client.
+            const client = deal.client_id ? clients.find((c) => c.id === deal.client_id) : null
+            const refDate = client?.customer_since ?? deal.start_date
+            const currentYear = commissionYearForDate(refDate)
             const genYears = generated[deal.id] ?? new Set<number>()
             return (
               <div key={deal.id} className="border border-gray-200 rounded-xl p-4">
@@ -118,7 +123,13 @@ export function CommissionDeals({
                       </span>
                     </div>
                     <div className="text-xs text-gray-400 mt-0.5">
-                      Contractwaarde {formatEuro(deal.contract_value)}/jaar · Start {formatDate(deal.start_date)} · Nu jaar {currentYear}
+                      Contractwaarde {formatEuro(deal.contract_value)}/jaar
+                      {' · '}
+                      {client?.customer_since
+                        ? `Klant sinds ${formatDate(client.customer_since)}`
+                        : `Start ${formatDate(deal.start_date)}`}
+                      {' · '}
+                      <span className="font-medium text-gray-600">Nu jaar {currentYear}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">

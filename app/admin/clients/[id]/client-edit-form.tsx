@@ -27,6 +27,7 @@ type Client = {
   contact_name: string | null
   niche: string | null
   website_url: string | null
+  customer_since?: string | null
 }
 
 export function ClientEditForm({
@@ -52,6 +53,7 @@ export function ClientEditForm({
     contact_name: client.contact_name ?? '',
     niche: client.niche ?? '',
     website_url: client.website_url ?? '',
+    customer_since: client.customer_since ? client.customer_since.slice(0, 10) : '',
   })
 
   const [services, setServices] = useState<string[]>(initialServices)
@@ -141,6 +143,11 @@ export function ClientEditForm({
           <div>
             <label className={lbl}>Website</label>
             <input type="url" className={inp} value={form.website_url} onChange={e => setForm(p => ({ ...p, website_url: e.target.value }))} />
+          </div>
+          <div>
+            <label className={lbl}>Klant sinds</label>
+            <input type="date" className={inp} value={form.customer_since} onChange={e => setForm(p => ({ ...p, customer_since: e.target.value }))} />
+            <p className="text-[11px] text-gray-400 mt-1">Bepaalt het commissiejaar (10/8/5%) voor partners.</p>
           </div>
         </div>
       </div>

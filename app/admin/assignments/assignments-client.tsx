@@ -2,9 +2,10 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import {
   Plus, X, Loader2, Briefcase, ArrowDownLeft, ArrowUpRight,
-  Check, Inbox, Send, Pencil, Trash2,
+  Check, Inbox, Send, Pencil, Trash2, HandCoins,
 } from 'lucide-react'
 import { formatDate, formatEuro } from '@/lib/utils'
 
@@ -22,6 +23,7 @@ type Assignment = {
   freelancer_id: string | null
   created_at: string
   origin: 'admin' | 'partner'
+  deal_type?: string
   freelancers: { id: string; name: string; email: string } | null
   clients: { id: string; company_name: string } | null
 }
@@ -233,6 +235,7 @@ function AssignmentCard({
   const amount = a.payout ?? a.budget
   const partnerName = a.freelancers?.name
   const isInbound = a.origin === 'partner'
+  const isCommission = a.deal_type === 'commission'
 
   return (
     <div className="card-base">
@@ -240,6 +243,11 @@ function AssignmentCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-medium text-sm">{a.title}</span>
+            {isCommission && (
+              <span className="text-xs bg-[#fff848]/30 text-[#7a6f00] px-2 py-0.5 rounded font-medium">
+                Commissie
+              </span>
+            )}
             {a.service_slug && (
               <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded">
                 {a.service_slug}
@@ -286,6 +294,22 @@ function AssignmentCard({
           </div>
         </div>
       </div>
+
+      {/* Commission proposal hint */}
+      {isInbound && isCommission && a.status !== 'cancelled' && a.freelancer_id && (
+        <div className="mt-3 flex items-center justify-between gap-2 flex-wrap rounded-lg bg-[#fff848]/10 border border-[#fff848]/40 px-3 py-2">
+          <span className="text-xs text-gray-600">
+            Commissievoorstel — koppel de klant + contractwaarde om de commissiedeal (10/8/5%) op te starten.
+          </span>
+          <Link
+            href={`/admin/partners/${a.freelancer_id}#commissie`}
+            className="btn-primary text-xs py-1.5 shrink-0"
+          >
+            <HandCoins className="h-3.5 w-3.5" />
+            Commissiedeal aanmaken
+          </Link>
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex gap-2 flex-wrap mt-3 pt-3 border-t border-gray-50">

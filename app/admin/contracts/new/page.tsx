@@ -9,12 +9,18 @@ export default function NewContractPage() {
   const [error, setError] = useState<string | null>(null)
   const [clients, setClients] = useState<Array<{ id: string; company_name: string }>>([])
   const [file, setFile] = useState<File | null>(null)
+  const now = new Date()
+  const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   const [form, setForm] = useState({
     client_id: '',
     title: '',
     service_slug: '',
     signer_name: '',
     signer_email: '',
+    already_signed: false,
+    signed_at: now.toISOString().slice(0, 10),
+    start_month: thisMonth,
+    duration_months: '12',
   })
 
   useEffect(() => {
@@ -39,6 +45,10 @@ export default function NewContractPage() {
       fd.append('service_slug', form.service_slug)
       fd.append('signer_name', form.signer_name)
       fd.append('signer_email', form.signer_email)
+      fd.append('already_signed', String(form.already_signed))
+      fd.append('start_month', form.start_month)
+      fd.append('duration_months', form.duration_months)
+      if (form.already_signed) fd.append('signed_at', form.signed_at)
 
       const res = await fetch('/api/admin/contracts', { method: 'POST', body: fd })
       const json = await res.json()
@@ -101,6 +111,46 @@ export default function NewContractPage() {
             <label className={lbl}>E-mail ondertekenaar</label>
             <input type="email" className={inp} value={form.signer_email} onChange={(e) => setForm((p) => ({ ...p, signer_email: e.target.value }))} placeholder="jan@bedrijf.be" />
           </div>
+        </div>
+
+        {/* Contract looptijd */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className={lbl}>Startmaand contract</label>
+            <input type="month" className={inp} value={form.start_month} onChange={(e) => setForm((p) => ({ ...p, start_month: e.target.value }))} />
+          </div>
+          <div>
+            <label className={lbl}>Looptijd</label>
+            <select className={inp} value={form.duration_months} onChange={(e) => setForm((p) => ({ ...p, duration_months: e.target.value }))}>
+              {[1, 3, 6, 12, 18, 24, 36].map((m) => (
+                <option key={m} value={String(m)}>{m} maanden</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Reeds getekend toggle */}
+        <div className="rounded-xl border border-gray-200 p-4 space-y-3">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.already_signed}
+              onChange={(e) => setForm((p) => ({ ...p, already_signed: e.target.checked }))}
+              className="mt-0.5 h-4 w-4 rounded border-gray-300 accent-gray-900"
+            />
+            <div>
+              <div className="text-sm font-medium text-gray-900">Dit contract is al getekend</div>
+              <div className="text-xs text-gray-500 mt-0.5">
+                Voor bestaande klanten die offline/eerder al tekenden. De PDF verschijnt meteen als getekend in hun portaal.
+              </div>
+            </div>
+          </label>
+          {form.already_signed && (
+            <div>
+              <label className={lbl}>Getekend op</label>
+              <input type="date" className={inp} value={form.signed_at} onChange={(e) => setForm((p) => ({ ...p, signed_at: e.target.value }))} />
+            </div>
+          )}
         </div>
         <div>
           <label className={lbl}>PDF-contract *</label>

@@ -50,9 +50,11 @@ export type CommissionDeal = {
   pct_year_3: number
 }
 
-/** Which contract year a given date falls in, relative to the deal start (1-based). */
+/** Which year (1-based) a date falls in, relative to a reference start date.
+ *  For commission this reference is the client's customer_since date —
+ *  i.e. how many years the client has been with us. */
 export function commissionYearForDate(startDate: string, when: Date = new Date()): number {
-  const start = new Date(startDate + 'T00:00:00')
+  const start = new Date(startDate.slice(0, 10) + 'T00:00:00')
   let years = when.getFullYear() - start.getFullYear()
   // Has this year's anniversary passed yet?
   const anniv = new Date(start)
