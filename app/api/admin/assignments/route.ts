@@ -158,3 +158,28 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
   }
 }
+
+// DELETE — permanently remove an assignment
+export async function DELETE(req: NextRequest) {
+  try {
+    await assertAdmin()
+    const admin = createAdminSupabaseClient()
+    const id = req.nextUrl.searchParams.get('id')
+    if (!id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })
+
+    // Best-effort: detach any ledger entries that referenced this assignment
+    try { await admin.from('partner_ledger_entries').update({ assignment_id: null }).eq('assignment_id', id) } catch { }
+
+    const { error } = await admin.from('freelancer_assignments').delete().eq('id', id)
+    if (error) throw new Error(error.message)
+
+    try {
+      revalidatePath('/admin/assignments')
+      revalidatePath('/admin/partners')
+    } catch { }
+
+    return NextResponse.json({ ok: true })
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+  }
+}
