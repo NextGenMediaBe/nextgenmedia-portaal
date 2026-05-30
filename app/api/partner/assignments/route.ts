@@ -76,6 +76,18 @@ export async function POST(req: NextRequest) {
 
 const ALLOWED_STATUSES = new Set(['in_progress', 'completed', 'cancelled'])
 
+// Same heuristic the pages use when the `origin` column hasn't been migrated.
+function inferOrigin(a: {
+  origin?: string | null
+  client_id?: string | null
+  roles?: string[] | null
+}): 'admin' | 'partner' {
+  if (a.origin === 'partner' || a.origin === 'admin') return a.origin
+  const noRoles = !a.roles || a.roles.length === 0
+  if (!a.client_id && noRoles) return 'partner'
+  return 'admin'
+}
+
 export async function PATCH(req: NextRequest) {
   try {
     const supabase = await createClient()
@@ -93,37 +105,67 @@ export async function PATCH(req: NextRequest) {
 
     const admin = createAdminSupabaseClient()
 
-    // If completing, mirror the admin auto-payout logic — but scope it to this partner only.
-    // select('*') so a missing column never makes the fetch silently fail.
-    let didAutoPayout = false
-    if (status === 'completed') {
-      const { data: existing } = await admin
-        .from('freelancer_assignments')
-        .select('*')
-        .eq('id', id)
-        .eq('freelancer_id', partner.id)
-        .maybeSingle()
+    // Load the assignment (scoped to this partner) to enforce direction rules.
+    const { data: existing } = await admin
+      .from('freelancer_assignments')
+      .select('*')
+      .eq('id', id)
+      .eq('freelancer_id', partner.id)
+      .maybeSingle()
 
-      if (existing && existing.status !== 'completed') {
-        const payoutAmount = Number(existing.payout ?? existing.budget ?? 0)
-        if (payoutAmount > 0) {
-          const { error: ledgerErr } = await insertResilient(
-            admin,
-            'partner_ledger_entries',
-            {
-              freelancer_id: partner.id,
-              kind: 'payout_owed',
-              amount: payoutAmount,
-              client_id: existing.client_id ?? null,
-              description: `Opdracht afgerond: ${existing.title}`,
-              occurred_on: new Date().toISOString().slice(0, 10),
-              status: 'pending',
-            },
-            { required: ['freelancer_id', 'amount'] },
-          )
-          if (!ledgerErr) didAutoPayout = true
-          else console.error('[partner/assignments] auto-payout failed:', ledgerErr.message)
-        }
+    if (!existing) {
+      return NextResponse.json({ error: 'Opdracht niet gevonden' }, { status: 404 })
+    }
+
+    const origin = inferOrigin(existing)
+    const current = existing.status as string
+
+    // ── Authorization matrix ──────────────────────────────────────────────
+    // received (admin → partner): partner may accept (open→in_progress),
+    //   complete (in_progress→completed) or reject (→cancelled).
+    // proposed (partner → admin): partner may NOT self-approve. They can only
+    //   withdraw an open proposal (open→cancelled), or, once admin approved it
+    //   (in_progress), mark it completed.
+    let allowed = false
+    if (origin === 'admin') {
+      allowed =
+        (current === 'open' && (status === 'in_progress' || status === 'cancelled')) ||
+        (current === 'in_progress' && (status === 'completed' || status === 'cancelled'))
+    } else {
+      // proposed by this partner
+      allowed =
+        (current === 'open' && status === 'cancelled') ||              // withdraw
+        (current === 'in_progress' && status === 'completed')          // finish approved work
+    }
+
+    if (!allowed) {
+      const msg = origin === 'partner' && current === 'open' && status === 'in_progress'
+        ? 'Je eigen voorstel moet eerst door NextGenMedia goedgekeurd worden.'
+        : 'Deze statuswijziging is niet toegestaan.'
+      return NextResponse.json({ error: msg }, { status: 403 })
+    }
+
+    // Auto-payout when an assignment is completed.
+    let didAutoPayout = false
+    if (status === 'completed' && current !== 'completed') {
+      const payoutAmount = Number(existing.payout ?? existing.budget ?? 0)
+      if (payoutAmount > 0) {
+        const { error: ledgerErr } = await insertResilient(
+          admin,
+          'partner_ledger_entries',
+          {
+            freelancer_id: partner.id,
+            kind: 'payout_owed',
+            amount: payoutAmount,
+            client_id: existing.client_id ?? null,
+            description: `Opdracht afgerond: ${existing.title}`,
+            occurred_on: new Date().toISOString().slice(0, 10),
+            status: 'pending',
+          },
+          { required: ['freelancer_id', 'amount'] },
+        )
+        if (!ledgerErr) didAutoPayout = true
+        else console.error('[partner/assignments] auto-payout failed:', ledgerErr.message)
       }
     }
 

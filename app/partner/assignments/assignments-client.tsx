@@ -14,6 +14,7 @@ type Assignment = {
   deadline: string | null
   created_at: string
   service_slug: string | null
+  origin: 'admin' | 'partner'
   client_name: string | null
 }
 
@@ -98,6 +99,7 @@ function SubmitWorkDialog({
         deadline: form.deadline || null,
         created_at: new Date().toISOString(),
         service_slug: form.service_slug || null,
+        origin: 'partner',
         client_name: null,
       })
       onClose()
@@ -249,6 +251,8 @@ function SubmitWorkDialog({
   )
 }
 
+type Tab = 'received' | 'proposed'
+
 export function PartnerAssignmentsClient({
   partnerId,
   hourlyRate,
@@ -259,12 +263,19 @@ export function PartnerAssignmentsClient({
   initialAssignments: Assignment[]
 }) {
   const [assignments, setAssignments] = useState(initialAssignments)
-  const [filter, setFilter] = useState<string>('all')
+  const [tab, setTab] = useState<Tab>('received')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [loading, setLoading] = useState<string | null>(null)
   const [showSubmit, setShowSubmit] = useState(false)
 
-  const filtered = filter === 'all' ? assignments : assignments.filter((a) => a.status === filter)
+  // received  = work NextGenMedia gave to this partner (origin = admin)
+  // proposed  = work this partner proposed TO NextGenMedia (origin = partner)
+  const received = assignments.filter((a) => a.origin === 'admin')
+  const proposed = assignments.filter((a) => a.origin === 'partner')
+
+  const newReceivedCount = received.filter((a) => a.status === 'open').length
+
+  const list = tab === 'received' ? received : proposed
 
   const updateStatus = async (id: string, status: string) => {
     setLoading(id)
@@ -286,25 +297,32 @@ export function PartnerAssignmentsClient({
     }
   }
 
+  const TabButton = ({ value, label, count, badge }: {
+    value: Tab; label: string; count: number; badge?: number
+  }) => (
+    <button
+      onClick={() => { setTab(value); setExpanded(null) }}
+      className={`relative flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+        tab === value ? 'bg-black text-white' : 'bg-white border border-gray-200 text-gray-600 hover:border-gray-300'
+      }`}
+    >
+      {label}
+      <span className={`text-xs ${tab === value ? 'opacity-70' : 'text-gray-400'}`}>({count})</span>
+      {badge ? (
+        <span className="absolute -top-1.5 -right-1.5 h-5 min-w-[20px] px-1 rounded-full bg-[#c5b800] text-black text-[10px] font-bold flex items-center justify-center">
+          {badge}
+        </span>
+      ) : null}
+    </button>
+  )
+
   return (
     <div className="space-y-4">
-      {/* Header with submit button */}
+      {/* Tabs + submit */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex gap-1 flex-wrap">
-          {FILTERS.map((f) => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                filter === f ? 'bg-gray-900 text-white' : 'bg-white text-gray-500 border border-gray-200 hover:border-gray-300'
-              }`}
-            >
-              {f === 'all' ? 'Alle' : STATUS_LABEL[f]}
-              {f !== 'all' && (
-                <span className="ml-1.5 opacity-60">{assignments.filter((a) => a.status === f).length}</span>
-              )}
-            </button>
-          ))}
+        <div className="flex items-center gap-2 flex-wrap">
+          <TabButton value="received" label="Van NextGenMedia" count={received.length} badge={newReceivedCount} />
+          <TabButton value="proposed" label="Mijn voorstellen" count={proposed.length} />
         </div>
         <button onClick={() => setShowSubmit(true)} className="btn-primary">
           <Plus className="h-4 w-4" />
@@ -312,19 +330,31 @@ export function PartnerAssignmentsClient({
         </button>
       </div>
 
-      {/* Info box */}
+      {/* Context line */}
       <div className="bg-[#fff848]/10 border border-[#fff848]/40 rounded-xl p-3 text-sm text-gray-700">
-        <strong>Opdracht indienen</strong> — Heb je werk beschikbaar voor NextGenMedia? Dien een voorstel in via de knop rechtsboven. Wij bekijken het en nemen contact op.
+        {tab === 'received'
+          ? <><strong>Opdrachten van NextGenMedia</strong> — werk dat aan jou is toegewezen. Accepteer en rond af.</>
+          : <><strong>Mijn voorstellen</strong> — opdrachten die jij bij NextGenMedia hebt ingediend. Wij keuren ze goed. Je kan een openstaand voorstel intrekken.</>}
       </div>
 
-      {filtered.length === 0 ? (
+      {list.length === 0 ? (
         <div className="card-base text-center py-14 text-gray-400">
           <Briefcase className="h-8 w-8 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">Geen opdrachten gevonden</p>
+          <p className="text-sm">
+            {tab === 'received' ? 'Nog geen opdrachten van NextGenMedia' : 'Je hebt nog geen voorstellen ingediend'}
+          </p>
+          {tab === 'proposed' && (
+            <button onClick={() => setShowSubmit(true)} className="btn-primary mt-4 inline-flex text-sm">
+              <Plus className="h-4 w-4" />
+              Opdracht indienen
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-3">
-          {filtered.map((a) => (
+          {list.map((a) => {
+            const isReceived = a.origin === 'admin'
+            return (
             <div key={a.id} className="card-base">
               <div
                 className="flex items-start justify-between gap-3 cursor-pointer"
@@ -354,7 +384,8 @@ export function PartnerAssignmentsClient({
                     <span className="text-sm font-bold">{formatEuro(a.payout ?? a.budget)}</span>
                   )}
                   <span className={`status-badge ${STATUS_STYLE[a.status] ?? 'bg-gray-100 text-gray-500'}`}>
-                    {STATUS_LABEL[a.status] ?? a.status}
+                    {/* For partner proposals an "open" status means "awaiting approval" */}
+                    {!isReceived && a.status === 'open' ? 'Wacht op goedkeuring' : (STATUS_LABEL[a.status] ?? a.status)}
                   </span>
                   <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${expanded === a.id ? 'rotate-180' : ''}`} />
                 </div>
@@ -373,41 +404,88 @@ export function PartnerAssignmentsClient({
                       <span className="text-gray-500">Uitbetaling: <span className="font-medium text-gray-900">{formatEuro(a.payout)}</span></span>
                     )}
                   </div>
-                  <div className="flex gap-2 flex-wrap">
-                    {a.status === 'open' && (
-                      <button
-                        onClick={() => updateStatus(a.id, 'in_progress')}
-                        disabled={loading === a.id}
-                        className="btn-primary text-xs py-1.5"
-                      >
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        Accepteren
-                      </button>
-                    )}
-                    {a.status === 'in_progress' && (
-                      <button
-                        onClick={() => updateStatus(a.id, 'completed')}
-                        disabled={loading === a.id}
-                        className="btn-primary text-xs py-1.5"
-                      >
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        Markeer als afgerond
-                      </button>
-                    )}
-                    {(a.status === 'open' || a.status === 'in_progress') && (
-                      <button
-                        onClick={() => updateStatus(a.id, 'cancelled')}
-                        disabled={loading === a.id}
-                        className="btn-secondary text-xs py-1.5 text-red-500 hover:bg-red-50"
-                      >
-                        Annuleren
-                      </button>
-                    )}
-                  </div>
+
+                  {/* ── RECEIVED (admin → partner): partner accepts & completes ── */}
+                  {isReceived ? (
+                    <div className="flex gap-2 flex-wrap">
+                      {a.status === 'open' && (
+                        <button
+                          onClick={() => updateStatus(a.id, 'in_progress')}
+                          disabled={loading === a.id}
+                          className="btn-primary text-xs py-1.5"
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          Accepteren
+                        </button>
+                      )}
+                      {a.status === 'in_progress' && (
+                        <button
+                          onClick={() => updateStatus(a.id, 'completed')}
+                          disabled={loading === a.id}
+                          className="btn-primary text-xs py-1.5"
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          Markeer als afgerond
+                        </button>
+                      )}
+                      {(a.status === 'open' || a.status === 'in_progress') && (
+                        <button
+                          onClick={() => updateStatus(a.id, 'cancelled')}
+                          disabled={loading === a.id}
+                          className="btn-secondary text-xs py-1.5 text-red-500 hover:bg-red-50"
+                        >
+                          Weigeren
+                        </button>
+                      )}
+                      {(a.status === 'completed' || a.status === 'cancelled') && (
+                        <span className="text-xs text-gray-400">Geen acties meer mogelijk</span>
+                      )}
+                    </div>
+                  ) : (
+                    /* ── PROPOSED (partner → admin): admin approves; partner can only withdraw ── */
+                    <div className="flex gap-2 flex-wrap items-center">
+                      {a.status === 'open' && (
+                        <>
+                          <span className="text-xs text-amber-600 bg-amber-50 rounded-lg px-2.5 py-1.5">
+                            Wacht op goedkeuring door NextGenMedia
+                          </span>
+                          <button
+                            onClick={() => updateStatus(a.id, 'cancelled')}
+                            disabled={loading === a.id}
+                            className="btn-secondary text-xs py-1.5 text-red-500 hover:bg-red-50"
+                          >
+                            Voorstel intrekken
+                          </button>
+                        </>
+                      )}
+                      {a.status === 'in_progress' && (
+                        <>
+                          <span className="text-xs text-green-700 bg-green-50 rounded-lg px-2.5 py-1.5">
+                            Goedgekeurd — in uitvoering
+                          </span>
+                          <button
+                            onClick={() => updateStatus(a.id, 'completed')}
+                            disabled={loading === a.id}
+                            className="btn-primary text-xs py-1.5"
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            Markeer als afgerond
+                          </button>
+                        </>
+                      )}
+                      {a.status === 'completed' && (
+                        <span className="text-xs text-gray-400">Afgerond</span>
+                      )}
+                      {a.status === 'cancelled' && (
+                        <span className="text-xs text-gray-400">Ingetrokken / geweigerd</span>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
@@ -418,6 +496,7 @@ export function PartnerAssignmentsClient({
           onCreated={(a) => {
             setAssignments((prev) => [a, ...prev])
             setShowSubmit(false)
+            setTab('proposed')
           }}
         />
       )}
