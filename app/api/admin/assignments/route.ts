@@ -54,6 +54,7 @@ export async function POST(req: NextRequest) {
         budget: budget ?? null,
         deadline: deadline || null,
         status: 'open',
+        origin: 'admin',   // NextGenMedia → partner (outbound)
       },
       { required: ['title', 'status'] },
     )

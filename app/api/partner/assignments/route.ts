@@ -54,6 +54,7 @@ export async function POST(req: NextRequest) {
         payout: budget ?? null,   // proposed payout = proposed budget by default
         deadline: deadline || null,
         status: 'open',           // visible to admin immediately
+        origin: 'partner',        // inbound proposal from partner → NextGenMedia
         role: 'other',            // present in legacy schema (NOT NULL there)
         roles: [],                // present in newer schema
       },

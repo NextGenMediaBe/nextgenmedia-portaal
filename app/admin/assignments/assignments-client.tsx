@@ -1,18 +1,29 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, X, Loader2, Briefcase } from 'lucide-react'
+import {
+  Plus, X, Loader2, Briefcase, ArrowDownLeft, ArrowUpRight,
+  Check, Inbox, Send,
+} from 'lucide-react'
 import { formatDate, formatEuro } from '@/lib/utils'
 
 type Assignment = {
-  id: string; title: string; description: string | null;
-  service_slug: string | null; roles?: string[];
-  status: string; budget: number | null; deadline: string | null;
-  client_id: string | null; freelancer_id: string | null;
-  created_at: string;
-  freelancers: { id: string; name: string; email: string } | null;
-  clients: { id: string; company_name: string } | null;
+  id: string
+  title: string
+  description: string | null
+  service_slug: string | null
+  roles?: string[]
+  status: string
+  budget: number | null
+  payout?: number | null
+  deadline: string | null
+  client_id: string | null
+  freelancer_id: string | null
+  created_at: string
+  origin: 'admin' | 'partner'
+  freelancers: { id: string; name: string; email: string } | null
+  clients: { id: string; company_name: string } | null
 }
 type Partner = { id: string; name: string; email: string; roles: string[] }
 type Client = { id: string; company_name: string }
@@ -91,10 +102,12 @@ function CreateDialog({
         roles: form.roles,
         status: 'open',
         budget: form.budget ? parseFloat(form.budget) : null,
+        payout: form.budget ? parseFloat(form.budget) : null,
         client_id: form.client_id || null,
         freelancer_id: form.freelancer_id || null,
         deadline: form.deadline || null,
         created_at: new Date().toISOString(),
+        origin: 'admin',
         freelancers: form.freelancer_id ? partners.find(p => p.id === form.freelancer_id) ?? null : null,
         clients: form.client_id ? clients.find(c => c.id === form.client_id) ?? null : null,
       })
@@ -111,9 +124,12 @@ function CreateDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90dvh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-gray-100 sticky top-0 bg-white">
-          <h3 className="font-semibold">Nieuwe opdracht</h3>
+          <div>
+            <h3 className="font-semibold">Opdracht uitdelen</h3>
+            <p className="text-xs text-gray-500 mt-0.5">Wijs werk toe aan een partner</p>
+          </div>
           <button onClick={onClose} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-gray-100">
             <X className="h-4 w-4" />
           </button>
@@ -187,9 +203,9 @@ function CreateDialog({
             </div>
           )}
           <div className="flex gap-2 pt-1">
-            <button type="submit" disabled={loading} className="btn-primary flex-1">
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              Aanmaken
+            <button type="submit" disabled={loading} className="btn-primary flex-1 justify-center">
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              Toewijzen aan partner
             </button>
             <button type="button" onClick={onClose} className="btn-secondary">Annuleer</button>
           </div>
@@ -198,6 +214,126 @@ function CreateDialog({
     </div>
   )
 }
+
+function AssignmentCard({
+  a,
+  roleLabels,
+  busy,
+  onStatus,
+}: {
+  a: Assignment
+  roleLabels: Record<string, string>
+  busy: boolean
+  onStatus: (id: string, status: string) => void
+}) {
+  const amount = a.payout ?? a.budget
+  const partnerName = a.freelancers?.name
+  const isInbound = a.origin === 'partner'
+
+  return (
+    <div className="card-base">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-medium text-sm">{a.title}</span>
+            {a.service_slug && (
+              <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded">
+                {a.service_slug}
+              </span>
+            )}
+            {a.roles && a.roles.length > 0 && a.roles.slice(0, 2).map((r) => (
+              <span key={r} className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded">
+                {roleLabels[r] ?? r}
+              </span>
+            ))}
+          </div>
+          <div className="flex items-center gap-3 mt-1 flex-wrap text-xs text-gray-400">
+            {isInbound ? (
+              <span className="flex items-center gap-1 text-purple-600 font-medium">
+                <ArrowDownLeft className="h-3 w-3" />
+                Van {partnerName ?? 'partner'}
+              </span>
+            ) : (
+              <span className="flex items-center gap-1">
+                <ArrowUpRight className="h-3 w-3" />
+                {partnerName ? `Naar ${partnerName}` : 'Open pool'}
+              </span>
+            )}
+            {a.clients && <span>· {a.clients.company_name}</span>}
+            {a.deadline && <span>· Deadline {formatDate(a.deadline)}</span>}
+            <span>· {formatDate(a.created_at)}</span>
+          </div>
+          {a.description && (
+            <p className="text-sm text-gray-600 mt-2 line-clamp-2">{a.description}</p>
+          )}
+        </div>
+        <div className="flex flex-col items-end gap-1.5 shrink-0">
+          {amount != null && <span className="text-sm font-bold">{formatEuro(amount)}</span>}
+          <span className={`status-badge ${STATUS_STYLE[a.status] ?? 'bg-gray-100 text-gray-500'}`}>
+            {STATUS_LABEL[a.status] ?? a.status}
+          </span>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-2 flex-wrap mt-3 pt-3 border-t border-gray-50">
+        {isInbound && a.status === 'open' && (
+          <>
+            <button
+              onClick={() => onStatus(a.id, 'in_progress')}
+              disabled={busy}
+              className="btn-primary text-xs py-1.5"
+            >
+              <Check className="h-3.5 w-3.5" />
+              Aanvaarden
+            </button>
+            <button
+              onClick={() => onStatus(a.id, 'cancelled')}
+              disabled={busy}
+              className="btn-secondary text-xs py-1.5 text-red-500 hover:bg-red-50"
+            >
+              <X className="h-3.5 w-3.5" />
+              Weigeren
+            </button>
+          </>
+        )}
+        {!isInbound && a.status === 'open' && (
+          <button
+            onClick={() => onStatus(a.id, 'cancelled')}
+            disabled={busy}
+            className="btn-secondary text-xs py-1.5 text-red-500 hover:bg-red-50"
+          >
+            Annuleren
+          </button>
+        )}
+        {a.status === 'in_progress' && (
+          <>
+            <button
+              onClick={() => onStatus(a.id, 'completed')}
+              disabled={busy}
+              className="btn-primary text-xs py-1.5"
+            >
+              <Check className="h-3.5 w-3.5" />
+              Afronden
+            </button>
+            <button
+              onClick={() => onStatus(a.id, 'cancelled')}
+              disabled={busy}
+              className="btn-secondary text-xs py-1.5 text-red-500 hover:bg-red-50"
+            >
+              Annuleren
+            </button>
+          </>
+        )}
+        {(a.status === 'completed' || a.status === 'cancelled') && (
+          <span className="text-xs text-gray-400">Geen acties meer mogelijk</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+type Tab = 'outbound' | 'inbound'
 
 export function AssignmentsClient({
   initialAssignments, partners, clients, roleLabels,
@@ -210,18 +346,21 @@ export function AssignmentsClient({
   const router = useRouter()
   const [assignments, setAssignments] = useState(initialAssignments)
   const [showCreate, setShowCreate] = useState(false)
-  const [filterStatus, setFilterStatus] = useState<string>('all')
+  const [tab, setTab] = useState<Tab>('outbound')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [busyId, setBusyId] = useState<string | null>(null)
 
-  const filtered = filterStatus === 'all'
-    ? assignments
-    : assignments.filter((a) => a.status === filterStatus)
+  const outbound = useMemo(() => assignments.filter((a) => a.origin === 'admin'), [assignments])
+  const inbound = useMemo(() => assignments.filter((a) => a.origin === 'partner'), [assignments])
 
-  const statusCounts = ['open', 'in_progress', 'completed', 'cancelled'].map((s) => ({
-    status: s,
-    count: assignments.filter((a) => a.status === s).length,
-  }))
+  // Number of inbound proposals awaiting a decision
+  const inboxCount = useMemo(() => inbound.filter((a) => a.status === 'open').length, [inbound])
+
+  const base = tab === 'outbound' ? outbound : inbound
+  const visible = statusFilter === 'all' ? base : base.filter((a) => a.status === statusFilter)
 
   const updateStatus = async (id: string, status: string) => {
+    setBusyId(id)
     try {
       const res = await fetch('/api/admin/assignments', {
         method: 'PATCH',
@@ -234,111 +373,97 @@ export function AssignmentsClient({
       router.refresh()
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Fout bij statusupdate')
+    } finally {
+      setBusyId(null)
     }
   }
 
+  const TabButton = ({ value, label, icon: Icon, count, badge }: {
+    value: Tab; label: string; icon: typeof Inbox; count: number; badge?: number
+  }) => (
+    <button
+      onClick={() => { setTab(value); setStatusFilter('all') }}
+      className={`relative flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+        tab === value ? 'bg-black text-white' : 'bg-white border border-gray-200 text-gray-600 hover:border-gray-300'
+      }`}
+    >
+      <Icon className="h-4 w-4" />
+      {label}
+      <span className={`text-xs ${tab === value ? 'opacity-70' : 'text-gray-400'}`}>({count})</span>
+      {badge ? (
+        <span className="absolute -top-1.5 -right-1.5 h-5 min-w-[20px] px-1 rounded-full bg-purple-600 text-white text-[10px] font-bold flex items-center justify-center">
+          {badge}
+        </span>
+      ) : null}
+    </button>
+  )
+
   return (
     <div className="space-y-4">
-      {/* Stats + filter */}
+      {/* Tabs + create */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setFilterStatus('all')}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${filterStatus === 'all' ? 'bg-black text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-          >
-            Alles ({assignments.length})
-          </button>
-          {statusCounts.map(({ status, count }) => (
-            <button
-              key={status}
-              onClick={() => setFilterStatus(status)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${filterStatus === status ? 'bg-black text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-            >
-              {STATUS_LABEL[status]} ({count})
-            </button>
-          ))}
+        <div className="flex items-center gap-2 flex-wrap">
+          <TabButton value="outbound" label="Uitgaand" icon={ArrowUpRight} count={outbound.length} />
+          <TabButton value="inbound" label="Inkomend" icon={Inbox} count={inbound.length} badge={inboxCount} />
         </div>
         <button onClick={() => setShowCreate(true)} className="btn-primary">
           <Plus className="h-4 w-4" />
-          Nieuwe opdracht
+          Opdracht uitdelen
         </button>
       </div>
 
-      {/* Table */}
-      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-        {filtered.length === 0 ? (
-          <div className="text-center py-16 text-gray-400">
-            <Briefcase className="h-8 w-8 mx-auto mb-3 opacity-30" />
-            <p className="text-sm">Geen opdrachten gevonden</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px]">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="table-th">Titel</th>
-                <th className="table-th">Partner</th>
-                <th className="table-th">Klant</th>
-                <th className="table-th">Budget</th>
-                <th className="table-th">Deadline</th>
-                <th className="table-th">Status</th>
-                <th className="table-th">Acties</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {filtered.map((a) => (
-                <tr key={a.id} className="hover:bg-gray-50">
-                  <td className="table-td">
-                    <div className="font-medium">{a.title}</div>
-                    {a.description && (
-                      <div className="text-xs text-gray-400 truncate max-w-[200px]">{a.description}</div>
-                    )}
-                    <div className="flex gap-1 mt-1">
-                      {(a.roles?.length ? a.roles : a.service_slug ? [a.service_slug] : []).slice(0, 2).map((r) => (
-                        <span key={r} className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">
-                          {roleLabels[r] ?? r}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="table-td text-sm">
-                    {a.freelancers?.name ?? <span className="text-gray-400 text-xs">Open pool</span>}
-                  </td>
-                  <td className="table-td text-sm text-gray-500">
-                    {a.clients?.company_name ?? '—'}
-                  </td>
-                  <td className="table-td">{a.budget ? formatEuro(a.budget) : '—'}</td>
-                  <td className="table-td text-gray-500">{a.deadline ? formatDate(a.deadline) : '—'}</td>
-                  <td className="table-td">
-                    <span className={`status-badge ${STATUS_STYLE[a.status] ?? 'bg-gray-100 text-gray-500'}`}>
-                      {STATUS_LABEL[a.status] ?? a.status}
-                    </span>
-                  </td>
-                  <td className="table-td">
-                    {a.status === 'in_progress' && (
-                      <button
-                        onClick={() => updateStatus(a.id, 'completed')}
-                        className="text-xs text-green-600 hover:underline"
-                      >
-                        Afgerond
-                      </button>
-                    )}
-                    {(a.status === 'open' || a.status === 'in_progress') && (
-                      <button
-                        onClick={() => updateStatus(a.id, 'cancelled')}
-                        className="text-xs text-red-500 hover:underline ml-2"
-                      >
-                        Annuleer
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
-        )}
+      {/* Context line */}
+      <p className="text-sm text-gray-500">
+        {tab === 'outbound'
+          ? 'Opdrachten die NextGenMedia aan partners heeft uitgedeeld.'
+          : 'Voorstellen die partners bij NextGenMedia hebben ingediend — aanvaard of weiger ze.'}
+      </p>
+
+      {/* Status filter */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {(['all', 'open', 'in_progress', 'completed', 'cancelled'] as const).map((s) => {
+          const cnt = s === 'all' ? base.length : base.filter((a) => a.status === s).length
+          return (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                statusFilter === s ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-500 hover:border-gray-300'
+              }`}
+            >
+              {s === 'all' ? 'Alle' : STATUS_LABEL[s]} <span className="opacity-60">{cnt}</span>
+            </button>
+          )
+        })}
       </div>
+
+      {/* List */}
+      {visible.length === 0 ? (
+        <div className="card-base text-center py-14 text-gray-400">
+          <Briefcase className="h-8 w-8 mx-auto mb-3 opacity-30" />
+          <p className="text-sm">
+            {tab === 'inbound' ? 'Geen inkomende voorstellen' : 'Geen uitgaande opdrachten'}
+          </p>
+          {tab === 'outbound' && (
+            <button onClick={() => setShowCreate(true)} className="btn-primary mt-4 inline-flex text-sm">
+              <Plus className="h-4 w-4" />
+              Eerste opdracht uitdelen
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {visible.map((a) => (
+            <AssignmentCard
+              key={a.id}
+              a={a}
+              roleLabels={roleLabels}
+              busy={busyId === a.id}
+              onStatus={updateStatus}
+            />
+          ))}
+        </div>
+      )}
 
       {showCreate && (
         <CreateDialog
@@ -346,7 +471,7 @@ export function AssignmentsClient({
           clients={clients}
           roleLabels={roleLabels}
           onClose={() => setShowCreate(false)}
-          onCreated={(a) => { setAssignments((prev) => [a, ...prev]); setShowCreate(false) }}
+          onCreated={(a) => { setAssignments((prev) => [a, ...prev]); setShowCreate(false); setTab('outbound') }}
         />
       )}
     </div>
