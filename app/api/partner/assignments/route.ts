@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
+import { createClient, createAdminSupabaseClient, insertResilient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
 // POST — partner creates a new inbound assignment proposal for NextGenMedia
@@ -39,10 +39,13 @@ export async function POST(req: NextRequest) {
 
     const admin = createAdminSupabaseClient()
 
-    // Create assignment with status 'proposed' — admin reviews and accepts
-    const { data: row, error } = await admin
-      .from('freelancer_assignments')
-      .insert({
+    // Insert resiliently: optional columns (role, roles, payout, service_slug)
+    // exist only in some schema versions. The helper drops any column the live
+    // DB doesn't have and retries, so this works regardless of applied migrations.
+    const { data: row, error } = await insertResilient(
+      admin,
+      'freelancer_assignments',
+      {
         title: title.trim(),
         description: description?.trim() || null,
         freelancer_id: partner.id,
@@ -51,11 +54,11 @@ export async function POST(req: NextRequest) {
         payout: budget ?? null,   // proposed payout = proposed budget by default
         deadline: deadline || null,
         status: 'open',           // visible to admin immediately
-        role: 'other',            // required NOT NULL field
-        roles: [],
-      })
-      .select('id')
-      .single()
+        role: 'other',            // present in legacy schema (NOT NULL there)
+        roles: [],                // present in newer schema
+      },
+      { required: ['title', 'freelancer_id', 'status'] },
+    )
 
     if (error) throw new Error(error.message)
 
@@ -64,7 +67,7 @@ export async function POST(req: NextRequest) {
       revalidatePath('/admin/assignments')
     } catch { }
 
-    return NextResponse.json({ id: row.id })
+    return NextResponse.json({ id: row?.id })
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
   }
@@ -90,11 +93,12 @@ export async function PATCH(req: NextRequest) {
     const admin = createAdminSupabaseClient()
 
     // If completing, mirror the admin auto-payout logic — but scope it to this partner only.
+    // select('*') so a missing column never makes the fetch silently fail.
     let didAutoPayout = false
     if (status === 'completed') {
       const { data: existing } = await admin
         .from('freelancer_assignments')
-        .select('budget, payout, title, client_id, status')
+        .select('*')
         .eq('id', id)
         .eq('freelancer_id', partner.id)
         .maybeSingle()
@@ -102,20 +106,22 @@ export async function PATCH(req: NextRequest) {
       if (existing && existing.status !== 'completed') {
         const payoutAmount = Number(existing.payout ?? existing.budget ?? 0)
         if (payoutAmount > 0) {
-          try {
-            await admin.from('partner_ledger_entries').insert({
+          const { error: ledgerErr } = await insertResilient(
+            admin,
+            'partner_ledger_entries',
+            {
               freelancer_id: partner.id,
               kind: 'payout_owed',
               amount: payoutAmount,
-              client_id: existing.client_id,
+              client_id: existing.client_id ?? null,
               description: `Opdracht afgerond: ${existing.title}`,
               occurred_on: new Date().toISOString().slice(0, 10),
               status: 'pending',
-            })
-            didAutoPayout = true
-          } catch (ledgerErr) {
-            console.error('[partner/assignments] auto-payout failed:', ledgerErr)
-          }
+            },
+            { required: ['freelancer_id', 'amount'] },
+          )
+          if (!ledgerErr) didAutoPayout = true
+          else console.error('[partner/assignments] auto-payout failed:', ledgerErr.message)
         }
       }
     }

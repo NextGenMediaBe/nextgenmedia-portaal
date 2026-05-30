@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
+import { createClient, createAdminSupabaseClient, insertResilient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
 async function assertAdmin() {
@@ -37,12 +37,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Minstens één rol is verplicht' }, { status: 400 })
     }
 
-    // `role` is the (still NOT NULL) singular column from the original schema —
-    // we keep it in sync with the first role for backwards compatibility.
-    // `roles` is the modern array column.
-    const { data, error } = await admin
-      .from('freelancer_assignments')
-      .insert({
+    // `role` is the singular column from the legacy schema (NOT NULL there);
+    // `roles` is the modern array column. insertResilient drops whichever column
+    // the live DB lacks and retries, so this works on any schema version.
+    const { data, error } = await insertResilient(
+      admin,
+      'freelancer_assignments',
+      {
         title: title.trim(),
         description: description?.trim() || null,
         role: rolesArr[0],
@@ -53,9 +54,9 @@ export async function POST(req: NextRequest) {
         budget: budget ?? null,
         deadline: deadline || null,
         status: 'open',
-      })
-      .select('id')
-      .single()
+      },
+      { required: ['title', 'status'] },
+    )
     if (error) throw new Error(error.message)
 
     try {
@@ -63,7 +64,7 @@ export async function POST(req: NextRequest) {
       if (freelancer_id) revalidatePath(`/admin/partners/${freelancer_id}`)
     } catch { }
 
-    return NextResponse.json({ id: data.id })
+    return NextResponse.json({ id: data?.id })
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
   }
@@ -95,40 +96,56 @@ export async function PATCH(req: NextRequest) {
     }
 
     // If marking completed, fetch the assignment first to potentially auto-create
-    // a partner ledger entry for the payout.
+    // a partner ledger entry for the payout. select('*') so a missing column
+    // (e.g. payout on legacy schema) never makes this silently fail.
     let didAutoPayout = false
     if (patch.status === 'completed') {
       const { data: existing } = await admin
         .from('freelancer_assignments')
-        .select('freelancer_id, budget, payout, title, client_id, status')
+        .select('*')
         .eq('id', id)
         .maybeSingle()
 
       if (existing && existing.status !== 'completed' && existing.freelancer_id) {
         const payoutAmount = Number(existing.payout ?? existing.budget ?? 0)
         if (payoutAmount > 0) {
-          // Create a ledger entry of kind 'payout_owed' — only if no settled entry
-          // exists for this assignment yet (idempotent on duplicate completion).
-          try {
-            await admin.from('partner_ledger_entries').insert({
+          // Best-effort ledger entry; partner_ledger_entries may not exist yet.
+          const { error: ledgerErr } = await insertResilient(
+            admin,
+            'partner_ledger_entries',
+            {
               freelancer_id: existing.freelancer_id,
               kind: 'payout_owed',
               amount: payoutAmount,
-              client_id: existing.client_id,
+              client_id: existing.client_id ?? null,
               description: `Opdracht afgerond: ${existing.title}`,
               occurred_on: new Date().toISOString().slice(0, 10),
               status: 'pending',
-            })
-            didAutoPayout = true
-          } catch (ledgerErr) {
-            console.error('[assignments] auto-payout ledger insert failed:', ledgerErr)
-          }
+            },
+            { required: ['freelancer_id', 'amount'] },
+          )
+          if (!ledgerErr) didAutoPayout = true
+          else console.error('[assignments] auto-payout ledger insert failed:', ledgerErr.message)
         }
       }
     }
 
-    const { error } = await admin.from('freelancer_assignments').update(patch).eq('id', id)
-    if (error) throw new Error(error.message)
+    // Update resiliently: drop a patch key the schema lacks (e.g. payout) and retry.
+    let updateErr = (await admin.from('freelancer_assignments').update(patch).eq('id', id)).error
+    if (updateErr) {
+      const msg = updateErr.message ?? ''
+      const match = msg.match(/'([^']+)' column/i) || msg.match(/column "?([a-z0-9_]+)"?/i)
+      const badCol = match?.[1]
+      if (badCol && badCol in patch) {
+        delete patch[badCol]
+        if (Object.keys(patch).length > 0) {
+          updateErr = (await admin.from('freelancer_assignments').update(patch).eq('id', id)).error
+        } else {
+          updateErr = null
+        }
+      }
+    }
+    if (updateErr) throw new Error(updateErr.message)
 
     try {
       revalidatePath('/admin/assignments')

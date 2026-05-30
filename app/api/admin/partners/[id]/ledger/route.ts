@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
+import { createClient, createAdminSupabaseClient, insertResilient } from '@/lib/supabase/server'
 
 async function requireAdmin() {
   const supabase = await createClient()
@@ -36,9 +36,10 @@ export async function POST(
     const { data: partner } = await admin.from('freelancers').select('id').eq('id', id).maybeSingle()
     if (!partner) return NextResponse.json({ error: 'Partner niet gevonden' }, { status: 404 })
 
-    const { data, error } = await admin
-      .from('partner_ledger_entries')
-      .insert({
+    const { data, error } = await insertResilient(
+      admin,
+      'partner_ledger_entries',
+      {
         freelancer_id: id,
         kind,
         amount: Number(amount),
@@ -46,11 +47,11 @@ export async function POST(
         description: description || null,
         occurred_on: occurred_on || new Date().toISOString().slice(0, 10),
         status: 'pending',
-      })
-      .select('*')
-      .single()
+      },
+      { select: '*', required: ['freelancer_id', 'amount'] },
+    )
 
-    if (error) throw error
+    if (error) throw new Error(error.message)
     return NextResponse.json({ entry: data })
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
