@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { notFound, redirect } from 'next/navigation'
-import { createAdminSupabaseClient, createClient } from '@/lib/supabase/server'
+import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { formatDate, formatEuro, SERVICE_LABELS, daysUntil } from '@/lib/utils'
 import Link from 'next/link'
 import { ChevronLeft, Globe, Calendar, FileText } from 'lucide-react'
@@ -10,19 +10,33 @@ import { DeleteClientButton } from './delete-client-button'
 import { PortalAccessCard } from './portal-access-card'
 
 async function getClient(id: string) {
-  try {
-    const admin = createAdminSupabaseClient()
-    const [{ data: client }, { data: services }, { data: contracts }, { data: scontracts }] = await Promise.all([
-      admin.from('clients').select('*').eq('id', id).maybeSingle(),
-      admin.from('client_services').select('*').eq('client_id', id),
-      admin.from('contracts').select('id, title, status, service_slug, signed_at, sent_at, created_at').eq('client_id', id).order('created_at', { ascending: false }),
-      admin.from('service_contracts').select('*').eq('client_id', id),
-    ])
-    return { client, services: services ?? [], contracts: contracts ?? [], scontracts: scontracts ?? [] }
-  } catch {
-    const supabase = await createClient()
-    const { data: client } = await supabase.from('clients').select('*').eq('id', id).maybeSingle()
-    return { client, services: [], contracts: [], scontracts: [] }
+  const admin = createAdminSupabaseClient()
+
+  // Fetch the client first — this alone decides 404 vs render.
+  // select('*') so a missing column can never turn into a silent null result.
+  const { data: client } = await admin
+    .from('clients')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle()
+
+  if (!client) {
+    return { client: null, services: [], contracts: [], scontracts: [] }
+  }
+
+  // Secondary data — Supabase resolves with { data, error }, never throws,
+  // so a missing table/column just yields null (page still renders).
+  const [{ data: services }, { data: contracts }, { data: scontracts }] = await Promise.all([
+    admin.from('client_services').select('*').eq('client_id', id),
+    admin.from('contracts').select('*').eq('client_id', id).order('created_at', { ascending: false }),
+    admin.from('service_contracts').select('*').eq('client_id', id),
+  ])
+
+  return {
+    client,
+    services: services ?? [],
+    contracts: contracts ?? [],
+    scontracts: scontracts ?? [],
   }
 }
 

@@ -42,7 +42,11 @@
       "Bash(sed -i 's/className=\"grid grid-cols-3 gap-4\"/className=\"grid grid-cols-1 sm:grid-cols-3 gap-4\"/g' app/admin/contracts/contracts-client.tsx app/admin/settlements/page.tsx)",
       "Bash(sed -i 's/className=\"grid grid-cols-3 gap-3\"/className=\"grid grid-cols-2 sm:grid-cols-3 gap-3\"/g' app/admin/clients/new/page.tsx app/admin/clients/[id]/client-edit-form.tsx app/admin/services/social-media/generate-dialog.tsx)",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(git rm *)",
+      "Bash(git reset *)",
+      "Bash(git commit -q -m ' *)",
+      "Bash(git rev-list *)"
     ]
   }
 }

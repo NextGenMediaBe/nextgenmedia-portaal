@@ -39,19 +39,26 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
   const { id } = await params
   const admin = createAdminSupabaseClient()
 
+  // Fetch the partner first — this determines whether the page is a 404.
+  // Use select('*') so a missing column never turns into a silent null result.
+  const { data: partner } = await admin
+    .from('freelancers')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle()
+
+  if (!partner) notFound()
+
+  // Secondary data — Supabase queries resolve with { data, error } instead of
+  // throwing, so a missing table just yields null data (never crashes the page).
   const [
-    { data: partner },
     { data: assignmentRows },
     { data: clientRows },
     { data: ledgerRows },
     { data: settlementRows },
   ] = await Promise.all([
-    admin.from('freelancers')
-      .select('id, name, email, phone, company, vat_number, iban, roles, hourly_rate, region, active, created_at, notes')
-      .eq('id', id)
-      .maybeSingle(),
     admin.from('freelancer_assignments')
-      .select('id, title, status, payout, budget, service_slug, deadline, created_at, client_id')
+      .select('*')
       .eq('freelancer_id', id)
       .order('created_at', { ascending: false }),
     admin.from('clients').select('id, company_name'),
@@ -66,8 +73,6 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
       .order('created_at', { ascending: false })
       .limit(10),
   ])
-
-  if (!partner) notFound()
 
   const tier = getCommissionTier(partner.created_at)
   const clientMap = new Map((clientRows ?? []).map((c) => [c.id, c]))
