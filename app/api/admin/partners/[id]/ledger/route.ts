@@ -36,13 +36,21 @@ export async function POST(
     const { data: partner } = await admin.from('freelancers').select('id').eq('id', id).maybeSingle()
     if (!partner) return NextResponse.json({ error: 'Partner niet gevonden' }, { status: 404 })
 
+    // Direction is explicit: positive amount = we pay the partner,
+    // negative amount = partner pays us. Allow an explicit override too.
+    const numAmount = Number(amount)
+    const direction: string = body.direction === 'partner_pays_us' || body.direction === 'we_pay_partner'
+      ? body.direction
+      : (numAmount >= 0 ? 'we_pay_partner' : 'partner_pays_us')
+
     const { data, error } = await insertResilient(
       admin,
       'partner_ledger_entries',
       {
         freelancer_id: id,
         kind,
-        amount: Number(amount),
+        amount: numAmount,
+        direction,
         client_id: client_id || null,
         description: description || null,
         occurred_on: occurred_on || new Date().toISOString().slice(0, 10),

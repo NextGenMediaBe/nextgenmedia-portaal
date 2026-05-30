@@ -7,6 +7,7 @@ import { ArrowLeft, Briefcase, CheckCircle2, Clock, TrendingUp } from 'lucide-re
 import Link from 'next/link'
 import { PartnerLedger } from './partner-ledger'
 import { PartnerActions } from './partner-actions'
+import { CommissionDeals } from './commission-deals'
 
 /** Commission tier based on months since partnership start */
 function getCommissionTier(createdAt: string): { pct: number; label: string; year: number } {
@@ -56,12 +57,13 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
     { data: clientRows },
     { data: ledgerRows },
     { data: settlementRows },
+    { data: commissionRows },
   ] = await Promise.all([
     admin.from('freelancer_assignments')
       .select('*')
       .eq('freelancer_id', id)
       .order('created_at', { ascending: false }),
-    admin.from('clients').select('id, company_name'),
+    admin.from('clients').select('id, company_name').order('company_name'),
     admin.from('partner_ledger_entries')
       .select('*')
       .eq('freelancer_id', id)
@@ -72,6 +74,10 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
       .eq('freelancer_id', id)
       .order('created_at', { ascending: false })
       .limit(10),
+    admin.from('partner_commission_deals')
+      .select('*')
+      .eq('freelancer_id', id)
+      .order('created_at', { ascending: false }),
   ])
 
   const tier = getCommissionTier(partner.created_at)
@@ -87,15 +93,39 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
   const ledger = (ledgerRows ?? []) as Array<{
     id: string; kind: string; status: string; amount: number; description: string | null;
     client_id: string | null; occurred_on: string; created_at: string; settlement_id: string | null;
+    direction?: string | null; commission_deal_id?: string | null; commission_year?: number | null;
+  }>
+  const commissionDeals = (commissionRows ?? []) as Array<{
+    id: string; client_id: string | null; label: string | null; service_slug: string | null;
+    contract_value: number; start_date: string; pct_year_1: number; pct_year_2: number; pct_year_3: number;
+    status: string; notes: string | null; created_at: string;
   }>
   const settlements = (settlementRows ?? []) as Array<{
     id: string; period_start: string; period_end: string; net_amount: number; status: string; notes: string | null; finalized_at: string | null; paid_at: string | null;
   }>
 
+  // Direction is explicit when present, otherwise inferred from the amount sign.
+  const dirOf = (l: { direction?: string | null; amount: number }): 'we_pay_partner' | 'partner_pays_us' =>
+    l.direction === 'partner_pays_us' || l.direction === 'we_pay_partner'
+      ? l.direction
+      : (l.amount >= 0 ? 'we_pay_partner' : 'partner_pays_us')
+
   const pendingLedger = ledger.filter(l => l.status === 'pending')
-  const pendingOwedToPartner = pendingLedger.filter(l => l.amount > 0).reduce((s, l) => s + l.amount, 0)
-  const pendingOwedByPartner = pendingLedger.filter(l => l.amount < 0).reduce((s, l) => s + Math.abs(l.amount), 0)
+  const pendingOwedToPartner = pendingLedger
+    .filter(l => dirOf(l) === 'we_pay_partner')
+    .reduce((s, l) => s + Math.abs(l.amount), 0)
+  const pendingOwedByPartner = pendingLedger
+    .filter(l => dirOf(l) === 'partner_pays_us')
+    .reduce((s, l) => s + Math.abs(l.amount), 0)
   const netPending = pendingOwedToPartner - pendingOwedByPartner
+
+  // Which commission years already have a generated ledger entry, per deal
+  const generatedByDeal: Record<string, Set<number>> = {}
+  for (const l of ledger) {
+    if (l.commission_deal_id && l.commission_year) {
+      ;(generatedByDeal[l.commission_deal_id] ??= new Set()).add(l.commission_year)
+    }
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -134,26 +164,24 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
             ))}
           </div>
 
-          {/* Commission tier */}
+          {/* Default commission tiers — informational. Actual % is set per deal. */}
           <div className="pt-2 border-t border-gray-100">
-            <p className="text-xs text-gray-500 mb-2">Commissietrap (automatisch)</p>
+            <p className="text-xs text-gray-500 mb-2">Standaard commissie per aangeleverde klant</p>
             <div className="flex gap-2">
               {[
-                { label: 'Jaar 1', pct: 10, active: tier.year === 1 },
-                { label: 'Jaar 2', pct: 8,  active: tier.year === 2 },
-                { label: 'Jaar 3+', pct: 5, active: tier.year >= 3 },
+                { label: 'Jaar 1', pct: 10 },
+                { label: 'Jaar 2', pct: 8 },
+                { label: 'Jaar 3+', pct: 5 },
               ].map(t => (
-                <div
-                  key={t.label}
-                  className={`flex-1 text-center py-2 rounded-lg border text-xs font-medium transition-colors ${
-                    t.active ? 'border-[#fff848] bg-[#fff848]/10 text-black' : 'border-gray-200 text-gray-400'
-                  }`}
-                >
+                <div key={t.label} className="flex-1 text-center py-2 rounded-lg border border-gray-200 text-xs font-medium text-gray-600">
                   <div className="text-lg font-bold">{t.pct}%</div>
                   <div>{t.label}</div>
                 </div>
               ))}
             </div>
+            <p className="text-[11px] text-gray-400 mt-1.5">
+              Percentages tellen per actief jaar van de klant en zijn per deal aanpasbaar.
+            </p>
           </div>
 
           {Array.isArray(partner.roles) && partner.roles.length > 0 && (
@@ -224,6 +252,14 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
         </div>
       </div>
 
+      {/* Commission deals — per referred client, year 1/2/3 % editable */}
+      <CommissionDeals
+        partnerId={id}
+        clients={(clientRows ?? []).map(c => ({ id: c.id, company_name: c.company_name }))}
+        deals={commissionDeals}
+        generated={generatedByDeal}
+      />
+
       {/* Ledger actions (Client Component) */}
       <PartnerLedger
         partnerId={id}
@@ -240,6 +276,7 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
               <thead>
                 <tr className="border-b border-gray-100">
                   <th className="text-left py-2 text-xs text-gray-500 font-medium">Datum</th>
+                  <th className="text-left py-2 text-xs text-gray-500 font-medium">Richting</th>
                   <th className="text-left py-2 text-xs text-gray-500 font-medium">Type</th>
                   <th className="text-left py-2 text-xs text-gray-500 font-medium">Omschrijving</th>
                   <th className="text-left py-2 text-xs text-gray-500 font-medium">Klant</th>
@@ -248,9 +285,17 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {ledger.map(l => (
+                {ledger.map(l => {
+                  const dir = dirOf(l)
+                  const wePay = dir === 'we_pay_partner'
+                  return (
                   <tr key={l.id} className="hover:bg-gray-50/50">
                     <td className="py-2.5 text-gray-500 text-xs">{formatDate(l.occurred_on)}</td>
+                    <td className="py-2.5">
+                      <span className={`status-badge text-xs ${wePay ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                        {wePay ? 'Wij betalen' : 'Partner betaalt'}
+                      </span>
+                    </td>
                     <td className="py-2.5">
                       <span className="text-xs text-gray-600">{LEDGER_KIND_LABEL[l.kind] ?? l.kind}</span>
                     </td>
@@ -258,8 +303,8 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
                     <td className="py-2.5 text-gray-500 text-xs">
                       {l.client_id ? (clientMap.get(l.client_id)?.company_name ?? '—') : '—'}
                     </td>
-                    <td className={`py-2.5 text-right font-semibold ${l.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {l.amount >= 0 ? '+' : ''}{formatEuro(l.amount)}
+                    <td className={`py-2.5 text-right font-semibold ${wePay ? 'text-green-600' : 'text-red-600'}`}>
+                      {wePay ? '+' : '−'}{formatEuro(Math.abs(l.amount))}
                     </td>
                     <td className="py-2.5">
                       <span className={`status-badge text-xs ${
@@ -271,7 +316,8 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
                       </span>
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>

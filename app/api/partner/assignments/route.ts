@@ -24,20 +24,53 @@ export async function POST(req: NextRequest) {
       proposed_hours,
       hourly_rate,
       deadline,
+      deal_type,   // 'commission' | 'fixed'
     } = await req.json()
 
     if (!title?.trim()) {
       return NextResponse.json({ error: 'Titel is verplicht' }, { status: 400 })
     }
 
+    const admin = createAdminSupabaseClient()
+
+    // ── COMMISSION lead: partner refers a client/job for us to run ──────────
+    // We create an assignment marked as commission so admin sees it under
+    // "Inkomend". Admin later attaches the contract value via a commission deal.
+    if (deal_type === 'commission') {
+      const { data: row, error } = await insertResilient(
+        admin,
+        'freelancer_assignments',
+        {
+          title: title.trim(),
+          description: description?.trim() || null,
+          freelancer_id: partner.id,
+          service_slug: service_slug || null,
+          budget: null,
+          payout: null,
+          deadline: deadline || null,
+          status: 'open',
+          origin: 'partner',
+          deal_type: 'commission',
+          role: 'other',
+          roles: [],
+        },
+        { required: ['title', 'freelancer_id', 'status'] },
+      )
+      if (error) throw new Error(error.message)
+      try {
+        revalidatePath('/partner/assignments')
+        revalidatePath('/admin/assignments')
+      } catch { }
+      return NextResponse.json({ id: row?.id })
+    }
+
+    // ── FIXED proposal: partner asks us to do work for a fixed amount ───────
     // Compute budget from hours × rate if not directly supplied
     const budget = proposed_budget ?? (
       proposed_hours && hourly_rate
         ? Math.round(proposed_hours * hourly_rate * 100) / 100
         : null
     )
-
-    const admin = createAdminSupabaseClient()
 
     // Insert resiliently: optional columns (role, roles, payout, service_slug)
     // exist only in some schema versions. The helper drops any column the live
@@ -55,6 +88,7 @@ export async function POST(req: NextRequest) {
         deadline: deadline || null,
         status: 'open',           // visible to admin immediately
         origin: 'partner',        // inbound proposal from partner → NextGenMedia
+        deal_type: 'fixed',       // fixed-amount subcontract proposal
         role: 'other',            // present in legacy schema (NOT NULL there)
         roles: [],                // present in newer schema
       },

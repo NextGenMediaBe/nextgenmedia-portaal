@@ -92,6 +92,7 @@ export function PartnerLedger({ partnerId, commissionPct, clients }: Props) {
     if (!outboundForm.amount || parseFloat(outboundForm.amount) <= 0) { setError('Voer een geldig bedrag in'); return }
     post(`/api/admin/partners/${partnerId}/ledger`, {
       kind: 'payout_owed',
+      direction: 'we_pay_partner',
       amount: parseFloat(outboundForm.amount),
       client_id: outboundForm.clientId || null,
       description: outboundForm.title,
@@ -104,6 +105,7 @@ export function PartnerLedger({ partnerId, commissionPct, clients }: Props) {
     if (!inboundForm.amount || parseFloat(inboundForm.amount) <= 0) { setError('Voer een geldig bedrag in'); return }
     post(`/api/admin/partners/${partnerId}/ledger`, {
       kind: 'service_billed',
+      direction: 'partner_pays_us',
       amount: -parseFloat(inboundForm.amount), // negative → partner owes us
       client_id: inboundForm.clientId || null,
       description: inboundForm.title,
@@ -137,28 +139,24 @@ export function PartnerLedger({ partnerId, commissionPct, clients }: Props) {
   return (
     <>
       <div className="card-base">
-        <h2 className="font-semibold mb-4">Ledger acties</h2>
+        <h2 className="font-semibold mb-1">Handmatige boekingen</h2>
+        <p className="text-xs text-gray-500 mb-4">
+          Voor onderaanneming en losse posten. Commissie op aangeleverde klanten beheer je hierboven.
+        </p>
         <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => { setError(null); setModal('referral') }}
-            className="btn-secondary flex items-center gap-1.5 text-sm"
-          >
-            <UserPlus className="h-4 w-4" />
-            Referral toevoegen
-          </button>
           <button
             onClick={() => { setError(null); setModal('outbound') }}
             className="btn-secondary flex items-center gap-1.5 text-sm"
           >
             <Briefcase className="h-4 w-4" />
-            Opdracht aan partner
+            Wij betalen partner
           </button>
           <button
             onClick={() => { setError(null); setModal('inbound') }}
             className="btn-secondary flex items-center gap-1.5 text-sm"
           >
             <ArrowRightLeft className="h-4 w-4" />
-            Opdracht van partner
+            Partner betaalt ons
           </button>
           <button
             onClick={() => { setError(null); setModal('settle') }}

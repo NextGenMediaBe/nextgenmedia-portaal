@@ -25,3 +25,9 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS idx_assignments_origin
   ON public.freelancer_assignments (origin);
+
+-- deal_type distinguishes a partner's commission lead from a fixed subcontract
+--   'fixed'      = work for a fixed payout (default)
+--   'commission' = referred client/job; commission handled via commission deals
+ALTER TABLE public.freelancer_assignments
+  ADD COLUMN IF NOT EXISTS deal_type text NOT NULL DEFAULT 'fixed';

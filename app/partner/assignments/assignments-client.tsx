@@ -51,6 +51,7 @@ function SubmitWorkDialog({
 }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [dealType, setDealType] = useState<'commission' | 'fixed'>('commission')
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -70,9 +71,11 @@ function SubmitWorkDialog({
     setError(null)
     if (!form.title.trim()) { setError('Titel is verplicht'); return }
 
-    const budget = form.budget_type === 'fixed'
-      ? (form.proposed_budget ? parseFloat(form.proposed_budget) : null)
-      : computedBudget
+    const budget = dealType === 'fixed'
+      ? (form.budget_type === 'fixed'
+          ? (form.proposed_budget ? parseFloat(form.proposed_budget) : null)
+          : computedBudget)
+      : null
 
     setLoading(true)
     try {
@@ -83,6 +86,7 @@ function SubmitWorkDialog({
           title: form.title,
           description: form.description || null,
           service_slug: form.service_slug || null,
+          deal_type: dealType,
           proposed_budget: budget,
           deadline: form.deadline || null,
         }),
@@ -126,6 +130,33 @@ function SubmitWorkDialog({
           </button>
         </div>
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          {/* Deal type */}
+          <div>
+            <label className={lbl}>Soort voorstel</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setDealType('commission')}
+                className={`rounded-xl border p-3 text-left transition-colors ${
+                  dealType === 'commission' ? 'border-[#fff848] bg-[#fff848]/10' : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className="text-sm font-semibold">Klant aanbrengen</div>
+                <div className="text-[11px] text-gray-500 mt-0.5">Jij levert een klant aan, wij voeren uit, jij krijgt commissie.</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDealType('fixed')}
+                className={`rounded-xl border p-3 text-left transition-colors ${
+                  dealType === 'fixed' ? 'border-[#fff848] bg-[#fff848]/10' : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className="text-sm font-semibold">Wij doen werk voor jou</div>
+                <div className="text-[11px] text-gray-500 mt-0.5">Jij geeft ons een opdracht voor een vast bedrag.</div>
+              </button>
+            </div>
+          </div>
+
           <div>
             <label className={lbl}>Titel *</label>
             <input
@@ -133,7 +164,7 @@ function SubmitWorkDialog({
               className={inp}
               value={form.title}
               onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
-              placeholder="Bijv. Fotoshoot productlijn december"
+              placeholder={dealType === 'commission' ? 'Bijv. Bakkerij Janssens — social media' : 'Bijv. Fotoshoot productlijn december'}
             />
           </div>
           <div>
@@ -155,82 +186,82 @@ function SubmitWorkDialog({
             </select>
           </div>
 
-          {/* Budget */}
-          <div className="space-y-3">
-            <label className={lbl}>Vergoeding</label>
-            <div className="flex gap-2">
-              {(['fixed', 'hourly'] as const).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setForm((p) => ({ ...p, budget_type: t }))}
-                  className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-colors ${
-                    form.budget_type === t
-                      ? 'border-[#fff848] bg-[#fff848]/10 text-black'
-                      : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                  }`}
-                >
-                  {t === 'fixed' ? 'Vast bedrag' : 'Op uren'}
-                </button>
-              ))}
+          {/* Commission: no amount — admin fills contract value later */}
+          {dealType === 'commission' ? (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-sm text-blue-700">
+              Je brengt een klant aan. NextGenMedia bepaalt na het tekenen de contractwaarde
+              en jij ontvangt commissie per actief jaar van die klant (standaard 10% / 8% / 5%).
             </div>
+          ) : (
+            <>
+              {/* Budget — only for fixed proposals */}
+              <div className="space-y-3">
+                <label className={lbl}>Vergoeding</label>
+                <div className="flex gap-2">
+                  {(['fixed', 'hourly'] as const).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setForm((p) => ({ ...p, budget_type: t }))}
+                      className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                        form.budget_type === t
+                          ? 'border-[#fff848] bg-[#fff848]/10 text-black'
+                          : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                      }`}
+                    >
+                      {t === 'fixed' ? 'Vast bedrag' : 'Op uren'}
+                    </button>
+                  ))}
+                </div>
 
-            {form.budget_type === 'fixed' ? (
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Bedrag (€)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  className={inp}
-                  value={form.proposed_budget}
-                  onChange={(e) => setForm((p) => ({ ...p, proposed_budget: e.target.value }))}
-                  placeholder="500"
-                />
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Aantal uren</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.5"
-                    className={inp}
-                    value={form.proposed_hours}
-                    onChange={(e) => setForm((p) => ({ ...p, proposed_hours: e.target.value }))}
-                    placeholder="8"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Uurtarief (€)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    className={`${inp} bg-gray-50`}
-                    value={hourlyRate ?? ''}
-                    readOnly
-                    placeholder={hourlyRate ? String(hourlyRate) : 'Niet ingesteld'}
-                  />
-                </div>
-                {computedBudget != null && (
-                  <div className="col-span-2 text-sm font-semibold text-green-700 bg-green-50 rounded-lg px-3 py-2">
-                    Totaal: {formatEuro(computedBudget)}
+                {form.budget_type === 'fixed' ? (
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Bedrag (€)</label>
+                    <input
+                      type="number" min="0" step="0.01" className={inp}
+                      value={form.proposed_budget}
+                      onChange={(e) => setForm((p) => ({ ...p, proposed_budget: e.target.value }))}
+                      placeholder="500"
+                    />
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Aantal uren</label>
+                      <input
+                        type="number" min="0" step="0.5" className={inp}
+                        value={form.proposed_hours}
+                        onChange={(e) => setForm((p) => ({ ...p, proposed_hours: e.target.value }))}
+                        placeholder="8"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Uurtarief (€)</label>
+                      <input
+                        type="number" min="0" className={`${inp} bg-gray-50`}
+                        value={hourlyRate ?? ''} readOnly
+                        placeholder={hourlyRate ? String(hourlyRate) : 'Niet ingesteld'}
+                      />
+                    </div>
+                    {computedBudget != null && (
+                      <div className="col-span-2 text-sm font-semibold text-green-700 bg-green-50 rounded-lg px-3 py-2">
+                        Totaal: {formatEuro(computedBudget)}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-            )}
-          </div>
 
-          <div>
-            <label className={lbl}>Gewenste deadline</label>
-            <input
-              type="date"
-              className={inp}
-              value={form.deadline}
-              onChange={(e) => setForm((p) => ({ ...p, deadline: e.target.value }))}
-            />
-          </div>
+              <div>
+                <label className={lbl}>Gewenste deadline</label>
+                <input
+                  type="date" className={inp}
+                  value={form.deadline}
+                  onChange={(e) => setForm((p) => ({ ...p, deadline: e.target.value }))}
+                />
+              </div>
+            </>
+          )}
 
           {error && (
             <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
