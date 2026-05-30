@@ -32,8 +32,8 @@ export default async function PortalLayout({ children }: { children: React.React
         companyName={client?.company_name ?? 'Klantenportaal'}
         activeServices={activeServices}
       />
-      <main className="flex-1 ml-[var(--sidebar-width)] min-h-screen">
-        <div className="max-w-[1200px] mx-auto p-6 lg:p-8">
+      <main className="flex-1 md:ml-[var(--sidebar-width)] min-h-screen">
+        <div className="max-w-[1200px] mx-auto px-4 pt-16 pb-8 md:pt-6 md:px-6 lg:px-8">
           {children}
         </div>
       </main>

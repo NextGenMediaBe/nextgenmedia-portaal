@@ -92,7 +92,7 @@ export default function NewContractPage() {
           </select>
           <p className="text-xs text-gray-400 mt-1">Als dit contract getekend wordt, kan de admin portaaltoegang verlenen voor deze dienst.</p>
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className={lbl}>Naam ondertekenaar</label>
             <input className={inp} value={form.signer_name} onChange={(e) => setForm((p) => ({ ...p, signer_name: e.target.value }))} placeholder="Jan Janssen" />

@@ -81,13 +81,13 @@ export default async function ContractDetailPage({ params }: { params: { id: str
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center gap-3">
-        <Link href="/admin/contracts" className="btn-secondary px-2">
+      <div className="flex items-start gap-3 flex-wrap">
+        <Link href="/admin/contracts" className="btn-secondary px-2 shrink-0">
           <ChevronLeft className="h-4 w-4" />
         </Link>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3 mb-1">
-            <h1 className="text-2xl font-bold truncate">{c.title}</h1>
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            <h1 className="text-xl sm:text-2xl font-bold truncate">{c.title}</h1>
             <span className={`status-badge ${style.cls}`}>{style.label}</span>
           </div>
           {clientId && clientName && (
@@ -96,28 +96,30 @@ export default async function ContractDetailPage({ params }: { params: { id: str
             </Link>
           )}
         </div>
-        {/* Setup signature zone — only for unsigned contracts */}
-        {!isSigned && (
-          <Link
-            href={`/admin/contracts/${c.id}/setup`}
-            className="btn-secondary flex items-center gap-2"
-          >
-            <Settings2 className="h-4 w-4" />
-            Handtekeningzone
-          </Link>
-        )}
-        {/* Download signed PDF — only when signed */}
-        {isSigned && signedPdfUrl && (
-          <a
-            href={signedPdfUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="btn-primary flex items-center gap-2"
-          >
-            <Download className="h-4 w-4" />
-            Getekend contract
-          </a>
-        )}
+        <div className="flex items-center gap-2 flex-wrap shrink-0">
+          {!isSigned && (
+            <Link
+              href={`/admin/contracts/${c.id}/setup`}
+              className="btn-secondary flex items-center gap-2 text-sm"
+            >
+              <Settings2 className="h-4 w-4" />
+              <span className="hidden sm:inline">Handtekeningzone</span>
+              <span className="sm:hidden">Zone</span>
+            </Link>
+          )}
+          {isSigned && signedPdfUrl && (
+            <a
+              href={signedPdfUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="btn-primary flex items-center gap-2 text-sm"
+            >
+              <Download className="h-4 w-4" />
+              <span className="hidden sm:inline">Getekend contract</span>
+              <span className="sm:hidden">Download</span>
+            </a>
+          )}
+        </div>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
@@ -149,7 +151,8 @@ export default async function ContractDetailPage({ params }: { params: { id: str
             <iframe
               src={displayPdfUrl}
               title="Contract"
-              className="w-full h-[70vh] bg-gray-50"
+              className="w-full bg-gray-50"
+              style={{ height: 'min(70vh, 600px)' }}
             />
           ) : (
             <div className="flex items-center justify-center h-[400px] text-gray-400">

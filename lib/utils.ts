@@ -38,6 +38,42 @@ export function daysUntil(dateStr: string | null | undefined): number | null {
   return Math.ceil(diff / 86400000)
 }
 
+// ── Partner commission helpers ──────────────────────────────────────────────
+// Commission depends on how long the REFERRED client/job has been active,
+// not on how long the person has been a partner. Year is 1-based.
+
+export type CommissionDeal = {
+  contract_value: number
+  start_date: string
+  pct_year_1: number
+  pct_year_2: number
+  pct_year_3: number
+}
+
+/** Which contract year a given date falls in, relative to the deal start (1-based). */
+export function commissionYearForDate(startDate: string, when: Date = new Date()): number {
+  const start = new Date(startDate + 'T00:00:00')
+  let years = when.getFullYear() - start.getFullYear()
+  // Has this year's anniversary passed yet?
+  const anniv = new Date(start)
+  anniv.setFullYear(start.getFullYear() + years)
+  if (when < anniv) years -= 1
+  return Math.max(1, years + 1)
+}
+
+/** Commission % for a given (1-based) contract year. Year 4+ keeps year-3 rate. */
+export function commissionPctForYear(deal: Pick<CommissionDeal, 'pct_year_1' | 'pct_year_2' | 'pct_year_3'>, year: number): number {
+  if (year <= 1) return Number(deal.pct_year_1)
+  if (year === 2) return Number(deal.pct_year_2)
+  return Number(deal.pct_year_3)
+}
+
+/** Commission amount owed for a given contract year. */
+export function commissionAmountForYear(deal: CommissionDeal, year: number): number {
+  const pct = commissionPctForYear(deal, year)
+  return Math.round((Number(deal.contract_value) * pct) / 100 * 100) / 100
+}
+
 export function ymd(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')

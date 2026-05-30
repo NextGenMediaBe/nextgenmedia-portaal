@@ -142,7 +142,7 @@ export default function NewClientPage() {
         {/* Bedrijfsgegevens */}
         <div className="card-base space-y-4">
           <h2 className="font-semibold text-gray-900">Bedrijfsgegevens</h2>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className={lbl}>Bedrijfsnaam *</label>
               <input required className={inp} value={form.company_name}
@@ -154,7 +154,7 @@ export default function NewClientPage() {
                 onChange={e => setForm(p => ({ ...p, contact_name: e.target.value }))} placeholder="Jan Janssen" />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className={lbl}>Niche</label>
               <input className={inp} value={form.niche}
@@ -171,7 +171,7 @@ export default function NewClientPage() {
         {/* Accounttoegang */}
         <div className="card-base space-y-4">
           <h2 className="font-semibold text-gray-900">Accounttoegang</h2>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className={lbl}>E-mailadres *</label>
               <input required type="email" className={inp} value={form.email}
@@ -228,7 +228,7 @@ export default function NewClientPage() {
                     </div>
 
                     {/* Startmaand + Duur */}
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className={lbl}>Startmaand</label>
                         <input
@@ -264,7 +264,7 @@ export default function NewClientPage() {
                     {/* Social Media settings */}
                     {slug === 'social-media' && (
                       <div className="space-y-3 border-t border-gray-100 pt-3">
-                        <div className="grid grid-cols-3 gap-3">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                           <div>
                             <label className={lbl}>Posts/maand</label>
                             <input type="number" min="0" max="60" className={inp} value={form.posts_per_month}

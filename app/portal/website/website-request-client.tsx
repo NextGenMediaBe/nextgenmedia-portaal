@@ -122,7 +122,7 @@ export function WebsiteRequestClient({
       {/* Create form modal */}
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between p-5 border-b border-gray-100">
               <h3 className="font-semibold">Nieuwe aanvraag</h3>
               <button onClick={() => setShowForm(false)} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-gray-100">

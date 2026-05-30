@@ -125,7 +125,7 @@ export function ClientEditForm({
       {/* Basic info */}
       <div className="space-y-3">
         <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Bedrijfsgegevens</h3>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className={lbl}>Bedrijfsnaam</label>
             <input className={inp} value={form.company_name} onChange={e => setForm(p => ({ ...p, company_name: e.target.value }))} />
@@ -170,7 +170,7 @@ export function ClientEditForm({
       {hasSocial && (
         <div className="space-y-3 border-t border-gray-100 pt-3">
           <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Social Media instellingen</h3>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <div>
               <label className={lbl}>Posts/maand</label>
               <input type="number" min="0" max="60" className={inp} value={posts} onChange={e => setPosts(e.target.value)} />

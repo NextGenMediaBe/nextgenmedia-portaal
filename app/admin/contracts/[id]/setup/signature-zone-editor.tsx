@@ -88,7 +88,7 @@ export function SignatureZoneEditor({
             <p className="text-xs text-gray-400 mt-1">Pagina waar de handtekening geplaatst wordt</p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className={lbl}>X-positie (% van links)</label>
               <input
@@ -107,7 +107,7 @@ export function SignatureZoneEditor({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className={lbl}>Breedte (punten)</label>
               <input
