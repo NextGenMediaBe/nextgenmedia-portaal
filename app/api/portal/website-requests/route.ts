@@ -127,3 +127,110 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
   }
 }
+
+// Verify the logged-in user owns the request AND it's still editable (status 'new').
+async function loadEditableRequest(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  admin: any, supabase: Awaited<ReturnType<typeof createClient>>, userId: string, id: string,
+): Promise<{ ok: true; request: { id: string; status: string; image_paths?: string[] | null } } | { ok: false; status: number; error: string }> {
+  // Which clients does this user own?
+  const { data: clients } = await supabase.from('clients').select('id').eq('owner_user_id', userId)
+  const clientIds = (clients ?? []).map((c: { id: string }) => c.id)
+  if (clientIds.length === 0) return { ok: false, status: 403, error: 'Geen toegang' }
+
+  const { data: request } = await admin
+    .from('webdesign_change_requests')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle()
+
+  if (!request) return { ok: false, status: 404, error: 'Aanvraag niet gevonden' }
+  if (!clientIds.includes(request.client_id)) return { ok: false, status: 403, error: 'Geen toegang' }
+  if (request.status !== 'new') {
+    return { ok: false, status: 409, error: 'Deze aanvraag is al in behandeling genomen en kan niet meer gewijzigd worden.' }
+  }
+  return { ok: true, request }
+}
+
+// PATCH — client edits their own request while it's still 'new'
+export async function PATCH(req: NextRequest) {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Niet ingelogd' }, { status: 401 })
+
+    const { id, title, description, kind } = await req.json()
+    if (!id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })
+    if (title !== undefined && !String(title).trim()) {
+      return NextResponse.json({ error: 'Titel is verplicht' }, { status: 400 })
+    }
+
+    const admin = createAdminSupabaseClient()
+    const check = await loadEditableRequest(admin, supabase, user.id, id)
+    if (!check.ok) return NextResponse.json({ error: check.error }, { status: check.status })
+
+    // Keep the friendly kind in description prefix + categories (same as POST).
+    const friendlyKind = kind || 'other'
+    const descriptionWithKind = description?.trim()
+      ? `[${friendlyKind}] ${description.trim()}`
+      : `[${friendlyKind}]`
+
+    const patch: Record<string, unknown> = {}
+    if (title !== undefined) patch.title = String(title).trim()
+    if (description !== undefined || kind !== undefined) {
+      patch.description = descriptionWithKind
+      patch.categories = [friendlyKind]
+    }
+
+    // Resilient update: drop categories if the column doesn't exist.
+    let { error } = await admin.from('webdesign_change_requests').update(patch).eq('id', id)
+    if (error && RETRIABLE_ERR_CODES.has((error as { code?: string }).code ?? '')) {
+      delete patch.categories
+      ;({ error } = await admin.from('webdesign_change_requests').update(patch).eq('id', id))
+    }
+    if (error) throw new Error(error.message)
+
+    try {
+      revalidatePath('/portal/website')
+      revalidatePath('/admin/services/website')
+    } catch { }
+
+    return NextResponse.json({ ok: true })
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+  }
+}
+
+// DELETE — client removes their own request while it's still 'new'
+export async function DELETE(req: NextRequest) {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Niet ingelogd' }, { status: 401 })
+
+    const id = req.nextUrl.searchParams.get('id')
+    if (!id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })
+
+    const admin = createAdminSupabaseClient()
+    const check = await loadEditableRequest(admin, supabase, user.id, id)
+    if (!check.ok) return NextResponse.json({ error: check.error }, { status: check.status })
+
+    // Clean up any uploaded images (best effort)
+    const paths: string[] = Array.isArray(check.request.image_paths) ? check.request.image_paths : []
+    if (paths.length > 0) {
+      try { await admin.storage.from(STORAGE_BUCKET).remove(paths) } catch { }
+    }
+
+    const { error } = await admin.from('webdesign_change_requests').delete().eq('id', id)
+    if (error) throw new Error(error.message)
+
+    try {
+      revalidatePath('/portal/website')
+      revalidatePath('/admin/services/website')
+    } catch { }
+
+    return NextResponse.json({ ok: true })
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+  }
+}

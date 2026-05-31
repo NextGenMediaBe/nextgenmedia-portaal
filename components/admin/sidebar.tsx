@@ -8,7 +8,8 @@ import {
   LayoutDashboard, Users, FileText, UserSquare2, ArrowLeftRight, TrendingUp,
   LogOut, ChevronDown, Globe, Calendar, Briefcase, RefreshCcw, Menu, X,
 } from 'lucide-react'
-import { useState, useTransition } from 'react'
+import { useState } from 'react'
+import { useRefresh } from '@/lib/use-refresh'
 
 const NAV = [
   { label: 'Command Center', href: '/admin', icon: LayoutDashboard, exact: true },
@@ -89,7 +90,7 @@ function NavItem({
 
 export function AdminSidebar() {
   const router = useRouter()
-  const [isPending, startTransition] = useTransition()
+  const { refresh, spinning } = useRefresh()
   const [mobileOpen, setMobileOpen] = useState(false)
 
   const handleLogout = async () => {
@@ -98,7 +99,6 @@ export function AdminSidebar() {
     router.replace('/login')
   }
 
-  const handleRefresh = () => startTransition(() => router.refresh())
   const closeMobile = () => setMobileOpen(false)
 
   return (
@@ -139,13 +139,14 @@ export function AdminSidebar() {
               <div className="text-sm font-bold text-black leading-tight">NextGenMedia</div>
               <div className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">Admin</div>
             </div>
-            {/* Refresh (desktop) */}
+            {/* Refresh */}
             <button
-              onClick={handleRefresh}
+              onClick={refresh}
+              disabled={spinning}
               title="Pagina vernieuwen"
-              className="hidden md:flex h-7 w-7 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+              className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
             >
-              <RefreshCcw className={cn('h-3.5 w-3.5', isPending && 'animate-spin')} />
+              <RefreshCcw className={cn('h-3.5 w-3.5', spinning && 'animate-spin')} />
             </button>
             {/* Close (mobile) */}
             <button

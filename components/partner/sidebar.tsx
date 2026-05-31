@@ -5,7 +5,8 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
-import { LayoutDashboard, Briefcase, ArrowLeftRight, LogOut, Menu, X } from 'lucide-react'
+import { useRefresh } from '@/lib/use-refresh'
+import { LayoutDashboard, Briefcase, ArrowLeftRight, LogOut, Menu, X, RefreshCcw } from 'lucide-react'
 
 const NAV = [
   { label: 'Dashboard',   href: '/partner',              icon: LayoutDashboard, exact: true },
@@ -16,6 +17,7 @@ const NAV = [
 export function PartnerSidebar({ partnerName }: { partnerName: string }) {
   const pathname = usePathname()
   const router = useRouter()
+  const { refresh, spinning } = useRefresh()
   const [mobileOpen, setMobileOpen] = useState(false)
 
   const handleLogout = async () => {
@@ -63,6 +65,16 @@ export function PartnerSidebar({ partnerName }: { partnerName: string }) {
               <div className="text-sm font-bold text-black leading-tight truncate">{partnerName}</div>
               <div className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">Partnerportaal</div>
             </div>
+            {/* Refresh */}
+            <button
+              onClick={refresh}
+              disabled={spinning}
+              title="Pagina vernieuwen"
+              className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+            >
+              <RefreshCcw className={cn('h-3.5 w-3.5', spinning && 'animate-spin')} />
+            </button>
+            {/* Close (mobile) */}
             <button
               onClick={closeMobile}
               className="md:hidden h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100"
