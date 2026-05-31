@@ -2,6 +2,7 @@ import { createAdminSupabaseClient, trySignedUrl } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import { FileText, CheckCircle2 } from 'lucide-react'
 import { SignatureForm } from './signature-form'
+import { Logo } from '@/components/logo'
 
 export default async function SignContractPage({ params }: { params: { token: string } }) {
   const admin = createAdminSupabaseClient()
@@ -44,9 +45,7 @@ export default async function SignContractPage({ params }: { params: { token: st
       {/* Header */}
       <header className="bg-white border-b border-gray-200 px-4 py-4 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-3">
-          <div className="h-8 w-8 rounded-lg bg-[#fff848] flex items-center justify-center">
-            <span className="font-bold text-black text-xs">NG</span>
-          </div>
+          <Logo className="h-8 w-8" />
           <span className="font-bold text-sm">NextGenMedia</span>
         </div>
         <span className="text-xs text-gray-400 hidden sm:block">Contractondertekening</span>

@@ -47,7 +47,10 @@
       "Bash(git reset *)",
       "Bash(git commit -q -m ' *)",
       "Bash(git rev-list *)",
-      "Bash(grep -rhoE \"fetch\\\\\\(['\\\\`]/api/[^'\\\\`?]+\" app/ --include=\"*.tsx\")"
+      "Bash(grep -rhoE \"fetch\\\\\\(['\\\\`]/api/[^'\\\\`?]+\" app/ --include=\"*.tsx\")",
+      "Bash(cd \"C:\\\\Users\\\\12401776\\\\Downloads\\\\NextGenMedia Content-Portal \\(1\\)\" && ls public/ 2>/dev/null && echo \"---downloads---\" && ls ~/Downloads/*.png ~/Downloads/*.jpg ~/Downloads/*.jpeg 2>/dev/null | head)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(cd \"C:\\\\Users\\\\12401776\\\\Downloads\\\\NextGenMedia Content-Portal \\(1\\)\" && cp \"/c/Users/12401776/Downloads/logo.png\" public/logo.png && ls -la public/ && echo \"gekopieerd\")"
     ]
   }
 }

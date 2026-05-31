@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { useRefresh } from '@/lib/use-refresh'
+import { Logo } from '@/components/logo'
 import { LayoutDashboard, Briefcase, ArrowLeftRight, LogOut, Menu, X, RefreshCcw } from 'lucide-react'
 
 const NAV = [
@@ -58,9 +59,7 @@ export function PartnerSidebar({ partnerName }: { partnerName: string }) {
       >
         <div className="px-4 py-5 border-b border-gray-100">
           <div className="flex items-center gap-3">
-            <div className="h-8 w-8 rounded-lg bg-gray-900 flex items-center justify-center shrink-0">
-              <span className="font-bold text-white text-xs">P</span>
-            </div>
+            <Logo className="h-8 w-8 shrink-0" />
             <div className="min-w-0 flex-1">
               <div className="text-sm font-bold text-black leading-tight truncate">{partnerName}</div>
               <div className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">Partnerportaal</div>
