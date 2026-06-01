@@ -106,6 +106,26 @@ export function commissionAmountForYear(deal: CommissionDeal, year: number): num
   return Math.round((Number(deal.contract_value) * pct) / 100 * 100) / 100
 }
 
+// ── Per-sale commission (the real NextGenMedia model) ────────────────────────
+// A referral = partner + client + first-referral date + the 3 yearly %s.
+// EACH individual sale to that client earns commission at the rate of the year
+// (relative to the referral date) in which the sale happened.
+
+export type ReferralPercents = { pct_year_1: number; pct_year_2: number; pct_year_3: number }
+
+/** Compute the commission for a single sale to a referred client. */
+export function commissionForSale(
+  referral: ReferralPercents & { referred_at: string },
+  saleAmount: number,
+  saleDate: string | Date = new Date(),
+): { year: number; pct: number; amount: number } {
+  const when = typeof saleDate === 'string' ? new Date(saleDate.slice(0, 10) + 'T00:00:00') : saleDate
+  const year = commissionYearForDate(referral.referred_at, when)
+  const pct = commissionPctForYear(referral, year)
+  const amount = Math.round((Number(saleAmount) * pct) / 100 * 100) / 100
+  return { year, pct, amount }
+}
+
 export function ymd(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')

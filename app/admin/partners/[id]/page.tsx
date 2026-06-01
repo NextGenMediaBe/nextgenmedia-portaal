@@ -51,6 +51,7 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
     { data: ledgerRows },
     { data: settlementRows },
     { data: commissionRows },
+    { data: salesRows },
   ] = await Promise.all([
     admin.from('freelancer_assignments')
       .select('*')
@@ -71,6 +72,10 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
       .select('*')
       .eq('freelancer_id', id)
       .order('created_at', { ascending: false }),
+    admin.from('partner_commission_sales')
+      .select('*')
+      .eq('freelancer_id', id)
+      .order('sale_date', { ascending: false }),
   ])
 
   const clientMap = new Map((clientRows ?? []).map((c) => [c.id, c]))
@@ -92,6 +97,11 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
     contract_value: number; start_date: string; pct_year_1: number; pct_year_2: number; pct_year_3: number;
     status: string; notes: string | null; created_at: string;
   }>
+  const commissionSales = (salesRows ?? []) as Array<{
+    id: string; deal_id: string; service_slug: string | null; description: string | null;
+    sale_amount: number; sale_date: string; commission_year: number; commission_pct: number;
+    commission_amount: number; ledger_id: string | null;
+  }>
   const settlements = (settlementRows ?? []) as Array<{
     id: string; period_start: string; period_end: string; net_amount: number; status: string; notes: string | null; finalized_at: string | null; paid_at: string | null;
   }>
@@ -111,12 +121,10 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
     .reduce((s, l) => s + Math.abs(l.amount), 0)
   const netPending = pendingOwedToPartner - pendingOwedByPartner
 
-  // Which commission years already have a generated ledger entry, per deal
-  const generatedByDeal: Record<string, Set<number>> = {}
-  for (const l of ledger) {
-    if (l.commission_deal_id && l.commission_year) {
-      ;(generatedByDeal[l.commission_deal_id] ??= new Set()).add(l.commission_year)
-    }
+  // Group sales per referral deal
+  const salesByDeal: Record<string, typeof commissionSales> = {}
+  for (const s of commissionSales) {
+    ;(salesByDeal[s.deal_id] ??= []).push(s)
   }
 
   return (
@@ -254,7 +262,7 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
           customer_since: (c.customer_since ?? c.created_at ?? null) as string | null,
         }))}
         deals={commissionDeals}
-        generated={generatedByDeal}
+        salesByDeal={salesByDeal}
       />
 
       {/* Ledger actions (Client Component) */}

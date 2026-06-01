@@ -229,5 +229,47 @@ BEGIN
   CREATE TRIGGER trg_commission_deals_updated    BEFORE UPDATE ON public.partner_commission_deals    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 EXCEPTION WHEN others THEN NULL; END $$;
 
+-- ── partner_commission_deals: referral now works without an upfront value ─────
+-- A commission deal = a REFERRAL relationship (partner + client + referred_at +
+-- the 3 yearly %s). Individual sales live in partner_commission_sales below, so
+-- contract_value is no longer required.
+DO $$
+BEGIN
+  ALTER TABLE public.partner_commission_deals ALTER COLUMN contract_value DROP NOT NULL;
+  ALTER TABLE public.partner_commission_deals ALTER COLUMN contract_value SET DEFAULT 0;
+EXCEPTION WHEN undefined_column THEN NULL; END $$;
+
+-- ── partner_commission_sales: one row per sale to a referred client ───────────
+-- Each sale earns commission at the rate of the referral year it falls in.
+CREATE TABLE IF NOT EXISTS public.partner_commission_sales (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  deal_id       uuid NOT NULL REFERENCES public.partner_commission_deals(id) ON DELETE CASCADE,
+  freelancer_id uuid NOT NULL REFERENCES public.freelancers(id) ON DELETE CASCADE,
+  service_slug  text,
+  description   text,
+  sale_amount   numeric NOT NULL,
+  sale_date     date NOT NULL DEFAULT CURRENT_DATE,
+  commission_year integer NOT NULL,
+  commission_pct  numeric NOT NULL,
+  commission_amount numeric NOT NULL,
+  ledger_id     uuid,          -- the generated partner_ledger_entries row
+  created_by    uuid,
+  created_at    timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_commission_sales_deal ON public.partner_commission_sales(deal_id);
+CREATE INDEX IF NOT EXISTS idx_commission_sales_freelancer ON public.partner_commission_sales(freelancer_id);
+
+ALTER TABLE public.partner_commission_sales ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "commission sales admin all"    ON public.partner_commission_sales;
+DROP POLICY IF EXISTS "commission sales partner read" ON public.partner_commission_sales;
+CREATE POLICY "commission sales admin all" ON public.partner_commission_sales
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+CREATE POLICY "commission sales partner read" ON public.partner_commission_sales
+  FOR SELECT TO authenticated
+  USING (freelancer_id IN (SELECT id FROM public.freelancers WHERE user_id = auth.uid()));
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.
