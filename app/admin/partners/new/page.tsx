@@ -156,7 +156,7 @@ export default function NewPartnerPage() {
           <h2 className="font-semibold">Expertise & tarieven</h2>
           <div>
             <label className={lbl}>Rollen / expertise *</label>
-            <div className="grid grid-cols-4 gap-2 mt-1">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-1">
               {ROLES.map((r) => (
                 <button
                   key={r.slug}

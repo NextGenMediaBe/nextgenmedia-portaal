@@ -94,6 +94,12 @@
 
 /* ── Mobile responsive helpers ─────────────────────────────────────────────── */
 
+/* Media can never exceed its container — prevents accidental horizontal overflow
+   from images/SVG/canvas/video on small screens. */
+img, svg, video, canvas {
+  max-width: 100%;
+}
+
 /* All modals: constrain height + scroll on small screens.
    Apply to every modal's inner panel (the white rounded box). */
 .modal-panel {
