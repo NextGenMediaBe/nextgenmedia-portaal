@@ -9,13 +9,6 @@ import { PartnerLedger } from './partner-ledger'
 import { PartnerActions } from './partner-actions'
 import { CommissionDeals } from './commission-deals'
 
-/** Commission tier based on months since partnership start */
-function getCommissionTier(createdAt: string): { pct: number; label: string; year: number } {
-  const months = (Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24 * 30.44)
-  if (months < 12) return { pct: 10, label: 'Jaar 1', year: 1 }
-  if (months < 24) return { pct: 8,  label: 'Jaar 2', year: 2 }
-  return               { pct: 5,  label: 'Jaar 3+', year: 3 }
-}
 
 const STATUS_STYLE: Record<string, string> = {
   open: 'bg-blue-100 text-blue-700',
@@ -80,7 +73,6 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
       .order('created_at', { ascending: false }),
   ])
 
-  const tier = getCommissionTier(partner.created_at)
   const clientMap = new Map((clientRows ?? []).map((c) => [c.id, c]))
   const all = (assignmentRows ?? []).map((a) => ({
     ...a,
@@ -268,7 +260,6 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
       {/* Ledger actions (Client Component) */}
       <PartnerLedger
         partnerId={id}
-        commissionPct={tier.pct}
         clients={(clientRows ?? []).map(c => ({ id: c.id, company_name: c.company_name }))}
       />
 

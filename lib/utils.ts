@@ -38,6 +38,36 @@ export function daysUntil(dateStr: string | null | undefined): number | null {
   return Math.ceil(diff / 86400000)
 }
 
+// ── Assignment origin + settlement direction ────────────────────────────────
+// Works even when the `origin` / `deal_type` columns don't exist yet (pre-migration)
+// by falling back to a heuristic on the assignment's shape.
+
+export type AssignmentLike = {
+  origin?: string | null
+  deal_type?: string | null
+  client_id?: string | null
+  freelancer_id?: string | null
+  roles?: string[] | null
+}
+
+/** 'admin'  = NextGenMedia gave the work to the partner (we subcontract to them).
+ *  'partner'= the partner brought the work to NextGenMedia (inbound proposal). */
+export function inferAssignmentOrigin(a: AssignmentLike): 'admin' | 'partner' {
+  if (a.origin === 'partner' || a.origin === 'admin') return a.origin
+  // Heuristic: a partner proposal has a freelancer, no client, and no roles set.
+  const noRoles = !a.roles || a.roles.length === 0
+  if (a.freelancer_id && !a.client_id && noRoles) return 'partner'
+  return 'admin'
+}
+
+/** Settlement direction when a fixed-price assignment is completed:
+ *   admin → partner   = we subcontract to them   → we_pay_partner
+ *   partner → us      = they gave us paid work    → partner_pays_us
+ * Commission proposals never produce an automatic full-amount entry. */
+export function settlementDirectionForAssignment(a: AssignmentLike): 'we_pay_partner' | 'partner_pays_us' {
+  return inferAssignmentOrigin(a) === 'partner' ? 'partner_pays_us' : 'we_pay_partner'
+}
+
 // ── Partner commission helpers ──────────────────────────────────────────────
 // Commission depends on how long the REFERRED client/job has been active,
 // not on how long the person has been a partner. Year is 1-based.

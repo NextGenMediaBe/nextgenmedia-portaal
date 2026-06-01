@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient, insertResilient } from '@/lib/supabase/server'
+import { inferAssignmentOrigin } from '@/lib/utils'
 import { revalidatePath } from 'next/cache'
 
 // POST — partner creates a new inbound assignment proposal for NextGenMedia
@@ -110,18 +111,6 @@ export async function POST(req: NextRequest) {
 
 const ALLOWED_STATUSES = new Set(['in_progress', 'completed', 'cancelled'])
 
-// Same heuristic the pages use when the `origin` column hasn't been migrated.
-function inferOrigin(a: {
-  origin?: string | null
-  client_id?: string | null
-  roles?: string[] | null
-}): 'admin' | 'partner' {
-  if (a.origin === 'partner' || a.origin === 'admin') return a.origin
-  const noRoles = !a.roles || a.roles.length === 0
-  if (!a.client_id && noRoles) return 'partner'
-  return 'admin'
-}
-
 export async function PATCH(req: NextRequest) {
   try {
     const supabase = await createClient()
@@ -151,7 +140,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Opdracht niet gevonden' }, { status: 404 })
     }
 
-    const origin = inferOrigin(existing)
+    const origin = inferAssignmentOrigin(existing)
     const current = existing.status as string
 
     // ── Authorization matrix ──────────────────────────────────────────────

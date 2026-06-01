@@ -55,7 +55,8 @@
       "Bash(node -e ' *)",
       "Bash(node -e \"console.log\\(require\\('sharp'\\)\\(\\).constructor.name\\)\")",
       "Bash(grep -rn \"addendum\" app/admin/contracts/[id]/page.tsx)",
-      "Bash(rm -rf \"app/admin/contracts/[id]/addendum\")"
+      "Bash(rm -rf \"app/admin/contracts/[id]/addendum\")",
+      "Bash(grep -iv \"comment\\\\|//\")"
     ]
   }
 }

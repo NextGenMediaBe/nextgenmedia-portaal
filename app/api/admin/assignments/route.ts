@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient, insertResilient } from '@/lib/supabase/server'
+import { inferAssignmentOrigin } from '@/lib/utils'
 import { revalidatePath } from 'next/cache'
 
 async function assertAdmin() {
@@ -113,7 +114,9 @@ export async function PATCH(req: NextRequest) {
         .maybeSingle()
 
       if (existing && existing.status !== 'completed' && existing.freelancer_id) {
-        const origin = existing.origin === 'partner' ? 'partner' : 'admin'
+        // Use the heuristic so direction is correct even before the
+        // origin/deal_type columns are migrated.
+        const origin = inferAssignmentOrigin(existing)
         const dealType = existing.deal_type === 'commission' ? 'commission' : 'fixed'
         const amount = Number(existing.payout ?? existing.budget ?? 0)
 
