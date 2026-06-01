@@ -53,7 +53,9 @@
       "Bash(cd \"C:\\\\Users\\\\12401776\\\\Downloads\\\\NextGenMedia Content-Portal \\(1\\)\" && cp \"/c/Users/12401776/Downloads/logo.png\" public/logo.png && ls -la public/ && echo \"gekopieerd\")",
       "Bash(node -e \"console.log\\(require\\('sharp'\\) ? 'sharp ok' : 'no'\\)\")",
       "Bash(node -e ' *)",
-      "Bash(node -e \"console.log\\(require\\('sharp'\\)\\(\\).constructor.name\\)\")"
+      "Bash(node -e \"console.log\\(require\\('sharp'\\)\\(\\).constructor.name\\)\")",
+      "Bash(grep -rn \"addendum\" app/admin/contracts/[id]/page.tsx)",
+      "Bash(rm -rf \"app/admin/contracts/[id]/addendum\")"
     ]
   }
 }

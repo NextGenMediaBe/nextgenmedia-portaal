@@ -179,27 +179,37 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: msg }, { status: 403 })
     }
 
-    // Auto-payout when an assignment is completed.
+    // Create the correct ledger entry on completion, based on direction:
+    //   received (admin → partner): we owe the partner (we_pay_partner)
+    //   proposed fixed (partner → us): the partner owes us (partner_pays_us)
+    //   proposed commission: handled via commission deals → no auto entry
     let didAutoPayout = false
     if (status === 'completed' && current !== 'completed') {
-      const payoutAmount = Number(existing.payout ?? existing.budget ?? 0)
-      if (payoutAmount > 0) {
+      const dealType = existing.deal_type === 'commission' ? 'commission' : 'fixed'
+      const amount = Number(existing.payout ?? existing.budget ?? 0)
+
+      if (dealType !== 'commission' && amount > 0) {
+        const partnerPaysUs = origin === 'partner'   // inbound fixed proposal
         const { error: ledgerErr } = await insertResilient(
           admin,
           'partner_ledger_entries',
           {
             freelancer_id: partner.id,
-            kind: 'payout_owed',
-            amount: payoutAmount,
+            kind: partnerPaysUs ? 'service_billed' : 'payout_owed',
+            direction: partnerPaysUs ? 'partner_pays_us' : 'we_pay_partner',
+            amount: partnerPaysUs ? -amount : amount,
             client_id: existing.client_id ?? null,
-            description: `Opdracht afgerond: ${existing.title}`,
+            assignment_id: existing.id,
+            description: partnerPaysUs
+              ? `Onderaanneming (partner betaalt ons): ${existing.title}`
+              : `Opdracht afgerond (wij betalen partner): ${existing.title}`,
             occurred_on: new Date().toISOString().slice(0, 10),
             status: 'pending',
           },
           { required: ['freelancer_id', 'amount'] },
         )
         if (!ledgerErr) didAutoPayout = true
-        else console.error('[partner/assignments] auto-payout failed:', ledgerErr.message)
+        else console.error('[partner/assignments] auto-ledger failed:', ledgerErr.message)
       }
     }
 

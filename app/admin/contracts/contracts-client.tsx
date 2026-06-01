@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Plus, FileText, CheckCircle2, Clock, Eye, ScrollText, Filter as FilterIcon, X } from 'lucide-react'
+import { Plus, FileText, CheckCircle2, Clock, Eye, Filter as FilterIcon, X } from 'lucide-react'
 import { formatDate, SERVICE_LABELS } from '@/lib/utils'
 
 type Contract = {
@@ -221,15 +221,6 @@ export function ContractsClient({
                           >
                             Signelink
                           </a>
-                        )}
-                        {c.status === 'signed' && (
-                          <Link
-                            href={`/admin/contracts/${c.id}/addendum`}
-                            className="text-xs text-green-600 hover:underline flex items-center gap-1"
-                          >
-                            <ScrollText className="h-3 w-3" />
-                            Addendum
-                          </Link>
                         )}
                       </div>
                     </td>

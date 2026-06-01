@@ -96,9 +96,14 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Geen wijzigingen' }, { status: 400 })
     }
 
-    // If marking completed, fetch the assignment first to potentially auto-create
-    // a partner ledger entry for the payout. select('*') so a missing column
-    // (e.g. payout on legacy schema) never makes this silently fail.
+    // When an assignment is completed, create the correct ledger entry based on
+    // its direction. select('*') so a missing column never makes this fail.
+    //
+    //  ┌ origin    ┌ deal_type   → ledger meaning
+    //  │ admin     │ (fixed)     → we hired the partner (subcontract): WE PAY PARTNER
+    //  │ partner   │ fixed       → partner gave US a job for a fixed price: PARTNER PAYS US
+    //  │ partner   │ commission  → referral; commission is handled via commission
+    //  │           │               deals (10/8/5%), so NO automatic ledger entry here
     let didAutoPayout = false
     if (patch.status === 'completed') {
       const { data: existing } = await admin
@@ -108,25 +113,34 @@ export async function PATCH(req: NextRequest) {
         .maybeSingle()
 
       if (existing && existing.status !== 'completed' && existing.freelancer_id) {
-        const payoutAmount = Number(existing.payout ?? existing.budget ?? 0)
-        if (payoutAmount > 0) {
-          // Best-effort ledger entry; partner_ledger_entries may not exist yet.
+        const origin = existing.origin === 'partner' ? 'partner' : 'admin'
+        const dealType = existing.deal_type === 'commission' ? 'commission' : 'fixed'
+        const amount = Number(existing.payout ?? existing.budget ?? 0)
+
+        // Commission proposals do NOT settle the full amount — skip.
+        if (dealType !== 'commission' && amount > 0) {
+          const partnerPaysUs = origin === 'partner'   // inbound fixed = partner owes us
           const { error: ledgerErr } = await insertResilient(
             admin,
             'partner_ledger_entries',
             {
               freelancer_id: existing.freelancer_id,
-              kind: 'payout_owed',
-              amount: payoutAmount,
+              kind: partnerPaysUs ? 'service_billed' : 'payout_owed',
+              direction: partnerPaysUs ? 'partner_pays_us' : 'we_pay_partner',
+              // amount sign mirrors direction: negative = partner owes us
+              amount: partnerPaysUs ? -amount : amount,
               client_id: existing.client_id ?? null,
-              description: `Opdracht afgerond: ${existing.title}`,
+              assignment_id: existing.id,
+              description: partnerPaysUs
+                ? `Onderaanneming (partner betaalt ons): ${existing.title}`
+                : `Opdracht afgerond (wij betalen partner): ${existing.title}`,
               occurred_on: new Date().toISOString().slice(0, 10),
               status: 'pending',
             },
             { required: ['freelancer_id', 'amount'] },
           )
           if (!ledgerErr) didAutoPayout = true
-          else console.error('[assignments] auto-payout ledger insert failed:', ledgerErr.message)
+          else console.error('[assignments] auto-ledger insert failed:', ledgerErr.message)
         }
       }
     }

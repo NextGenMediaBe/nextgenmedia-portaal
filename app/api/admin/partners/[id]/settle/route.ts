@@ -23,10 +23,11 @@ export async function POST(
 
     const admin = createAdminSupabaseClient()
 
-    // Fetch all pending ledger entries for this partner
+    // Fetch all pending ledger entries for this partner. select('*') so the
+    // direction column is included without breaking on older schemas.
     const { data: entries, error: fetchErr } = await admin
       .from('partner_ledger_entries')
-      .select('id, amount, occurred_on')
+      .select('*')
       .eq('freelancer_id', id)
       .eq('status', 'pending')
 
@@ -36,9 +37,18 @@ export async function POST(
       return NextResponse.json({ error: 'Geen openstaande items om af te rekenen' }, { status: 400 })
     }
 
-    // Calculate totals (positive entries = owed to partner, negative = partner owes us)
-    const totalOwedToPartner = entries.filter((e) => Number(e.amount) > 0).reduce((s, e) => s + Number(e.amount), 0)
-    const totalOwedByPartner = entries.filter((e) => Number(e.amount) < 0).reduce((s, e) => s + Math.abs(Number(e.amount)), 0)
+    // Direction is explicit when present, else inferred from the amount sign.
+    const dirOf = (e: { direction?: string | null; amount: number }) =>
+      e.direction === 'partner_pays_us' || e.direction === 'we_pay_partner'
+        ? e.direction
+        : (Number(e.amount) >= 0 ? 'we_pay_partner' : 'partner_pays_us')
+
+    const totalOwedToPartner = entries
+      .filter((e) => dirOf(e) === 'we_pay_partner')
+      .reduce((s, e) => s + Math.abs(Number(e.amount)), 0)
+    const totalOwedByPartner = entries
+      .filter((e) => dirOf(e) === 'partner_pays_us')
+      .reduce((s, e) => s + Math.abs(Number(e.amount)), 0)
     const netAmount = totalOwedToPartner - totalOwedByPartner
 
     // Determine period from occurred_on dates
