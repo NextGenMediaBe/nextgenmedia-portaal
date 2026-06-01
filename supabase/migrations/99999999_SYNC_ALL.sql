@@ -246,6 +246,13 @@ BEGIN
   ALTER TABLE public.partner_commission_deals ALTER COLUMN contract_value SET DEFAULT 0;
 EXCEPTION WHEN undefined_column THEN NULL; END $$;
 
+-- Commissie-RICHTING van een doorverwijzing:
+--   'we_pay_partner'  = partner verwees klant NAAR ons  → WIJ betalen partner   (scenario 1)
+--   'partner_pays_us' = WIJ verwezen klant naar partner → PARTNER betaalt ons   (scenario 2)
+-- Onderaanneming (vast bedrag) loopt NIET via deze tabel en levert nooit commissie op.
+ALTER TABLE public.partner_commission_deals
+  ADD COLUMN IF NOT EXISTS direction text NOT NULL DEFAULT 'we_pay_partner';
+
 -- ── partner_commission_sales: one row per sale to a referred client ───────────
 -- Each sale earns commission at the rate of the referral year it falls in.
 CREATE TABLE IF NOT EXISTS public.partner_commission_sales (

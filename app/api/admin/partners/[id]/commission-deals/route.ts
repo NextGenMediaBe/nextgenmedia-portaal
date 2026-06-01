@@ -20,6 +20,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ error: 'Kies een klant of geef een naam/label op' }, { status: 400 })
     }
 
+    // direction: 'we_pay_partner' (partner verwees klant naar ons) of
+    //            'partner_pays_us' (wij verwezen klant naar partner).
+    const direction = body.direction === 'partner_pays_us' ? 'partner_pays_us' : 'we_pay_partner'
+
     const admin = createAdminSupabaseClient()
     const { data, error } = await insertResilient(
       admin,
@@ -30,6 +34,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         label: label?.trim() || null,
         service_slug: service_slug || null,
         contract_value: 0,                                  // per-sale model; not used upfront
+        direction,
         start_date: start_date || new Date().toISOString().slice(0, 10),
         pct_year_1: pct_year_1 != null ? Number(pct_year_1) : 10,
         pct_year_2: pct_year_2 != null ? Number(pct_year_2) : 8,
@@ -90,19 +95,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       const dealName = deal.label || 'doorverwezen klant'
       const saleDesc = body.description?.trim()
 
-      // 1) Create the ledger entry (we owe partner the commission)
+      // Direction of the commission follows the referral direction:
+      //   we_pay_partner  → wij betalen partner (amount positief)   · scenario 1
+      //   partner_pays_us → partner betaalt ons (amount negatief)   · scenario 2
+      const direction = deal.direction === 'partner_pays_us' ? 'partner_pays_us' : 'we_pay_partner'
+      const wePay = direction === 'we_pay_partner'
+
+      // 1) Create the ledger entry for the commission, in the correct direction
       const { data: ledger, error: ledgerErr } = await insertResilient(
         admin,
         'partner_ledger_entries',
         {
           freelancer_id: freelancerId,
           kind: 'commission_owed',
-          direction: 'we_pay_partner',
-          amount: amount,
+          direction,
+          amount: wePay ? amount : -amount,
           client_id: deal.client_id ?? null,
           commission_deal_id: deal_id,
           commission_year: year,
-          description: `Commissie ${pct}% (jaar ${year}) — ${saleDesc ? saleDesc + ' · ' : ''}${dealName}`,
+          description: `Commissie ${pct}% (jaar ${year})${wePay ? '' : ' — partner betaalt ons'} — ${saleDesc ? saleDesc + ' · ' : ''}${dealName}`,
           occurred_on: saleDate,
           status: 'pending',
         },
@@ -135,7 +146,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     // ── Edit referral fields ────────────────────────────────────────────────
     const patch: Record<string, unknown> = {}
-    for (const k of ['label', 'service_slug', 'start_date', 'pct_year_1', 'pct_year_2', 'pct_year_3', 'status', 'notes', 'client_id'] as const) {
+    for (const k of ['label', 'service_slug', 'start_date', 'pct_year_1', 'pct_year_2', 'pct_year_3', 'status', 'notes', 'client_id', 'direction'] as const) {
       if (body[k] !== undefined) patch[k] = body[k]
     }
     if (Object.keys(patch).length === 0) {

@@ -95,7 +95,7 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
   }>
   const commissionDeals = (commissionRows ?? []) as Array<{
     id: string; client_id: string | null; label: string | null; service_slug: string | null;
-    contract_value: number; start_date: string; pct_year_1: number; pct_year_2: number; pct_year_3: number;
+    contract_value: number; direction?: string | null; start_date: string; pct_year_1: number; pct_year_2: number; pct_year_3: number;
     status: string; notes: string | null; created_at: string;
   }>
   const commissionSales = (salesRows ?? []) as Array<{

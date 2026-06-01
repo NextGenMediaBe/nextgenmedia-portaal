@@ -38,6 +38,39 @@ export function daysUntil(dateStr: string | null | undefined): number | null {
   return Math.ceil(diff / 86400000)
 }
 
+// ── Partner finance: de 4 deal-types + geldrichting ──────────────────────────
+// Eén taxonomie die overal (settlement, ledger, UI) hetzelfde betekent.
+//
+//   1 referral_commission          partner verwees klant NAAR ons  → WIJ betalen partner   · commissie
+//   2 referral_commission_reverse  WIJ verwezen klant naar partner → PARTNER betaalt ons   · commissie
+//   3 subcontracting_partner_to_us partner geeft ons een opdracht  → PARTNER betaalt ons   · vast bedrag
+//   4 subcontracting_us_to_partner wij geven partner een opdracht  → WIJ betalen partner   · vast bedrag
+//
+// Geldrichting kent maar twee waarden; commissie geldt ALLEEN bij type 1 & 2.
+
+export type SettlementDirection = 'we_pay_partner' | 'partner_pays_us'
+
+export const DIRECTION_LABEL: Record<SettlementDirection, string> = {
+  we_pay_partner: 'Wij betalen partner',
+  partner_pays_us: 'Partner betaalt ons',
+}
+
+/** Normalise a (possibly missing, pre-migration) direction value to one of the
+ *  two valid directions, falling back to the amount sign when absent. */
+export function normalizeDirection(
+  direction: string | null | undefined,
+  amount?: number,
+): SettlementDirection {
+  if (direction === 'we_pay_partner' || direction === 'partner_pays_us') return direction
+  return (amount ?? 0) >= 0 ? 'we_pay_partner' : 'partner_pays_us'
+}
+
+/** True when this referral direction means the partner pays US the commission
+ *  (scenario 2 — we referred the client to the partner). */
+export function referralPartnerPaysUs(direction: string | null | undefined): boolean {
+  return direction === 'partner_pays_us'
+}
+
 // ── Assignment origin + settlement direction ────────────────────────────────
 // Works even when the `origin` / `deal_type` columns don't exist yet (pre-migration)
 // by falling back to a heuristic on the assignment's shape.
