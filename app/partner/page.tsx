@@ -2,8 +2,8 @@ export const dynamic = 'force-dynamic'
 
 import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { formatEuro, formatDate } from '@/lib/utils'
-import { Briefcase, CheckCircle2, Clock, AlertCircle, TrendingUp, Plus } from 'lucide-react'
+import { formatEuro, formatDate, normalizeDirection } from '@/lib/utils'
+import { Briefcase, CheckCircle2, Clock, AlertCircle, TrendingUp, Plus, ArrowDownLeft, ArrowUpRight, Wallet } from 'lucide-react'
 import Link from 'next/link'
 
 export default async function PartnerDashboard() {
@@ -25,14 +25,37 @@ export default async function PartnerDashboard() {
     .eq('freelancer_id', partner.id)
     .order('created_at', { ascending: false })
 
+  const admin = createAdminSupabaseClient()
+
   // Fetch client names via admin client (RLS prevents direct client access for partners)
   const clientIds = Array.from(new Set((assignments ?? []).map((a) => a.client_id).filter((v): v is string => !!v)))
   let clientMap = new Map<string, string>()
   if (clientIds.length > 0) {
-    const admin = createAdminSupabaseClient()
     const { data: clients } = await admin.from('clients').select('id, company_name').in('id', clientIds)
     clientMap = new Map((clients ?? []).map((c) => [c.id, c.company_name]))
   }
+
+  // Real money balance from the ledger. select('*') so the direction column is
+  // included regardless of schema version.
+  const { data: ledgerRows } = await admin
+    .from('partner_ledger_entries')
+    .select('*')
+    .eq('freelancer_id', partner.id)
+  const ledger = (ledgerRows ?? []) as Array<{ status: string; amount: number; direction?: string | null }>
+  const pendingLedger = ledger.filter((l) => l.status === 'pending')
+  // From the partner's perspective: we_pay_partner = they RECEIVE (green),
+  // partner_pays_us = they PAY (red).
+  const toReceive = pendingLedger
+    .filter((l) => normalizeDirection(l.direction, l.amount) === 'we_pay_partner')
+    .reduce((s, l) => s + Math.abs(Number(l.amount)), 0)
+  const toPay = pendingLedger
+    .filter((l) => normalizeDirection(l.direction, l.amount) === 'partner_pays_us')
+    .reduce((s, l) => s + Math.abs(Number(l.amount)), 0)
+  const net = toReceive - toPay            // positief = partner ontvangt netto
+  // Lifetime received (all non-cancelled we_pay_partner entries)
+  const lifetimeReceived = ledger
+    .filter((l) => l.status !== 'cancelled' && normalizeDirection(l.direction, l.amount) === 'we_pay_partner')
+    .reduce((s, l) => s + Math.abs(Number(l.amount)), 0)
 
   const all = (assignments ?? []).map((a) => ({
     ...a,
@@ -42,7 +65,6 @@ export default async function PartnerDashboard() {
   const open = all.filter((a) => a.status === 'open')
   const active = all.filter((a) => a.status === 'in_progress')
   const done = all.filter((a) => a.status === 'completed')
-  const totalEarned = done.reduce((s, a) => s + (a.payout ?? 0), 0)
 
   const STATUS_STYLE: Record<string, string> = {
     open: 'bg-blue-100 text-blue-700',
@@ -92,10 +114,46 @@ export default async function PartnerDashboard() {
         </div>
         <div className="stat-card">
           <div className="flex items-center gap-2 mb-1">
-            <TrendingUp className="h-4 w-4 text-[#c5b800]" />
-            <span className="text-xs text-gray-500 font-medium">Totaal verdiend</span>
+            <TrendingUp className="h-4 w-4 text-green-500" />
+            <span className="text-xs text-gray-500 font-medium">Totaal ontvangen</span>
           </div>
-          <div className="text-2xl font-bold">{formatEuro(totalEarned)}</div>
+          <div className="text-2xl font-bold text-green-600">{formatEuro(lifetimeReceived)}</div>
+        </div>
+      </div>
+
+      {/* Openstaand saldo — groen = u ontvangt, rood = u betaalt */}
+      <div className="card-base">
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+            <Wallet className="h-4 w-4 text-[#c5b800]" />
+            Openstaand saldo
+          </h2>
+          <Link href="/partner/settlements" className="text-xs text-gray-500 hover:text-black">
+            Bekijk settlements →
+          </Link>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
+          <div className="rounded-xl border border-gray-100 p-3">
+            <div className="flex items-center justify-center gap-1.5 text-xs text-gray-500 mb-1">
+              <ArrowDownLeft className="h-3.5 w-3.5 text-green-500" />
+              U ontvangt
+            </div>
+            <div className="text-xl font-bold text-green-600">{formatEuro(toReceive)}</div>
+          </div>
+          <div className="rounded-xl border border-gray-100 p-3">
+            <div className="flex items-center justify-center gap-1.5 text-xs text-gray-500 mb-1">
+              <ArrowUpRight className="h-3.5 w-3.5 text-red-500" />
+              U betaalt
+            </div>
+            <div className="text-xl font-bold text-red-600">{formatEuro(toPay)}</div>
+          </div>
+          <div className="rounded-xl border border-gray-100 p-3">
+            <div className="text-xs text-gray-500 mb-1">Netto saldo</div>
+            <div className={`text-xl font-bold ${net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {net >= 0 ? '+' : '−'}{formatEuro(Math.abs(net))}
+            </div>
+            <div className="text-[11px] text-gray-400 mt-0.5">{net >= 0 ? 'u ontvangt' : 'u betaalt ons'}</div>
+          </div>
         </div>
       </div>
 

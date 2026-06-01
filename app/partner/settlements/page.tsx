@@ -191,7 +191,7 @@ export default async function PartnerSettlementsPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
           <div>
             <span className="text-gray-500">Totaal door ons uitbetaald (alle tijd):</span>
-            <span className="font-semibold ml-2">{formatEuro(lifetimeEarned)}</span>
+            <span className="font-semibold ml-2 text-green-600">{formatEuro(lifetimeEarned)}</span>
           </div>
           {partner.hourly_rate != null && (
             <div>
