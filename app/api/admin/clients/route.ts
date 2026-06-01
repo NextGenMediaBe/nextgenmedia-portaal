@@ -93,6 +93,10 @@ export async function POST(req: NextRequest) {
       throw new Error(`Klant aanmaken mislukt: ${clientErr?.message}`)
     }
 
+    // Store the admin-chosen password so it can be viewed later (best effort —
+    // ignored if the login_password column isn't migrated yet).
+    try { await admin.from('clients').update({ login_password: data.password }).eq('id', client.id) } catch { }
+
     // Create client_services — active: false by default.
     // Portal access is granted separately by admin AFTER the client signs the contract.
     const serviceRows = data.services.map((slug) => ({

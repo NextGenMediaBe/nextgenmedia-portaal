@@ -7,6 +7,7 @@ import { ArrowLeft, Briefcase, CheckCircle2, Clock, TrendingUp } from 'lucide-re
 import Link from 'next/link'
 import { PartnerLedger } from './partner-ledger'
 import { PartnerActions } from './partner-actions'
+import { CredentialsCard } from '@/components/credentials-card'
 import { CommissionDeals } from './commission-deals'
 
 
@@ -144,7 +145,8 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Info */}
+        {/* Info column */}
+        <div className="space-y-4">
         <div className="card-base space-y-3">
           <h2 className="font-semibold text-gray-900">Gegevens</h2>
           <div className="space-y-2 text-sm">
@@ -194,6 +196,14 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
               </div>
             </div>
           )}
+        </div>
+
+        {/* Login credentials */}
+        <CredentialsCard
+          endpoint={`/api/admin/partners/${id}/credentials`}
+          email={partner.email ?? null}
+          storedPassword={(partner.login_password ?? null) as string | null}
+        />
         </div>
 
         {/* Stats */}

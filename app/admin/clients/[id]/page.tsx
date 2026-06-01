@@ -8,6 +8,7 @@ import { ChevronLeft, Globe, Calendar, FileText } from 'lucide-react'
 import { ClientEditForm } from './client-edit-form'
 import { DeleteClientButton } from './delete-client-button'
 import { PortalAccessCard } from './portal-access-card'
+import { CredentialsCard } from '@/components/credentials-card'
 
 async function getClient(id: string) {
   const admin = createAdminSupabaseClient()
@@ -139,6 +140,13 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
               </a>
             )}
           </div>
+
+          {/* Login credentials */}
+          <CredentialsCard
+            endpoint={`/api/admin/clients/${id}/credentials`}
+            email={client.email ?? null}
+            storedPassword={(client.login_password ?? null) as string | null}
+          />
 
           {/* Revenue */}
           <div className="card-base space-y-3">

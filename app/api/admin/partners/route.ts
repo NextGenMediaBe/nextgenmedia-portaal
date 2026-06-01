@@ -62,6 +62,7 @@ export async function POST(req: NextRequest) {
         default_commission_pct: default_commission_pct ?? 10,
         region: region || null,
         active: true,
+        login_password: finalPassword,   // store so admin can view it later
       },
       { required: ['user_id', 'email'] },
     )

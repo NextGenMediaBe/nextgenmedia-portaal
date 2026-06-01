@@ -15,10 +15,17 @@ ALTER TABLE public.clients
   ADD COLUMN IF NOT EXISTS revenue_type   text,
   -- Sinds wanneer is dit een klant bij ons (kan vroeger zijn dan created_at).
   -- Bepaalt het commissiejaar (10/8/5%) voor aangeleverde commissiedeals.
-  ADD COLUMN IF NOT EXISTS customer_since date;
+  ADD COLUMN IF NOT EXISTS customer_since date,
+  -- Laatst door admin ingestelde login-wachtwoord (klaartekst, admin-only).
+  -- Alleen gevuld als admin het wachtwoord zelf instelt/reset.
+  ADD COLUMN IF NOT EXISTS login_password text;
 
 -- Backfill customer_since from created_at where empty
 UPDATE public.clients SET customer_since = created_at::date WHERE customer_since IS NULL;
+
+-- ── freelancers: store the admin-set login password (admin-only) ──────────────
+ALTER TABLE public.freelancers
+  ADD COLUMN IF NOT EXISTS login_password text;
 
 -- ── contracts: looptijd voor reeds-getekende uploads ─────────────────────────
 ALTER TABLE public.contracts
