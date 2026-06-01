@@ -9,6 +9,7 @@ import { PartnerLedger } from './partner-ledger'
 import { PartnerActions } from './partner-actions'
 import { CredentialsCard } from '@/components/credentials-card'
 import { CommissionDeals } from './commission-deals'
+import { SettlementHistory } from './settlement-history'
 
 
 const STATUS_STYLE: Record<string, string> = {
@@ -338,36 +339,8 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
         </div>
       )}
 
-      {/* Settlements */}
-      {settlements.length > 0 && (
-        <div className="card-base">
-          <h2 className="font-semibold mb-4">Afrekenhistorie</h2>
-          <div className="space-y-2">
-            {settlements.map(s => (
-              <div key={s.id} className="flex items-center justify-between py-2 px-3 rounded-lg bg-gray-50">
-                <div>
-                  <div className="text-sm font-medium">
-                    {formatDate(s.period_start)} → {formatDate(s.period_end)}
-                  </div>
-                  {s.notes && <div className="text-xs text-gray-400">{s.notes}</div>}
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className={`text-sm font-bold ${s.net_amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {s.net_amount >= 0 ? 'Wij betalen: ' : 'Partner betaalt: '}{formatEuro(Math.abs(s.net_amount))}
-                  </span>
-                  <span className={`status-badge text-xs ${
-                    s.status === 'paid' ? 'bg-green-100 text-green-700' :
-                    s.status === 'finalized' ? 'bg-blue-100 text-blue-700' :
-                    'bg-gray-100 text-gray-600'
-                  }`}>
-                    {s.status === 'paid' ? 'Betaald' : s.status === 'finalized' ? 'Definitief' : 'Concept'}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Settlements — mark paid / delete (Client Component) */}
+      <SettlementHistory partnerId={id} settlements={settlements} />
 
       {/* Assignments */}
       <div className="card-base">
