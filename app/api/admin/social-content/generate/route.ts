@@ -12,6 +12,10 @@ export async function GET(req: NextRequest) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Niet ingelogd' }, { status: 401 })
+    // This is an /api/admin route returning client business data — require admin,
+    // not merely an authenticated session.
+    const { data: roleData } = await supabase.from('user_roles').select('role').eq('user_id', user.id).maybeSingle()
+    if (roleData?.role !== 'admin') return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
 
     const admin = createAdminSupabaseClient()
 

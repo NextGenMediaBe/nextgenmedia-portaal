@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
+import { logAudit, requestMeta } from '@/lib/audit'
 import { revalidatePath } from 'next/cache'
 
 async function requireAdmin(supabase: Awaited<ReturnType<typeof createClient>>) {
@@ -176,6 +177,21 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     if (client.owner_user_id) {
       try { await admin.auth.admin.deleteUser(client.owner_user_id) } catch { }
     }
+
+    // GDPR: record the erasure (no personal data beyond the company name)
+    const meta = requestMeta(req)
+    await logAudit({
+      action: 'client.delete',
+      entityType: 'client',
+      entityId: id,
+      summary: `Klant "${client.company_name}" en alle gekoppelde gegevens definitief verwijderd`,
+      actorUserId: user.id,
+      actorEmail: user.email ?? null,
+      actorRole: 'admin',
+      metadata: { company_name: client.company_name },
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    })
 
     // 6. Invalidate caches so the clients list updates immediately
     try {

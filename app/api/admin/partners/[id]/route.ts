@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
+import { logAudit, requestMeta } from '@/lib/audit'
 import { revalidatePath } from 'next/cache'
 
 const ALLOWED_PATCH_FIELDS = new Set([
@@ -41,7 +42,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 // DELETE — deactivate and optionally hard-delete a partner
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    const actor = await requireAdmin()
+    if (!actor) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
 
     const { id } = await params
     const { hard = false } = await req.json().catch(() => ({ hard: false }))
@@ -79,6 +81,22 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
         .eq('id', id)
       if (deactErr) throw new Error(deactErr.message)
     }
+
+    const meta = requestMeta(req)
+    await logAudit({
+      action: hard ? 'partner.delete' : 'partner.deactivate',
+      entityType: 'partner',
+      entityId: id,
+      summary: hard
+        ? `Partner "${partner.name}" en alle gekoppelde gegevens definitief verwijderd`
+        : `Partner "${partner.name}" gedeactiveerd`,
+      actorUserId: actor.id,
+      actorEmail: actor.email ?? null,
+      actorRole: 'admin',
+      metadata: { hard: Boolean(hard), name: partner.name },
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    })
 
     try {
       revalidatePath('/admin/partners')

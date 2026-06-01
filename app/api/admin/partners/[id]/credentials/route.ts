@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
+import { logAudit, requestMeta } from '@/lib/audit'
 import { revalidatePath } from 'next/cache'
 
 // PATCH — admin updates a partner's login email and/or password
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    const actor = await requireAdmin()
+    if (!actor) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const { id: partnerId } = await params
     const { email, password } = await req.json()
 
@@ -50,6 +52,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
       if (error) throw new Error(error.message)
     }
+
+    const meta = requestMeta(req)
+    await logAudit({
+      action: 'partner.credentials.update',
+      entityType: 'partner',
+      entityId: partnerId,
+      summary: `Login-gegevens partner gewijzigd (${[email ? 'e-mail' : null, password ? 'wachtwoord' : null].filter(Boolean).join(' + ')})`,
+      actorUserId: actor.id,
+      actorEmail: actor.email ?? null,
+      actorRole: 'admin',
+      metadata: { changed_email: Boolean(email), changed_password: Boolean(password) },
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    })
 
     try { revalidatePath(`/admin/partners/${partnerId}`) } catch { }
     return NextResponse.json({ ok: true })

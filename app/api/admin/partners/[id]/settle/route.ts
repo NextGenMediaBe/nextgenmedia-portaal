@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
+import { logAudit, requestMeta } from '@/lib/audit'
 
 async function requireAdmin() {
   const supabase = await createClient()
@@ -126,6 +127,20 @@ export async function PATCH(
     const { error } = await admin.from('partner_settlements').update(patch).eq('id', settlement_id)
     if (error) throw error
 
+    const meta = requestMeta(req)
+    await logAudit({
+      action: 'settlement.status.update',
+      entityType: 'settlement',
+      entityId: settlement_id,
+      summary: `Afrekening status → ${status}`,
+      actorUserId: user.id,
+      actorEmail: user.email ?? null,
+      actorRole: 'admin',
+      metadata: { partner_id: id, status },
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    })
+
     return NextResponse.json({ ok: true })
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
@@ -169,6 +184,20 @@ export async function DELETE(
     try { await admin.from('partner_ledger_entries').delete().eq('settlement_id', settlementId) } catch { }
     const { error } = await admin.from('partner_settlements').delete().eq('id', settlementId)
     if (error) throw error
+
+    const meta = requestMeta(req)
+    await logAudit({
+      action: 'settlement.delete',
+      entityType: 'settlement',
+      entityId: settlementId,
+      summary: 'Betaalde afrekening verwijderd (incl. gekoppelde ledgerposten)',
+      actorUserId: user.id,
+      actorEmail: user.email ?? null,
+      actorRole: 'admin',
+      metadata: { partner_id: id, net_amount: existing.net_amount ?? null },
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    })
 
     return NextResponse.json({ ok: true })
   } catch (err) {

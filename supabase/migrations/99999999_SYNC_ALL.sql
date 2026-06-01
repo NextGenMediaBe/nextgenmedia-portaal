@@ -285,5 +285,36 @@ CREATE POLICY "commission sales partner read" ON public.partner_commission_sales
   FOR SELECT TO authenticated
   USING (freelancer_id IN (SELECT id FROM public.freelancers WHERE user_id = auth.uid()));
 
+-- ── audit_log: onveranderlijk logboek van gevoelige acties (GDPR/security) ─────
+-- Puur additief. Schrijven gebeurt met de service-role (bypasst RLS); admins
+-- mogen lezen. Niemand mag via de client wijzigen of verwijderen → append-only.
+CREATE TABLE IF NOT EXISTS public.audit_log (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  actor_user_id uuid,                 -- wie voerde de actie uit (auth.users.id)
+  actor_email   text,
+  actor_role    text,
+  action        text NOT NULL,        -- bv. 'client.credentials.update'
+  entity_type   text,                 -- bv. 'client', 'partner', 'settlement'
+  entity_id     text,
+  summary       text,                 -- korte, menselijke omschrijving
+  metadata      jsonb NOT NULL DEFAULT '{}'::jsonb,  -- nooit wachtwoorden/secrets
+  ip            text,
+  user_agent    text,
+  created_at    timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_created   ON public.audit_log (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_log_entity    ON public.audit_log (entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_audit_log_actor     ON public.audit_log (actor_user_id);
+
+ALTER TABLE public.audit_log ENABLE ROW LEVEL SECURITY;
+-- Admins mogen het logboek lezen. Schrijven loopt uitsluitend via de service-role
+-- (die RLS overslaat), dus er is bewust GEEN insert/update/delete policy → het
+-- log is niet te manipuleren vanuit een gewone (admin- of klant-)sessie.
+DROP POLICY IF EXISTS "audit_log admin read" ON public.audit_log;
+CREATE POLICY "audit_log admin read" ON public.audit_log
+  FOR SELECT TO authenticated
+  USING (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.
