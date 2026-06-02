@@ -292,54 +292,23 @@ export type TaskFields = {
 
 export type TaskResult = { id: string; fieldsBlocked: number }
 
-/** ClickUp-planlimiet op custom-field-gebruik (Free-plan). */
-function isPlanFieldError(msg: string): boolean {
-  return /FIELD_033|custom field usages exceeded/i.test(msg)
-}
-
-/** Zet één custom field. Plan-limiet (FIELD_033) is NIET fataal: we geven
- *  'blocked' terug i.p.v. te gooien, zodat de taak verder gewoon synct. */
-async function setFieldSafe(taskId: string, fieldId: string, value: unknown): Promise<'ok' | 'blocked'> {
-  try {
-    await clickupJson(`/task/${taskId}/field/${fieldId}`, { method: 'POST', body: JSON.stringify({ value }) })
-    return 'ok'
-  } catch (e) {
-    if (e instanceof Error && isPlanFieldError(e.message)) return 'blocked'
-    throw e
-  }
-}
-
-/** Zet alle gesyncte custom fields; geeft het aantal geblokkeerde velden terug. */
-async function applyCustomFields(taskId: string, f: TaskFields): Promise<number> {
-  let blocked = 0
-  const fields: Array<[string, unknown]> = [
-    [FIELD.caption, f.captionOpt],
-    [FIELD.channel, f.channelOpt],
-    [FIELD.publicatieDatum, f.dateMs],
-  ]
-  for (const [fid, val] of fields) {
-    if (await setFieldSafe(taskId, fid, val) === 'blocked') blocked++
-  }
-  return blocked
-}
+// We syncen bewust ALLEEN de titel (= WAT) + status + due_date (= WANNEER).
+// Geen custom fields: die vallen onder de ClickUp-planlimiet (FIELD_033) en zijn
+// niet nodig. due_date is een ingebouwd ClickUp-veld en telt NIET mee voor die
+// limiet. fieldsBlocked blijft daarom altijd 0.
 
 export async function createTask(listId: string, f: TaskFields): Promise<TaskResult> {
-  // Basisvelden bij creatie; custom fields apart zodat planlimieten per veld
-  // opgevangen worden (en de taak zelf altijd aangemaakt wordt).
   const task = await clickupJson<{ id: string }>(`/list/${listId}/task`, {
     method: 'POST',
     body: JSON.stringify({ name: f.name, status: f.status, due_date: f.dateMs }),
   })
-  const fieldsBlocked = await applyCustomFields(task.id, f)
-  return { id: task.id, fieldsBlocked }
+  return { id: task.id, fieldsBlocked: 0 }
 }
 
 export async function updateTask(taskId: string, f: TaskFields): Promise<TaskResult> {
-  // Naam / status / datum via PUT (PUT /task ondersteunt geen custom fields)
   await clickupJson(`/task/${taskId}`, {
     method: 'PUT',
     body: JSON.stringify({ name: f.name, status: f.status, due_date: f.dateMs }),
   })
-  const fieldsBlocked = await applyCustomFields(taskId, f)
-  return { id: taskId, fieldsBlocked }
+  return { id: taskId, fieldsBlocked: 0 }
 }
