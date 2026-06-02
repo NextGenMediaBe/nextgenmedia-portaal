@@ -290,38 +290,56 @@ export type TaskFields = {
   channelOpt: string
 }
 
-export async function createTask(listId: string, f: TaskFields): Promise<string> {
-  const body = {
-    name: f.name,
-    status: f.status,
-    due_date: f.dateMs,
-    custom_fields: [
-      { id: FIELD.caption, value: f.captionOpt },
-      { id: FIELD.channel, value: f.channelOpt },
-      { id: FIELD.publicatieDatum, value: f.dateMs },
-    ],
-  }
-  const task = await clickupJson<{ id: string }>(`/list/${listId}/task`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
-  return task.id
+export type TaskResult = { id: string; fieldsBlocked: number }
+
+/** ClickUp-planlimiet op custom-field-gebruik (Free-plan). */
+function isPlanFieldError(msg: string): boolean {
+  return /FIELD_033|custom field usages exceeded/i.test(msg)
 }
 
-export async function updateTask(taskId: string, f: TaskFields): Promise<void> {
-  // Naam / status / datum via PUT
+/** Zet één custom field. Plan-limiet (FIELD_033) is NIET fataal: we geven
+ *  'blocked' terug i.p.v. te gooien, zodat de taak verder gewoon synct. */
+async function setFieldSafe(taskId: string, fieldId: string, value: unknown): Promise<'ok' | 'blocked'> {
+  try {
+    await clickupJson(`/task/${taskId}/field/${fieldId}`, { method: 'POST', body: JSON.stringify({ value }) })
+    return 'ok'
+  } catch (e) {
+    if (e instanceof Error && isPlanFieldError(e.message)) return 'blocked'
+    throw e
+  }
+}
+
+/** Zet alle gesyncte custom fields; geeft het aantal geblokkeerde velden terug. */
+async function applyCustomFields(taskId: string, f: TaskFields): Promise<number> {
+  let blocked = 0
+  const fields: Array<[string, unknown]> = [
+    [FIELD.caption, f.captionOpt],
+    [FIELD.channel, f.channelOpt],
+    [FIELD.publicatieDatum, f.dateMs],
+  ]
+  for (const [fid, val] of fields) {
+    if (await setFieldSafe(taskId, fid, val) === 'blocked') blocked++
+  }
+  return blocked
+}
+
+export async function createTask(listId: string, f: TaskFields): Promise<TaskResult> {
+  // Basisvelden bij creatie; custom fields apart zodat planlimieten per veld
+  // opgevangen worden (en de taak zelf altijd aangemaakt wordt).
+  const task = await clickupJson<{ id: string }>(`/list/${listId}/task`, {
+    method: 'POST',
+    body: JSON.stringify({ name: f.name, status: f.status, due_date: f.dateMs }),
+  })
+  const fieldsBlocked = await applyCustomFields(task.id, f)
+  return { id: task.id, fieldsBlocked }
+}
+
+export async function updateTask(taskId: string, f: TaskFields): Promise<TaskResult> {
+  // Naam / status / datum via PUT (PUT /task ondersteunt geen custom fields)
   await clickupJson(`/task/${taskId}`, {
     method: 'PUT',
     body: JSON.stringify({ name: f.name, status: f.status, due_date: f.dateMs }),
   })
-  // Custom fields apart (PUT /task ondersteunt geen custom fields)
-  await clickupJson(`/task/${taskId}/field/${FIELD.caption}`, {
-    method: 'POST', body: JSON.stringify({ value: f.captionOpt }),
-  })
-  await clickupJson(`/task/${taskId}/field/${FIELD.channel}`, {
-    method: 'POST', body: JSON.stringify({ value: f.channelOpt }),
-  })
-  await clickupJson(`/task/${taskId}/field/${FIELD.publicatieDatum}`, {
-    method: 'POST', body: JSON.stringify({ value: f.dateMs }),
-  })
+  const fieldsBlocked = await applyCustomFields(taskId, f)
+  return { id: taskId, fieldsBlocked }
 }

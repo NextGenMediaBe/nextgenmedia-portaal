@@ -148,7 +148,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       .order('planned_date', { ascending: true })
     const items = (itemsRaw ?? []) as ContentItem[]
 
-    const summary = { total: items.length, created: 0, updated: 0, skipped: 0, failed: 0 }
+    const summary = { total: items.length, created: 0, updated: 0, skipped: 0, failed: 0, fieldLimited: 0 }
     const errors: Array<{ id: string; title: string; error: string }> = []
 
     // Tijdsbudget per call zodat de serverless-functie nooit time-out: items die
@@ -190,10 +190,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             summary.skipped++
             continue
           }
-          await updateTask(taskId, fields)
+          const res = await updateTask(taskId, fields)
+          if (res.fieldsBlocked > 0) summary.fieldLimited++
           summary.updated++
         } else {
-          taskId = await createTask(listId, fields)
+          const res = await createTask(listId, fields)
+          taskId = res.id
+          if (res.fieldsBlocked > 0) summary.fieldLimited++
           summary.created++
         }
 
