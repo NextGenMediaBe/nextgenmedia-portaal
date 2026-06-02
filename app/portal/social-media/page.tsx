@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { PortalCalendar } from './portal-calendar'
+import { ShootBriefingView, type Shoot } from '@/components/portal/shoot-briefing-view'
 
 export default async function PortalSocialMediaPage() {
   const supabase = await createClient()
@@ -26,6 +27,15 @@ export default async function PortalSocialMediaPage() {
     .eq('client_id', client.id)
     .order('planned_date', { ascending: true })
 
+  // Shoot briefings (RLS: klant leest eigen). Resilient: tabel kan nog ontbreken
+  // vóór de migratie → dan gewoon geen sectie.
+  const { data: shootRows } = await supabase
+    .from('shoot_briefings')
+    .select('*')
+    .eq('client_id', client.id)
+    .order('shoot_date', { ascending: false, nullsFirst: false })
+  const shoots = (shootRows ?? []) as Shoot[]
+
   const pendingCount = (items ?? []).filter((i) => i.status === 'ready_for_review').length
 
   return (
@@ -41,6 +51,8 @@ export default async function PortalSocialMediaPage() {
           </div>
         )}
       </div>
+
+      <ShootBriefingView shoots={shoots} />
 
       <PortalCalendar
         initialItems={(items ?? []).map((it) => ({

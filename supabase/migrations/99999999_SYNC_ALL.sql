@@ -332,5 +332,40 @@ ALTER TABLE public.social_content_items
 
 CREATE INDEX IF NOT EXISTS idx_social_items_clickup_task ON public.social_content_items (clickup_task_id);
 
+-- ── shoot_briefings: contentshoot-info per klant (admin beheert, klant leest) ──
+-- Puur additief. Eén of meerdere shoots per klant met datum/uur/locatie + een
+-- vrij briefing-tekstveld. Geen workflow/statussen.
+CREATE TABLE IF NOT EXISTS public.shoot_briefings (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id   uuid NOT NULL REFERENCES public.clients(id) ON DELETE CASCADE,
+  shoot_date  date,
+  start_time  text,
+  end_time    text,
+  location    text,
+  briefing    text,
+  created_by  uuid,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_shoot_briefings_client ON public.shoot_briefings(client_id);
+
+ALTER TABLE public.shoot_briefings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "shoot admin all"        ON public.shoot_briefings;
+DROP POLICY IF EXISTS "shoot client read own"  ON public.shoot_briefings;
+CREATE POLICY "shoot admin all" ON public.shoot_briefings
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+CREATE POLICY "shoot client read own" ON public.shoot_briefings
+  FOR SELECT TO authenticated
+  USING (client_id IN (SELECT id FROM public.clients WHERE owner_user_id = auth.uid()));
+
+DO $$
+BEGIN
+  DROP TRIGGER IF EXISTS trg_shoot_briefings_updated ON public.shoot_briefings;
+  CREATE TRIGGER trg_shoot_briefings_updated BEFORE UPDATE ON public.shoot_briefings FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+EXCEPTION WHEN others THEN NULL; END $$;
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.

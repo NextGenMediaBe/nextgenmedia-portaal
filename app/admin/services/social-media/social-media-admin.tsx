@@ -6,6 +6,7 @@ import { ContentCalendar, type SocialContentItem, type SocialContentStatus } fro
 import { Plus, X, Loader2, Sparkles, CheckSquare, Trash2, AlertTriangle } from 'lucide-react'
 import { GenerateDialog } from './generate-dialog'
 import { ClickUpSyncControl } from '@/components/admin/clickup-sync-control'
+import { ShootBriefings } from '@/components/admin/shoot-briefings'
 
 type Client = { id: string; company_name: string }
 
@@ -407,6 +408,9 @@ export function SocialMediaAdmin({
           <p className="text-sm">Selecteer een klant om de contentkalender te bekijken</p>
         </div>
       )}
+
+      {/* Shoot Briefing (per klant) */}
+      {selectedClient && <ShootBriefings clientId={selectedClient} />}
 
       {/* Generate planning dialog */}
       {showGenerate && selectedClient && (
