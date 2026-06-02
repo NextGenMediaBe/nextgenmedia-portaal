@@ -38,6 +38,13 @@
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   }
 
+  /* Hard guard tegen horizontale scroll op mobiel: niets mag breder zijn dan
+     het scherm. Vangt sub-pixel-overflow en losse brede elementen af. */
+  html, body {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
   h1, h2, h3, h4, h5, h6 {
     @apply font-semibold tracking-tight;
   }

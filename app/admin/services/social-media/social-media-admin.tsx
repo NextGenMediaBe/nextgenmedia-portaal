@@ -288,7 +288,7 @@ export function SocialMediaAdmin({
           </select>
         </div>
         {selectedClient && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {selectedClientData && (
               <div className="flex gap-3 text-xs text-gray-500">
                 <span className="px-2 py-1 bg-gray-100 rounded-lg">{selectedClientData.company_name}</span>
