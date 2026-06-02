@@ -6,7 +6,8 @@ import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, Users, FileText, UserSquare2, ArrowLeftRight, TrendingUp,
-  LogOut, ChevronDown, Globe, Calendar, Briefcase, RefreshCcw, Menu, X, Rocket,
+  LogOut, ChevronDown, Globe, Calendar, Briefcase, RefreshCcw, Menu, X,
+  Info, ClipboardList, CalendarDays,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useRefresh } from '@/lib/use-refresh'
@@ -25,9 +26,15 @@ const NAV = [
   },
   { label: 'Partners',    href: '/admin/partners',     icon: UserSquare2 },
   { label: 'Opdrachten',  href: '/admin/assignments',  icon: Briefcase },
-  { label: 'Onboarding',  href: '/admin/onboarding',   icon: Rocket },
   { label: 'Settlements', href: '/admin/settlements',  icon: ArrowLeftRight },
   { label: 'Omzet',       href: '/admin/revenue',      icon: TrendingUp },
+  {
+    label: 'Informatief', href: '/admin/informatief', icon: Info,
+    children: [
+      { label: 'Onboarding Info', href: '/admin/onboarding',   icon: ClipboardList },
+      { label: 'Maandplanning',   href: '/admin/maandplanning', icon: CalendarDays },
+    ],
+  },
 ]
 
 function NavItem({
