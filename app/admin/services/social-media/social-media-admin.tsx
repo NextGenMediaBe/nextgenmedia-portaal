@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ContentCalendar, type SocialContentItem, type SocialContentStatus } from '@/components/calendar/content-calendar'
 import { Plus, X, Loader2, Sparkles, CheckSquare, Trash2, AlertTriangle } from 'lucide-react'
 import { GenerateDialog } from './generate-dialog'
+import { ClickUpSyncControl } from '@/components/admin/clickup-sync-control'
 
 type Client = { id: string; company_name: string }
 
@@ -341,6 +342,13 @@ export function SocialMediaAdmin({
           </div>
         )}
       </div>
+
+      {/* ClickUp-sync (per klant) */}
+      {selectedClient && (
+        <div className="card-base">
+          <ClickUpSyncControl clientId={selectedClient} />
+        </div>
+      )}
 
       {/* Stats */}
       {selectedClient && (

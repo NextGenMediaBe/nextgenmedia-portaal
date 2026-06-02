@@ -316,5 +316,21 @@ CREATE POLICY "audit_log admin read" ON public.audit_log
   FOR SELECT TO authenticated
   USING (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
 
+-- ── ClickUp-sync (app → ClickUp, één richting) ────────────────────────────────
+-- Puur additief. Per klant aan/uit schakelbaar + opgeslagen folder/list-id zodat
+-- we niet telkens opnieuw zoeken. Per contentitem het ClickUp task-id + een hash
+-- van de gesyncte velden (om onnodige API-calls over te slaan).
+ALTER TABLE public.clients
+  ADD COLUMN IF NOT EXISTS clickup_sync_enabled boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS clickup_folder_id    text,
+  ADD COLUMN IF NOT EXISTS clickup_list_id      text;
+
+ALTER TABLE public.social_content_items
+  ADD COLUMN IF NOT EXISTS clickup_task_id    text,
+  ADD COLUMN IF NOT EXISTS clickup_sync_hash  text,
+  ADD COLUMN IF NOT EXISTS clickup_synced_at  timestamptz;
+
+CREATE INDEX IF NOT EXISTS idx_social_items_clickup_task ON public.social_content_items (clickup_task_id);
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.
