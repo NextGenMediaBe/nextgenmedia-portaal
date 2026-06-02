@@ -151,8 +151,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const summary = { total: items.length, created: 0, updated: 0, skipped: 0, failed: 0 }
     const errors: Array<{ id: string; title: string; error: string }> = []
 
+    // Tijdsbudget per call zodat de serverless-functie nooit time-out: items die
+    // API-werk vergen (create/update) kosten tijd; bereiken we het budget, dan
+    // stoppen we en geeft de client aan dat er nog werk is ('done: false'). Reeds
+    // verwerkte items zijn gecommit en worden bij de volgende call instant
+    // overgeslagen → de sync is hervatbaar en volledig veilig.
+    const startedAt = Date.now()
+    const TIME_BUDGET_MS = 8000
+    let done = true
+
     // Per item: veilig falen, de rest stopt niet.
     for (const item of items) {
+      if (Date.now() - startedAt > TIME_BUDGET_MS) { done = false; break }
       try {
         const platforms = Array.isArray(item.platforms) && item.platforms.length > 0
           ? item.platforms
@@ -212,7 +222,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       metadata: { ...summary }, ip: meta.ip, userAgent: meta.userAgent,
     })
 
-    return NextResponse.json({ ok: true, summary, errors: errors.slice(0, 25) })
+    return NextResponse.json({ ok: true, done, summary, errors: errors.slice(0, 25) })
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
   }

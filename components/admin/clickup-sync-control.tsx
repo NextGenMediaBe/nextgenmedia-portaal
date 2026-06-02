@@ -4,15 +4,25 @@ import { useEffect, useState, useCallback } from 'react'
 import { RefreshCw, Loader2, Check, AlertTriangle } from 'lucide-react'
 
 type Status = { configured: boolean; enabled: boolean; linked: boolean; syncedCount: number }
-type SyncResult = {
-  summary: { total: number; created: number; updated: number; skipped: number; failed: number }
-  errors: Array<{ id: string; title: string; error: string }>
+type Totals = { total: number; created: number; updated: number; skipped: number; failed: number }
+type SyncResult = { summary: Totals; errors: Array<{ id: string; title: string; error: string }> }
+
+/** Lees een Response veilig: parse JSON, of geef een nette fout bij niet-JSON
+ *  (bv. een platform-500/timeout die HTML/tekst teruggeeft). */
+async function readResult(res: Response): Promise<{ ok: boolean; data: any }> {
+  const text = await res.text()
+  let data: any = null
+  try { data = text ? JSON.parse(text) : {} } catch {
+    data = { error: `Serverfout (${res.status} ${res.statusText}). ${text.slice(0, 120)}`.trim() }
+  }
+  return { ok: res.ok, data }
 }
 
 export function ClickUpSyncControl({ clientId }: { clientId: string }) {
   const [status, setStatus] = useState<Status | null>(null)
   const [toggling, setToggling] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  const [progress, setProgress] = useState<string | null>(null)
   const [result, setResult] = useState<SyncResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -21,12 +31,12 @@ export function ClickUpSyncControl({ clientId }: { clientId: string }) {
   const load = useCallback(async () => {
     try {
       const res = await fetch(base)
-      const json = await res.json()
-      if (res.ok) setStatus(json)
+      const { ok, data } = await readResult(res)
+      if (ok) setStatus(data)
     } catch { /* stil */ }
   }, [base])
 
-  useEffect(() => { setStatus(null); setResult(null); setError(null); load() }, [load])
+  useEffect(() => { setStatus(null); setResult(null); setError(null); setProgress(null); load() }, [load])
 
   const toggle = async () => {
     if (!status) return
@@ -37,25 +47,40 @@ export function ClickUpSyncControl({ clientId }: { clientId: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: !status.enabled }),
       })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error)
-      setStatus((s) => (s ? { ...s, enabled: json.enabled } : s))
+      const { ok, data } = await readResult(res)
+      if (!ok) throw new Error(data.error || 'Wijzigen mislukt')
+      setStatus((s) => (s ? { ...s, enabled: data.enabled } : s))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Fout')
     } finally { setToggling(false) }
   }
 
   const sync = async () => {
-    setSyncing(true); setError(null); setResult(null)
+    setSyncing(true); setError(null); setResult(null); setProgress('Synchroniseren…')
+    // Cumulatief over de batches (de server werkt in tijdsbudgetten en kan
+    // 'done: false' teruggeven; dan lopen we automatisch door).
+    const acc: Totals = { total: 0, created: 0, updated: 0, skipped: 0, failed: 0 }
+    const allErrors: SyncResult['errors'] = []
     try {
-      const res = await fetch(base, { method: 'POST' })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error)
-      setResult(json)
+      for (let i = 0; i < 40; i++) {
+        const res = await fetch(base, { method: 'POST' })
+        const { ok, data } = await readResult(res)
+        if (!ok) throw new Error(data.error || 'Sync mislukt')
+        const s: Totals = data.summary
+        acc.total = s.total
+        acc.created += s.created
+        acc.updated += s.updated
+        acc.failed += s.failed
+        acc.skipped = s.skipped
+        if (Array.isArray(data.errors)) allErrors.push(...data.errors)
+        setProgress(`Synchroniseren… ${acc.created + acc.updated} verwerkt`)
+        if (data.done) break
+      }
+      setResult({ summary: acc, errors: allErrors.slice(0, 25) })
       load()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Fout')
-    } finally { setSyncing(false) }
+    } finally { setSyncing(false); setProgress(null) }
   }
 
   if (!status) return null
@@ -102,7 +127,10 @@ export function ClickUpSyncControl({ clientId }: { clientId: string }) {
           Sync met ClickUp
         </button>
 
-        {status.syncedCount > 0 && (
+        {syncing && progress && (
+          <span className="text-xs text-gray-500">{progress}</span>
+        )}
+        {!syncing && status.syncedCount > 0 && (
           <span className="text-xs text-gray-400">{status.syncedCount} gekoppeld</span>
         )}
       </div>
