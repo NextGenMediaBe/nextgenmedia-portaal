@@ -160,6 +160,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const TIME_BUDGET_MS = 8000
     let done = true
 
+    // Eén ClickUp-taak mag nooit door twee items gedeeld worden. We houden bij
+    // welke task-id's deze run al 'geclaimd' zijn; botst een opgeslagen of
+    // geadopteerd id daarmee, dan maken we een NIEUWE taak. Dit heelt ook
+    // bestaande dubbele koppelingen (terugkerende content met dezelfde titel).
+    const claimed = new Set<string>()
+
     // Per item: veilig falen, de rest stopt niet.
     for (const item of items) {
       if (Date.now() - startedAt > TIME_BUDGET_MS) { done = false; break }
@@ -178,15 +184,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
         let taskId = item.clickup_task_id
 
-        // Onbekend task-id → eerst proberen te adopteren op naam + datum
+        // Reparatie: deelt dit opgeslagen task-id al met een eerder verwerkt item
+        // (zelfde taak), dan loskoppelen en een nieuwe taak maken.
+        if (taskId && claimed.has(taskId)) taskId = null
+
+        // Onbekend task-id → adopteren op naam + datum, maar nooit een taak die
+        // al door een ander item geclaimd is.
         if (!taskId) {
           const adopted = findTaskByNameAndDate(existingTasks, name, dateMs)
-          if (adopted) taskId = adopted.id
+          if (adopted && !claimed.has(adopted.id)) taskId = adopted.id
         }
 
         if (taskId) {
           // Niets gewijzigd én reeds bekend → skip (geen onnodige API-calls)
           if (item.clickup_task_id === taskId && item.clickup_sync_hash === hash) {
+            claimed.add(taskId)
             summary.skipped++
             continue
           }
@@ -199,6 +211,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           if (res.fieldsBlocked > 0) summary.fieldLimited++
           summary.created++
         }
+        claimed.add(taskId)
 
         // Per item committen → sync is hervatbaar als hij halverwege stopt
         await admin

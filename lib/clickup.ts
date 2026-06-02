@@ -264,22 +264,27 @@ export async function fetchListTasks(listId: string): Promise<CuTask[]> {
 
 const normName = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ')
 
-/** Zoek een bestaande taak op naam (+ datum) om te 'adopteren'. */
+/** Datum van een bestaande taak: due_date, anders het Publicatie datum-veld. */
+function taskDateMs(t: CuTask): number | null {
+  if (t.due_date != null && String(t.due_date) !== '') return Number(t.due_date)
+  const cf = t.custom_fields?.find((f) => f.id === FIELD.publicatieDatum)?.value
+  return cf != null ? Number(cf) : null
+}
+
+/**
+ * Zoek een bestaande taak om te 'adopteren' — STRIKT op naam ÉN datum.
+ * Terugkerende content kan dezelfde titel hebben op verschillende datums; die
+ * mogen NOOIT samenvallen op één taak. Geen datum-match → null (nieuwe taak).
+ */
 export function findTaskByNameAndDate(tasks: CuTask[], name: string, dateMs: number): CuTask | null {
   const target = normName(name)
-  const sameName = tasks.filter((t) => normName(t.name) === target)
-  if (sameName.length === 0) return null
-  if (sameName.length === 1) return sameName[0]
-  // Meerdere met dezelfde naam → kies degene met dezelfde publicatiedatum
-  const withDate = sameName.find((t) => {
-    const due = t.due_date ? Number(t.due_date) : null
-    const cf = t.custom_fields?.find((f) => f.id === FIELD.publicatieDatum)?.value
-    const cfMs = cf != null ? Number(cf) : null
-    const sameDay = (ms: number | null) =>
-      ms != null && Math.abs(ms - dateMs) < 36 * 3600 * 1000 // binnen ~1,5 dag
-    return sameDay(due) || sameDay(cfMs)
+  const SAME_DAY = 30 * 3600 * 1000 // ~1,25 dag tolerantie (TZ-ruis)
+  const match = tasks.find((t) => {
+    if (normName(t.name) !== target) return false
+    const tms = taskDateMs(t)
+    return tms != null && Math.abs(tms - dateMs) < SAME_DAY
   })
-  return withDate ?? sameName[0]
+  return match ?? null
 }
 
 export type TaskFields = {
