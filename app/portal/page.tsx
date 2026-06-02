@@ -31,7 +31,7 @@ export default async function PortalDashboard() {
     { data: clientServicesRaw },
     { data: serviceContractsRaw },
     { data: contractsRaw },
-    { data: pendingScripts },
+    { count: pendingScriptsCount },
   ] = await Promise.all([
     supabase.from('client_services').select('*').eq('client_id', client.id),
     supabase.from('service_contracts').select('*').eq('client_id', client.id),
@@ -41,14 +41,15 @@ export default async function PortalDashboard() {
       .eq('client_id', client.id)
       .order('created_at', { ascending: false })
       .limit(5),
+    // Exacte telling van scripts die op goedkeuring wachten (geen limiet).
     supabase
       .from('social_content_items')
-      .select('id, title, platform, planned_date, status')
+      .select('id', { count: 'exact', head: true })
       .eq('client_id', client.id)
-      .eq('status', 'ready_for_review')
-      .order('planned_date', { ascending: true })
-      .limit(5),
+      .eq('status', 'ready_for_review'),
   ])
+
+  const pendingScripts = pendingScriptsCount ?? 0
 
   const services = (clientServicesRaw ?? []).filter((s: { active: boolean }) => s.active) as Array<{
     id: string
@@ -80,7 +81,7 @@ export default async function PortalDashboard() {
       </div>
 
       {/* Alerts */}
-      {(pendingContracts.length > 0 || (pendingScripts?.length ?? 0) > 0) && (
+      {(pendingContracts.length > 0 || pendingScripts > 0) && (
         <div className="space-y-2">
           {pendingContracts.map((c) => (
             <Link
@@ -98,7 +99,7 @@ export default async function PortalDashboard() {
               <span className="btn-primary text-xs">Ondertekenen</span>
             </Link>
           ))}
-          {(pendingScripts?.length ?? 0) > 0 && (
+          {pendingScripts > 0 && (
             <Link
               href="/portal/social-media"
               className="flex items-center justify-between p-4 bg-amber-50 border border-amber-200 rounded-xl"
@@ -107,7 +108,7 @@ export default async function PortalDashboard() {
                 <Clock className="h-5 w-5 text-amber-600" />
                 <div>
                   <div className="font-medium text-sm text-amber-800">
-                    {pendingScripts?.length} scripts wachten op goedkeuring
+                    {pendingScripts} {pendingScripts === 1 ? 'script wacht' : 'scripts wachten'} op goedkeuring
                   </div>
                   <div className="text-xs text-amber-600">Bekijk en keur goed in de contentkalender</div>
                 </div>

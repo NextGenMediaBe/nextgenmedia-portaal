@@ -128,6 +128,14 @@ export default async function CommandCenter() {
     client_name?: string
   }> = []
 
+  // Exacte tellingen (los van de gelimiteerde lijsten hierboven) zodat de cijfers
+  // op het dashboard altijd het echte totaal tonen.
+  let pendingScriptsCount = 0
+  let rejectedScriptsCount = 0
+  let pendingContractsCount = 0
+  let openWebdesignCount = 0
+  let openAssignmentsCount = 0
+
   if (supabaseAdmin) {
     const db = supabaseAdmin
     const [
@@ -141,27 +149,27 @@ export default async function CommandCenter() {
     ] = await Promise.all([
       db.from('clients').select('id, company_name'),
       db.from('social_content_items')
-        .select('id, client_id, title, platform, planned_date, status')
+        .select('id, client_id, title, platform, planned_date, status', { count: 'exact' })
         .eq('status', 'ready_for_review')
         .order('planned_date', { ascending: true })
         .limit(20),
       db.from('social_content_items')
-        .select('id, client_id, title, platform, planned_date, status, client_feedback')
+        .select('id, client_id, title, platform, planned_date, status, client_feedback', { count: 'exact' })
         .eq('status', 'changes_requested')
         .order('created_at', { ascending: false })
         .limit(20),
       db.from('contracts')
-        .select('id, title, status, created_at, client_id')
+        .select('id, title, status, created_at, client_id', { count: 'exact' })
         .in('status', ['sent'])
         .order('created_at', { ascending: false })
         .limit(10),
       db.from('webdesign_change_requests')
-        .select('id, client_id, title, status, kind, created_at')
+        .select('id, client_id, title, status, kind, created_at', { count: 'exact' })
         .in('status', ['new', 'in_review'])
         .order('created_at', { ascending: false })
         .limit(10),
       db.from('freelancer_assignments')
-        .select('id, title, service_slug, status, client_id, deadline, freelancer_id')
+        .select('id, title, service_slug, status, client_id, deadline, freelancer_id', { count: 'exact' })
         .in('status', ['open', 'in_progress'])
         .order('created_at', { ascending: false })
         .limit(10),
@@ -186,6 +194,13 @@ export default async function CommandCenter() {
     openWebdesign = enrich(openWebdesignRes.data)
     openAssignments = enrich(openAssignmentsRes.data as typeof openAssignments)
 
+    // Echte totalen (vallen terug op de lijstlengte als count ontbreekt)
+    pendingScriptsCount = pendingScriptsRes.count ?? pendingScripts.length
+    rejectedScriptsCount = rejectedScriptsRes.count ?? rejectedScripts.length
+    pendingContractsCount = pendingContractsRes.count ?? pendingContracts.length
+    openWebdesignCount = openWebdesignRes.count ?? openWebdesign.length
+    openAssignmentsCount = openAssignmentsRes.count ?? openAssignments.length
+
     // Service contracts expiry
     const todayMs = Date.now()
     expiringContracts = ((serviceContractsRes.data ?? []) as Array<{ id: string; client_id: string; service_slug: string; end_date: string }>)
@@ -203,8 +218,8 @@ export default async function CommandCenter() {
 
   const renewalClients: typeof clients = []
 
-  const totalPending = pendingScripts.length + rejectedScripts.length
-  const totalAlerts = renewalClients.length + pendingContracts.length + totalPending
+  const totalPending = pendingScriptsCount + rejectedScriptsCount
+  const totalAlerts = renewalClients.length + pendingContractsCount + totalPending
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -231,7 +246,7 @@ export default async function CommandCenter() {
             <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Scripts</span>
             <Clock className="h-4 w-4 text-amber-500" />
           </div>
-          <div className="text-2xl font-bold text-amber-600">{pendingScripts.length}</div>
+          <div className="text-2xl font-bold text-amber-600">{pendingScriptsCount}</div>
           <div className="text-xs text-gray-400 mt-1">Wachten op goedkeuring</div>
         </div>
         <div className="stat-card">
@@ -239,7 +254,7 @@ export default async function CommandCenter() {
             <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Feedback</span>
             <AlertTriangle className="h-4 w-4 text-red-500" />
           </div>
-          <div className="text-2xl font-bold text-red-600">{rejectedScripts.length}</div>
+          <div className="text-2xl font-bold text-red-600">{rejectedScriptsCount}</div>
           <div className="text-xs text-gray-400 mt-1">Aanpassing gevraagd</div>
         </div>
         <div className="stat-card">
@@ -257,7 +272,7 @@ export default async function CommandCenter() {
         <div className="card-base">
           <SectionHeader
             title="Scripts — bij klant"
-            count={pendingScripts.length}
+            count={pendingScriptsCount}
             href="/admin/services/social-media"
           />
           {pendingScripts.length === 0 ? (
@@ -289,7 +304,7 @@ export default async function CommandCenter() {
         <div className="card-base">
           <SectionHeader
             title="Scripts — feedback gevraagd"
-            count={rejectedScripts.length}
+            count={rejectedScriptsCount}
             href="/admin/services/social-media"
           />
           {rejectedScripts.length === 0 ? (
@@ -321,7 +336,7 @@ export default async function CommandCenter() {
         <div className="card-base">
           <SectionHeader
             title="Contracten — wachten"
-            count={pendingContracts.length}
+            count={pendingContractsCount}
             href="/admin/contracts"
           />
           {pendingContracts.length === 0 ? (
@@ -351,7 +366,7 @@ export default async function CommandCenter() {
         <div className="card-base">
           <SectionHeader
             title="Website onderhoudsvragen"
-            count={openWebdesign.length}
+            count={openWebdesignCount}
             href="/admin/services/website"
           />
           {openWebdesign.length === 0 ? (
@@ -415,7 +430,7 @@ export default async function CommandCenter() {
         <div className="card-base">
           <SectionHeader
             title="Openstaande opdrachten"
-            count={openAssignments.length}
+            count={openAssignmentsCount}
             href="/admin/assignments"
           />
           {openAssignments.length === 0 ? (
