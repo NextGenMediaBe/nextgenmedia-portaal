@@ -68,8 +68,6 @@ export default async function PortalSocialMediaPage() {
         )}
       </div>
 
-      <ShootBriefingView shoots={shoots} feedbackByShoot={feedbackByShoot} />
-
       <PortalCalendar
         initialItems={(items ?? []).map((it) => ({
           ...it,
@@ -77,6 +75,8 @@ export default async function PortalSocialMediaPage() {
         }))}
         clientId={client.id}
       />
+
+      <ShootBriefingView shoots={shoots} feedbackByShoot={feedbackByShoot} />
     </div>
   )
 }
