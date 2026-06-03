@@ -11,16 +11,18 @@ type CatKey = 'ideeen' | 'intakes' | 'scripts' | 'shoots' | 'edit' | 'feedback' 
 
 const CATS: Record<CatKey, { label: string; short: string; desc: string; dot: string; chip: string; summary: string }> = {
   ideeen: {
-    label: 'Contentideeën & kalender', short: 'Ideeën', desc: 'Contentideeën maken + contentkalender invullen',
-    dot: 'bg-yellow-400', chip: 'bg-yellow-100 text-yellow-800 border-yellow-300', summary: 'dagen ideeën',
+    label: 'Contentkalender & Scripts', short: 'Kalender & Scripts',
+    desc: 'Contentkalender invullen, contentideeën bepalen, scripts uitschrijven',
+    dot: 'bg-yellow-400', chip: 'bg-yellow-100 text-yellow-800 border-yellow-300', summary: 'kalenderdagen',
   },
   intakes: {
     label: 'Intakes & Meetings', short: 'Intakes', desc: 'Intakes, onboarding, meetings, statistieken bespreken',
     dot: 'bg-blue-500', chip: 'bg-blue-100 text-blue-700 border-blue-200', summary: 'intakedagen',
   },
   scripts: {
-    label: 'Scripts maken', short: 'Scripts', desc: 'Scripts maken / scripts aanpassen',
-    dot: 'bg-teal-500', chip: 'bg-teal-100 text-teal-700 border-teal-200', summary: 'scriptdagen',
+    label: 'Aanpassingen', short: 'Aanpass.',
+    desc: 'Aanpassingen contentkalender verwerken, aanpassingen scripts verwerken, shootbriefing voorbereiden',
+    dot: 'bg-teal-500', chip: 'bg-teal-100 text-teal-700 border-teal-200', summary: 'aanpassingsdagen',
   },
   shoots: {
     label: 'Contentshoots', short: 'Shoot', desc: 'Contentshoots',
@@ -35,8 +37,8 @@ const CATS: Record<CatKey, { label: string; short: string; desc: string; dot: st
     dot: 'bg-orange-500', chip: 'bg-orange-100 text-orange-700 border-orange-200', summary: 'feedbackdagen',
   },
   aanpassingen: {
-    label: 'Aanpassingen verwerken', short: 'Aanpass.', desc: 'Aanpassingen verwerken',
-    dot: 'bg-red-500', chip: 'bg-red-100 text-red-700 border-red-200', summary: 'aanpassingsdagen',
+    label: 'Aanpassingen verwerken', short: 'Verwerken', desc: 'Klantaanpassingen verwerken',
+    dot: 'bg-red-500', chip: 'bg-red-100 text-red-700 border-red-200', summary: 'verwerkingsdagen',
   },
   stats: {
     label: 'Statistieken', short: 'Stats', desc: 'Statistieken vorige maand versturen',
