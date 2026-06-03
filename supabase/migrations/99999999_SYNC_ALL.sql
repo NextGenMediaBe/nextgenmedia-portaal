@@ -367,5 +367,48 @@ BEGIN
   CREATE TRIGGER trg_shoot_briefings_updated BEFORE UPDATE ON public.shoot_briefings FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 EXCEPTION WHEN others THEN NULL; END $$;
 
+-- ── shoot_briefing_feedback: eenvoudige feedback/comments onder een briefing ──
+-- Klant plaatst feedback (via server na eigendomscheck); admin markeert verwerkt.
+CREATE TABLE IF NOT EXISTS public.shoot_briefing_feedback (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  shoot_id    uuid NOT NULL REFERENCES public.shoot_briefings(id) ON DELETE CASCADE,
+  client_id   uuid NOT NULL REFERENCES public.clients(id) ON DELETE CASCADE,
+  author_role text NOT NULL DEFAULT 'client',  -- 'client' | 'admin'
+  message     text NOT NULL,
+  resolved    boolean NOT NULL DEFAULT false,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_shoot_feedback_shoot ON public.shoot_briefing_feedback(shoot_id);
+
+ALTER TABLE public.shoot_briefing_feedback ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "shoot fb admin all"       ON public.shoot_briefing_feedback;
+DROP POLICY IF EXISTS "shoot fb client read own" ON public.shoot_briefing_feedback;
+CREATE POLICY "shoot fb admin all" ON public.shoot_briefing_feedback
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+CREATE POLICY "shoot fb client read own" ON public.shoot_briefing_feedback
+  FOR SELECT TO authenticated
+  USING (client_id IN (SELECT id FROM public.clients WHERE owner_user_id = auth.uid()));
+
+-- ── month_planning_overrides: handmatige uitzonderingen op de maandplanning ────
+-- Interne NextGenMedia-planning. Standaard blijft automatisch (op werkdagen);
+-- per datum kan admin de fases overschrijven (verslepen / aanpassen). Een lege
+-- array betekent 'deze dag bewust leeg'. Geen rij = standaardberekening.
+CREATE TABLE IF NOT EXISTS public.month_planning_overrides (
+  plan_date   date PRIMARY KEY,
+  categories  text[] NOT NULL DEFAULT '{}'::text[],
+  updated_by  uuid,
+  updated_at  timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.month_planning_overrides ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "month plan admin all" ON public.month_planning_overrides;
+CREATE POLICY "month plan admin all" ON public.month_planning_overrides
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.

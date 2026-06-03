@@ -1,5 +1,6 @@
 import { Camera, Calendar, Clock, MapPin, FileText } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
+import { ShootFeedback, type Feedback } from './shoot-feedback'
 
 export type Shoot = {
   id: string
@@ -10,7 +11,13 @@ export type Shoot = {
   briefing: string | null
 }
 
-export function ShootBriefingView({ shoots }: { shoots: Shoot[] }) {
+export function ShootBriefingView({
+  shoots,
+  feedbackByShoot = {},
+}: {
+  shoots: Shoot[]
+  feedbackByShoot?: Record<string, Feedback[]>
+}) {
   if (!shoots || shoots.length === 0) return null
 
   return (
@@ -55,6 +62,8 @@ export function ShootBriefingView({ shoots }: { shoots: Shoot[] }) {
                 </p>
               </div>
             )}
+
+            <ShootFeedback shootId={s.id} initialFeedback={feedbackByShoot[s.id] ?? []} />
           </div>
         )
       })}

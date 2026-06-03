@@ -2,6 +2,9 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { PortalCalendar } from './portal-calendar'
 import { ShootBriefingView, type Shoot } from '@/components/portal/shoot-briefing-view'
+import { type Feedback } from '@/components/portal/shoot-feedback'
+
+type FeedbackRow = Feedback & { shoot_id: string }
 
 export default async function PortalSocialMediaPage() {
   const supabase = await createClient()
@@ -36,6 +39,19 @@ export default async function PortalSocialMediaPage() {
     .order('shoot_date', { ascending: false, nullsFirst: false })
   const shoots = (shootRows ?? []) as Shoot[]
 
+  // Feedback per shoot (RLS: klant leest eigen)
+  const feedbackByShoot: Record<string, FeedbackRow[]> = {}
+  if (shoots.length > 0) {
+    const { data: fbRows } = await supabase
+      .from('shoot_briefing_feedback')
+      .select('*')
+      .in('shoot_id', shoots.map((s) => s.id))
+      .order('created_at', { ascending: true })
+    for (const f of (fbRows ?? []) as FeedbackRow[]) {
+      ;(feedbackByShoot[f.shoot_id] ??= []).push(f)
+    }
+  }
+
   const pendingCount = (items ?? []).filter((i) => i.status === 'ready_for_review').length
 
   return (
@@ -52,7 +68,7 @@ export default async function PortalSocialMediaPage() {
         )}
       </div>
 
-      <ShootBriefingView shoots={shoots} />
+      <ShootBriefingView shoots={shoots} feedbackByShoot={feedbackByShoot} />
 
       <PortalCalendar
         initialItems={(items ?? []).map((it) => ({

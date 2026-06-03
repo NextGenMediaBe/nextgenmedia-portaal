@@ -1,8 +1,10 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Camera, Plus, Pencil, Trash2, Loader2, Check, X, Calendar, Clock, MapPin } from 'lucide-react'
+import { Camera, Plus, Pencil, Trash2, Loader2, Check, X, Calendar, Clock, MapPin, MessageSquare } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
+
+type Feedback = { id: string; author_role: string; message: string; resolved: boolean; created_at: string }
 
 export type Shoot = {
   id: string
@@ -100,7 +102,29 @@ function ShootCard({ shoot, base, onEdit, onDeleted }: {
   shoot: Shoot; base: string; onEdit: () => void; onDeleted: () => void
 }) {
   const [busy, setBusy] = useState(false)
+  const [feedback, setFeedback] = useState<Feedback[]>([])
   const time = [shoot.start_time, shoot.end_time].filter(Boolean).join(' – ')
+
+  const loadFeedback = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/admin/shoot-feedback?shoot_id=${shoot.id}`)
+      const json = await res.json()
+      if (res.ok) setFeedback(json.feedback ?? [])
+    } catch { /* stil */ }
+  }, [shoot.id])
+
+  useEffect(() => { loadFeedback() }, [loadFeedback])
+
+  const toggleResolved = async (f: Feedback) => {
+    try {
+      const res = await fetch('/api/admin/shoot-feedback', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ feedback_id: f.id, resolved: !f.resolved }),
+      })
+      if (res.ok) setFeedback((list) => list.map((x) => x.id === f.id ? { ...x, resolved: !x.resolved } : x))
+    } catch { /* stil */ }
+  }
 
   const remove = async () => {
     if (!confirm('Deze shoot verwijderen?')) return
@@ -110,6 +134,8 @@ function ShootCard({ shoot, base, onEdit, onDeleted }: {
       if (res.ok) onDeleted()
     } finally { setBusy(false) }
   }
+
+  const openCount = feedback.filter((f) => !f.resolved && f.author_role === 'client').length
 
   return (
     <div className="border border-gray-200 rounded-xl p-4">
@@ -128,6 +154,34 @@ function ShootCard({ shoot, base, onEdit, onDeleted }: {
       </div>
       {shoot.briefing && (
         <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed bg-gray-50 rounded-lg p-3 mt-2">{shoot.briefing}</p>
+      )}
+
+      {feedback.length > 0 && (
+        <div className="mt-3 border-t border-gray-100 pt-3 space-y-2">
+          <div className="flex items-center gap-1.5 text-xs text-gray-500">
+            <MessageSquare className="h-3.5 w-3.5" /> Feedback van klant
+            {openCount > 0 && (
+              <span className="bg-amber-100 text-amber-700 text-[10px] font-medium px-1.5 py-0.5 rounded-full">{openCount} onverwerkt</span>
+            )}
+          </div>
+          {feedback.map((f) => (
+            <div key={f.id} className={`text-sm rounded-lg px-3 py-2 border ${f.resolved ? 'bg-gray-50 border-gray-200 opacity-70' : 'bg-blue-50/60 border-blue-100'}`}>
+              <div className="flex items-center justify-between gap-2 mb-0.5">
+                <span className="text-[11px] font-medium text-gray-500">{f.author_role === 'admin' ? 'NextGenMedia' : 'Klant'}</span>
+                <button
+                  onClick={() => toggleResolved(f)}
+                  className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border ${
+                    f.resolved ? 'border-green-200 text-green-700 bg-green-100' : 'border-gray-200 text-gray-500 hover:bg-gray-100'
+                  }`}
+                  title={f.resolved ? 'Markeer als onverwerkt' : 'Markeer als verwerkt'}
+                >
+                  <Check className="h-2.5 w-2.5" /> {f.resolved ? 'Verwerkt' : 'Markeer verwerkt'}
+                </button>
+              </div>
+              <p className="text-gray-700 whitespace-pre-wrap">{f.message}</p>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   )
