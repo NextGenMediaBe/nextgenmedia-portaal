@@ -14,6 +14,8 @@ import {
   statusFor,
   plannedDateMs,
   syncHash,
+  isTaskGone,
+  isNotFound,
   type CuTask,
 } from '@/lib/clickup'
 
@@ -182,35 +184,64 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         const hash = syncHash({ name, captionOpt, channelOpt, dateMs, status })
         const fields = { name, status, dateMs, captionOpt, channelOpt }
 
-        let taskId = item.clickup_task_id
+        // (Her)adopteren op naam + datum, nooit een al door een ander item
+        // geclaimde taak.
+        const tryAdopt = (): string | null => {
+          const a = findTaskByNameAndDate(existingTasks, name, dateMs)
+          return a && !claimed.has(a.id) ? a.id : null
+        }
 
-        // Reparatie: deelt dit opgeslagen task-id al met een eerder verwerkt item
-        // (zelfde taak), dan loskoppelen en een nieuwe taak maken.
+        let taskId: string | null = item.clickup_task_id
+        // Reparatie: gedeeld task-id met een eerder verwerkt item → loskoppelen.
         if (taskId && claimed.has(taskId)) taskId = null
+        if (!taskId) taskId = tryAdopt()
 
-        // Onbekend task-id → adopteren op naam + datum, maar nooit een taak die
-        // al door een ander item geclaimd is.
-        if (!taskId) {
-          const adopted = findTaskByNameAndDate(existingTasks, name, dateMs)
-          if (adopted && !claimed.has(adopted.id)) taskId = adopted.id
+        // Niets gewijzigd én reeds bekend → skip (geen onnodige API-calls)
+        if (taskId && item.clickup_task_id === taskId && item.clickup_sync_hash === hash) {
+          claimed.add(taskId)
+          summary.skipped++
+          continue
         }
 
+        let created = false
         if (taskId) {
-          // Niets gewijzigd én reeds bekend → skip (geen onnodige API-calls)
-          if (item.clickup_task_id === taskId && item.clickup_sync_hash === hash) {
-            claimed.add(taskId)
-            summary.skipped++
-            continue
+          try {
+            const res = await updateTask(taskId, fields)
+            if (res.fieldsBlocked > 0) summary.fieldLimited++
+          } catch (e) {
+            if (!isTaskGone(e)) throw e
+            // Taak is in ClickUp verwijderd → opnieuw adopteren of aanmaken.
+            const re = tryAdopt()
+            if (re) {
+              taskId = re
+              const res = await updateTask(taskId, fields)
+              if (res.fieldsBlocked > 0) summary.fieldLimited++
+            } else {
+              taskId = null
+            }
           }
-          const res = await updateTask(taskId, fields)
-          if (res.fieldsBlocked > 0) summary.fieldLimited++
-          summary.updated++
-        } else {
-          const res = await createTask(listId, fields)
-          taskId = res.id
-          if (res.fieldsBlocked > 0) summary.fieldLimited++
-          summary.created++
         }
+
+        if (!taskId) {
+          try {
+            const res = await createTask(listId, fields)
+            taskId = res.id
+            if (res.fieldsBlocked > 0) summary.fieldLimited++
+          } catch (e) {
+            if (!isNotFound(e)) throw e
+            // Lijst lijkt verwijderd → structuur opnieuw opbouwen en hermaken.
+            const ref = await findOrCreateClientList(client.company_name)
+            listId = ref.listId
+            try { await admin.from('clients').update({ clickup_folder_id: ref.folderId, clickup_list_id: ref.listId }).eq('id', id) } catch { }
+            const res = await createTask(listId, fields)
+            taskId = res.id
+            if (res.fieldsBlocked > 0) summary.fieldLimited++
+          }
+          created = true
+        }
+
+        if (created) summary.created++
+        else summary.updated++
         claimed.add(taskId)
 
         // Per item committen → sync is hervatbaar als hij halverwege stopt

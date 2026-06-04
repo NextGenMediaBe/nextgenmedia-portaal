@@ -62,7 +62,7 @@ export function ClickUpSyncControl({ clientId }: { clientId: string }) {
     const acc: Totals = { total: 0, created: 0, updated: 0, skipped: 0, failed: 0, fieldLimited: 0 }
     const allErrors: SyncResult['errors'] = []
     try {
-      for (let i = 0; i < 40; i++) {
+      for (let i = 0; i < 120; i++) {
         const res = await fetch(base, { method: 'POST' })
         const { ok, data } = await readResult(res)
         if (!ok) throw new Error(data.error || 'Sync mislukt')

@@ -297,6 +297,18 @@ export type TaskFields = {
 
 export type TaskResult = { id: string; fieldsBlocked: number }
 
+/** Taak bestaat niet meer in ClickUp (verwijderd) → opnieuw aanmaken. */
+export function isTaskGone(err: unknown): boolean {
+  const m = err instanceof Error ? err.message : String(err)
+  return /ITEM_013|task not found|not found, deleted/i.test(m)
+}
+
+/** Generieke 404 (bv. lijst verwijderd) → structuur opnieuw opbouwen. */
+export function isNotFound(err: unknown): boolean {
+  const m = err instanceof Error ? err.message : String(err)
+  return /→\s*404\b/.test(m)
+}
+
 // We syncen bewust ALLEEN de titel (= WAT) + status + due_date (= WANNEER).
 // Geen custom fields: die vallen onder de ClickUp-planlimiet (FIELD_033) en zijn
 // niet nodig. due_date is een ingebouwd ClickUp-veld en telt NIET mee voor die
