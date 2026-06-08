@@ -27,7 +27,7 @@ const NAV = [
   { label: 'Partners',    href: '/admin/partners',     icon: UserSquare2 },
   { label: 'Opdrachten',  href: '/admin/assignments',  icon: Briefcase },
   { label: 'Settlements', href: '/admin/settlements',  icon: ArrowLeftRight },
-  { label: 'Omzet',       href: '/admin/revenue',      icon: TrendingUp },
+  { label: 'Financiën',   href: '/admin/revenue',      icon: TrendingUp },
   {
     label: 'Informatief', href: '/admin/informatief', icon: Info,
     children: [

@@ -410,5 +410,39 @@ CREATE POLICY "month plan admin all" ON public.month_planning_overrides
   USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
   WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
 
+-- ── cost_entries: kosten (eenmalig + recurring) voor het financieel dashboard ─
+-- Bedragen excl. btw + btw%; incl. wordt berekend. Admin-only.
+CREATE TABLE IF NOT EXISTS public.cost_entries (
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name              text,
+  category          text,
+  type              text NOT NULL DEFAULT 'one_time',   -- 'one_time' | 'recurring'
+  cost_date         date,                                -- eenmalig
+  start_date        date,                                -- recurring
+  end_date          date,                                -- recurring (optioneel)
+  billing_frequency text NOT NULL DEFAULT 'monthly',     -- monthly | quarterly | annual
+  amount_excl       numeric NOT NULL DEFAULT 0,
+  vat_pct           numeric NOT NULL DEFAULT 21,
+  notes             text,
+  created_by        uuid,
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  updated_at        timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_cost_entries_type ON public.cost_entries(type);
+
+ALTER TABLE public.cost_entries ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "costs admin all" ON public.cost_entries;
+CREATE POLICY "costs admin all" ON public.cost_entries
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
+DO $$
+BEGIN
+  DROP TRIGGER IF EXISTS trg_cost_entries_updated ON public.cost_entries;
+  CREATE TRIGGER trg_cost_entries_updated BEFORE UPDATE ON public.cost_entries FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+EXCEPTION WHEN others THEN NULL; END $$;
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.
