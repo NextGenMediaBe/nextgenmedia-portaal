@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 
-type Period = 'month' | 'quarter' | 'year' | 'fy'
+type Period = 'month' | 'quarter' | 'fy'
 
 export function PeriodFilter({ year, period, quarter, month }: {
   year: number; period: Period; quarter: number; month: number
@@ -19,7 +19,7 @@ export function PeriodFilter({ year, period, quarter, month }: {
 
   const MONTHS = ['Jan', 'Feb', 'Mrt', 'Apr', 'Mei', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dec']
   const PERIODS: { v: Period; l: string }[] = [
-    { v: 'month', l: 'Maand' }, { v: 'quarter', l: 'Kwartaal' }, { v: 'year', l: 'Jaar (YTD)' }, { v: 'fy', l: 'Boekjaar' },
+    { v: 'month', l: 'Maand' }, { v: 'quarter', l: 'Kwartaal' }, { v: 'fy', l: 'Boekjaar' },
   ]
 
   return (

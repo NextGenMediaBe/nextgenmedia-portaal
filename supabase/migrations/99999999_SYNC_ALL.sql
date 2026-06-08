@@ -444,5 +444,37 @@ BEGIN
   CREATE TRIGGER trg_cost_entries_updated BEFORE UPDATE ON public.cost_entries FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 EXCEPTION WHEN others THEN NULL; END $$;
 
+-- ── fiscal_settings: instelbare fiscale parameters + loon per boekjaar ────────
+-- Geen hardcoded percentages in de code: deze waarden zijn admin-instelbaar en
+-- wijzigen jaarlijks. Eén rij per boekjaar.
+CREATE TABLE IF NOT EXISTS public.fiscal_settings (
+  year                   integer PRIMARY KEY,
+  corporate_tax_pct      numeric NOT NULL DEFAULT 25,
+  reduced_tax_pct        numeric NOT NULL DEFAULT 20,
+  reduced_tax_limit      numeric NOT NULL DEFAULT 100000,
+  social_pct_band1       numeric NOT NULL DEFAULT 20.5,
+  social_pct_band2       numeric NOT NULL DEFAULT 14.16,
+  income_band1_limit     numeric NOT NULL DEFAULT 75000,
+  income_band2_limit     numeric NOT NULL DEFAULT 115000,
+  mgmt_fee_pct           numeric NOT NULL DEFAULT 3.05,
+  min_quarter            numeric NOT NULL DEFAULT 870,
+  max_quarter            numeric NOT NULL DEFAULT 5000,
+  extra_pct              numeric NOT NULL DEFAULT 0,
+  extra_fixed            numeric NOT NULL DEFAULT 0,
+  salary_gross_monthly   numeric NOT NULL DEFAULT 0,
+  salary_months          integer NOT NULL DEFAULT 12,
+  statuut                text NOT NULL DEFAULT 'zaakvoerder',
+  include_social_as_cost boolean NOT NULL DEFAULT false,
+  updated_by             uuid,
+  updated_at             timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.fiscal_settings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "fiscal admin all" ON public.fiscal_settings;
+CREATE POLICY "fiscal admin all" ON public.fiscal_settings
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.
