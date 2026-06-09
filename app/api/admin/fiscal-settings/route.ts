@@ -14,6 +14,7 @@ const NUM_FIELDS = [
   'social_pct_band1', 'social_pct_band2', 'income_band1_limit', 'income_band2_limit',
   'mgmt_fee_pct', 'min_quarter', 'max_quarter', 'extra_pct', 'extra_fixed',
   'salary_gross_monthly', 'salary_months',
+  'vat_pct', 'cash_reserve_pct', 'cash_on_account', 'partner_draws',
 ] as const
 
 export async function GET(req: NextRequest) {

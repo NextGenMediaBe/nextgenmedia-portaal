@@ -117,6 +117,14 @@ export function FiscalSettingsForm({ settings, ebitdaFY }: { settings: FiscalSet
           <NumField label="Aanvullend vast bedrag" suffix="€/jaar" step="10" value={f.extra_fixed} onChange={v => set('extra_fixed', v)} />
         </div>
 
+        <div className="text-[11px] font-medium text-gray-400 uppercase tracking-wide mb-2 mt-4">Cash, BTW &amp; uitkering</div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <NumField label="BTW-percentage" suffix="%" value={f.vat_pct} onChange={v => set('vat_pct', v)} />
+          <NumField label="Cash reserve" suffix="%" value={f.cash_reserve_pct} onChange={v => set('cash_reserve_pct', v)} />
+          <NumField label="Cash op rekening" suffix="€" step="100" value={f.cash_on_account} onChange={v => set('cash_on_account', v)} />
+          <NumField label="Opnames vennoten" suffix="€" step="100" value={f.partner_draws} onChange={v => set('partner_draws', v)} />
+        </div>
+
         {error && <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mt-4">{error}</div>}
 
         <div className="flex items-center gap-3 mt-4">

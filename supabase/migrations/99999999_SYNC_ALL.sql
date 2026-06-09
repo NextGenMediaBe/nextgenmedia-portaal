@@ -469,6 +469,13 @@ CREATE TABLE IF NOT EXISTS public.fiscal_settings (
   updated_at             timestamptz NOT NULL DEFAULT now()
 );
 
+-- Dashboard 3.0: BTW%, cash-reserve%, cash op rekening, opnames vennoten
+ALTER TABLE public.fiscal_settings
+  ADD COLUMN IF NOT EXISTS vat_pct          numeric NOT NULL DEFAULT 21,
+  ADD COLUMN IF NOT EXISTS cash_reserve_pct numeric NOT NULL DEFAULT 25,
+  ADD COLUMN IF NOT EXISTS cash_on_account  numeric NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS partner_draws    numeric NOT NULL DEFAULT 0;
+
 ALTER TABLE public.fiscal_settings ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "fiscal admin all" ON public.fiscal_settings;
 CREATE POLICY "fiscal admin all" ON public.fiscal_settings
