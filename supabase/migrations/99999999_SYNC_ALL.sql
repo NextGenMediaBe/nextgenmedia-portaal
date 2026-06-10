@@ -483,5 +483,48 @@ CREATE POLICY "fiscal admin all" ON public.fiscal_settings
   USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
   WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
 
+-- ── vesting (Vestiging-module): config + omzetregistraties ────────────────────
+-- Puur informatief dashboard van het vestigingsprincipe; wijzigt geen echte
+-- aandelen. Admin-only. Eén configrij (id=1) met de instelbare schijf-parameters.
+CREATE TABLE IF NOT EXISTS public.vesting_config (
+  id           integer PRIMARY KEY DEFAULT 1,
+  start_date   date,
+  schijf2_per  numeric NOT NULL DEFAULT 5000,
+  schijf3_y1   numeric NOT NULL DEFAULT 10000,
+  schijf3_y2   numeric NOT NULL DEFAULT 12000,
+  schijf3_y3   numeric NOT NULL DEFAULT 15000,
+  inbound_pct  numeric NOT NULL DEFAULT 30,
+  website_pct  numeric NOT NULL DEFAULT 100,
+  updated_at   timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.vesting_revenue (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_name     text,
+  service_slug    text,
+  entry_date      date NOT NULL DEFAULT CURRENT_DATE,
+  net_revenue     numeric NOT NULL DEFAULT 0,
+  type            text NOT NULL DEFAULT 'inbound',  -- inbound | outbound | website
+  attribution_pct numeric NOT NULL DEFAULT 0,
+  vesting_revenue numeric NOT NULL DEFAULT 0,
+  created_by      uuid,
+  created_at      timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_vesting_revenue_date ON public.vesting_revenue(entry_date DESC);
+
+ALTER TABLE public.vesting_config  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.vesting_revenue ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "vesting cfg admin all" ON public.vesting_config;
+DROP POLICY IF EXISTS "vesting rev admin all" ON public.vesting_revenue;
+CREATE POLICY "vesting cfg admin all" ON public.vesting_config
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+CREATE POLICY "vesting rev admin all" ON public.vesting_revenue
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.
