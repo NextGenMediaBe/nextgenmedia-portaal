@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
-import { mergeVestingConfig, attributionFor } from '@/lib/vesting'
+import { attributionFor } from '@/lib/vesting'
 
 async function requireAdmin() {
   const supabase = await createClient()
@@ -15,16 +15,15 @@ export async function POST(req: NextRequest) {
   try {
     if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const body = await req.json()
-    const { client_name, service_slug, entry_date, net_revenue, type, outbound_pct } = body
+    const { client_name, service_slug, entry_date, net_revenue, type, outreach, closing } = body
     if (!net_revenue || Number(net_revenue) <= 0) return NextResponse.json({ error: 'Netto omzet is verplicht' }, { status: 400 })
-    const t = ['inbound', 'outbound', 'website'].includes(type) ? type : 'inbound'
+    const t = type === 'outbound' ? 'outbound' : 'inbound'
+    const oReach = t === 'outbound' ? Boolean(outreach) : false
+    const isClosing = Boolean(closing)
 
     const admin = createAdminSupabaseClient()
-    const { data: cfgRow } = await admin.from('vesting_config').select('*').eq('id', 1).maybeSingle()
-    const cfg = mergeVestingConfig(cfgRow)
-
     const net = Number(net_revenue)
-    const attribution = attributionFor(t, cfg, Number(outbound_pct) || 0)
+    const attribution = attributionFor(t, { outreach: oReach, closing: isClosing })
     const vesting = Math.round((net * attribution) / 100 * 100) / 100
 
     const { error } = await admin.from('vesting_revenue').insert({
@@ -33,6 +32,8 @@ export async function POST(req: NextRequest) {
       entry_date: entry_date || new Date().toISOString().slice(0, 10),
       net_revenue: net,
       type: t,
+      outreach: t === 'outbound' ? oReach : null,
+      closing: isClosing,
       attribution_pct: attribution,
       vesting_revenue: vesting,
     })

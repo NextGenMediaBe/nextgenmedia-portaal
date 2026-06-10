@@ -33,9 +33,8 @@ export function VestingConfigForm({ cfg }: { cfg: VestingConfig }) {
         <div><label className={lbl}>Schijf 3 · jaar 1 (€/%)</label><input type="number" step="100" className={inp} value={String(f.schijf3_y1)} onChange={e => set('schijf3_y1', Number(e.target.value))} /></div>
         <div><label className={lbl}>Schijf 3 · jaar 2 (€/%)</label><input type="number" step="100" className={inp} value={String(f.schijf3_y2)} onChange={e => set('schijf3_y2', Number(e.target.value))} /></div>
         <div><label className={lbl}>Schijf 3 · jaar 3 (€/%)</label><input type="number" step="100" className={inp} value={String(f.schijf3_y3)} onChange={e => set('schijf3_y3', Number(e.target.value))} /></div>
-        <div><label className={lbl}>Toerekening inbound (%)</label><input type="number" step="1" className={inp} value={String(f.inbound_pct)} onChange={e => set('inbound_pct', Number(e.target.value))} /></div>
-        <div><label className={lbl}>Toerekening website (%)</label><input type="number" step="1" className={inp} value={String(f.website_pct)} onChange={e => set('website_pct', Number(e.target.value))} /></div>
       </div>
+      <p className="text-[11px] text-gray-400 mt-3">Toerekening is vast volgens de overeenkomst: outbound = outreach 50% + closing 50%, inbound = closing 25%.</p>
       <div className="flex items-center gap-3 mt-4">
         <button onClick={save} disabled={saving} className="btn-primary">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}Opslaan</button>
         {saved && <span className="text-sm text-green-600 flex items-center gap-1"><Check className="h-4 w-4" />Opgeslagen</span>}

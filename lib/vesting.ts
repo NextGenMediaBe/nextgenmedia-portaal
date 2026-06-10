@@ -78,9 +78,15 @@ export function vestingStatus(total: number, cfg: VestingConfig, now = new Date(
   return { year, s3rate, pct, currentInt, nextInt, atMax, neededForNext, costStep }
 }
 
-/** Toerekeningspercentage per type. Outbound = door admin gekozen waarde. */
-export function attributionFor(type: string, cfg: VestingConfig, outboundChoice = 0): number {
-  if (type === 'inbound') return cfg.inbound_pct
-  if (type === 'website') return cfg.website_pct
-  return outboundChoice // outbound
+// Toerekening (vast volgens overeenkomst):
+//   Outbound = outreach (50%) + closing (50%)  → 0 / 50 / 100%
+//   Inbound  = closing (25%)                    → 0 / 25%
+export const OUTREACH_PCT = 50
+export const CLOSING_OUTBOUND_PCT = 50
+export const CLOSING_INBOUND_PCT = 25
+
+export function attributionFor(type: string, opts: { outreach?: boolean; closing?: boolean }): number {
+  if (type === 'outbound') return (opts.outreach ? OUTREACH_PCT : 0) + (opts.closing ? CLOSING_OUTBOUND_PCT : 0)
+  // inbound
+  return opts.closing ? CLOSING_INBOUND_PCT : 0
 }

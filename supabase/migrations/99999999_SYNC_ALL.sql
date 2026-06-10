@@ -511,6 +511,11 @@ CREATE TABLE IF NOT EXISTS public.vesting_revenue (
   created_at      timestamptz NOT NULL DEFAULT now()
 );
 
+-- Outbound = outreach (50%) + closing (50%); Inbound = closing (25%).
+ALTER TABLE public.vesting_revenue
+  ADD COLUMN IF NOT EXISTS outreach boolean,
+  ADD COLUMN IF NOT EXISTS closing  boolean;
+
 CREATE INDEX IF NOT EXISTS idx_vesting_revenue_date ON public.vesting_revenue(entry_date DESC);
 
 ALTER TABLE public.vesting_config  ENABLE ROW LEVEL SECURITY;

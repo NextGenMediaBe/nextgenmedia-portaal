@@ -9,8 +9,8 @@ import {
 import { VestingForm } from './vesting-form'
 import { VestingConfigForm, VestingDelete } from './vesting-config-form'
 
-type Reg = { id: string; client_name: string | null; service_slug: string | null; entry_date: string; net_revenue: number; type: string; attribution_pct: number; vesting_revenue: number }
-const TYPE_LABEL: Record<string, string> = { inbound: 'Inbound', outbound: 'Outbound', website: 'Website' }
+type Reg = { id: string; client_name: string | null; service_slug: string | null; entry_date: string; net_revenue: number; type: string; outreach: boolean | null; closing: boolean | null; attribution_pct: number; vesting_revenue: number }
+const TYPE_LABEL: Record<string, string> = { inbound: 'Inbound', outbound: 'Outbound' }
 
 export default async function VestingPage() {
   const admin = createAdminSupabaseClient()
@@ -37,7 +37,7 @@ export default async function VestingPage() {
           <h1 className="text-2xl font-bold">Vestiging</h1>
           <p className="text-sm text-gray-500 mt-0.5">Berekening van het vestigingsprincipe — uitsluitend informatief</p>
         </div>
-        <VestingForm cfg={cfg} />
+        <VestingForm />
       </div>
 
       {/* Aandeelhouders */}
@@ -132,7 +132,14 @@ export default async function VestingPage() {
                     <td className="py-2.5 text-gray-500 text-xs">{formatDate(r.entry_date)}</td>
                     <td className="py-2.5 font-medium">{r.client_name ?? '—'}</td>
                     <td className="py-2.5 text-gray-500">{r.service_slug ? (SERVICE_LABELS[r.service_slug] ?? r.service_slug) : '—'}</td>
-                    <td className="py-2.5 text-gray-500">{TYPE_LABEL[r.type] ?? r.type}</td>
+                    <td className="py-2.5 text-gray-500">
+                      {TYPE_LABEL[r.type] ?? r.type}
+                      <span className="text-gray-400 text-xs"> · {
+                        r.type === 'outbound'
+                          ? [r.outreach ? 'Outreach' : null, r.closing ? 'Closing' : null].filter(Boolean).join(' + ') || 'geen'
+                          : (r.closing ? 'Closing' : 'geen')
+                      }</span>
+                    </td>
                     <td className="py-2.5 text-right">{formatEuro(Number(r.net_revenue))}</td>
                     <td className="py-2.5 text-right text-gray-400">{Number(r.attribution_pct)}%</td>
                     <td className="py-2.5 text-right font-semibold text-green-600">{formatEuro(Number(r.vesting_revenue))}</td>

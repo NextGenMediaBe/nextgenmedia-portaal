@@ -4,13 +4,11 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, X, Loader2 } from 'lucide-react'
 import { SERVICE_LABELS, SERVICE_SLUGS } from '@/lib/utils'
-import { attributionFor, type VestingConfig } from '@/lib/vesting'
+import { attributionFor } from '@/lib/vesting'
 
 const euro = (n: number) => new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(n)
-const TYPES = [{ v: 'inbound', l: 'Inbound' }, { v: 'outbound', l: 'Outbound' }, { v: 'website', l: 'Website' }]
-const OUTBOUND_CHOICES = [0, 30, 50, 100]
 
-export function VestingForm({ cfg }: { cfg: VestingConfig }) {
+export function VestingForm() {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -18,7 +16,7 @@ export function VestingForm({ cfg }: { cfg: VestingConfig }) {
   const [clients, setClients] = useState<string[]>([])
 
   const today = new Date().toISOString().slice(0, 10)
-  const [form, setForm] = useState({ client_name: '', service_slug: '', entry_date: today, net_revenue: '', type: 'inbound', outbound_pct: 30 })
+  const [form, setForm] = useState({ client_name: '', service_slug: '', entry_date: today, net_revenue: '', type: 'outbound', outreach: false, closing: false })
 
   useEffect(() => {
     if (open && clients.length === 0) {
@@ -30,7 +28,7 @@ export function VestingForm({ cfg }: { cfg: VestingConfig }) {
   const lbl = 'block text-xs font-medium text-gray-600 mb-1'
 
   const net = parseFloat(form.net_revenue) || 0
-  const attribution = attributionFor(form.type, cfg, form.outbound_pct)
+  const attribution = attributionFor(form.type, { outreach: form.outreach, closing: form.closing })
   const vesting = net * attribution / 100
 
   const submit = async (e: React.FormEvent) => {
@@ -40,15 +38,32 @@ export function VestingForm({ cfg }: { cfg: VestingConfig }) {
     try {
       const res = await fetch('/api/admin/vesting', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, net_revenue: net, outbound_pct: form.type === 'outbound' ? form.outbound_pct : undefined }),
+        body: JSON.stringify({
+          client_name: form.client_name, service_slug: form.service_slug, entry_date: form.entry_date,
+          net_revenue: net, type: form.type,
+          outreach: form.type === 'outbound' ? form.outreach : false,
+          closing: form.closing,
+        }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
       setOpen(false)
-      setForm({ client_name: '', service_slug: '', entry_date: today, net_revenue: '', type: 'inbound', outbound_pct: 30 })
+      setForm({ client_name: '', service_slug: '', entry_date: today, net_revenue: '', type: 'outbound', outreach: false, closing: false })
       router.refresh()
     } catch (err) { setError(err instanceof Error ? err.message : 'Fout') } finally { setLoading(false) }
   }
+
+  const YesNo = ({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) => (
+    <div>
+      <label className={lbl}>{label}</label>
+      <div className="grid grid-cols-2 gap-1.5">
+        {[{ v: true, l: 'Ja' }, { v: false, l: 'Nee' }].map(o => (
+          <button key={o.l} type="button" onClick={() => onChange(o.v)}
+            className={`py-2 rounded-lg border text-sm font-medium transition-colors ${value === o.v ? 'border-[#fff848] bg-[#fff848]/10 text-black' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>{o.l}</button>
+        ))}
+      </div>
+    </div>
+  )
 
   if (!open) return <button onClick={() => setOpen(true)} className="btn-primary"><Plus className="h-4 w-4" />Vestigingsomzet toevoegen</button>
 
@@ -85,24 +100,22 @@ export function VestingForm({ cfg }: { cfg: VestingConfig }) {
 
           <div>
             <label className={lbl}>Type</label>
-            <div className="grid grid-cols-3 gap-1.5">
-              {TYPES.map(t => (
-                <button key={t.v} type="button" onClick={() => setForm(p => ({ ...p, type: t.v }))}
+            <div className="grid grid-cols-2 gap-1.5">
+              {[{ v: 'outbound', l: 'Outbound' }, { v: 'inbound', l: 'Inbound' }].map(t => (
+                <button key={t.v} type="button" onClick={() => setForm(p => ({ ...p, type: t.v, outreach: false, closing: false }))}
                   className={`py-2 rounded-lg border text-sm font-medium transition-colors ${form.type === t.v ? 'border-[#fff848] bg-[#fff848]/10 text-black' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>{t.l}</button>
               ))}
             </div>
+            <p className="text-[11px] text-gray-400 mt-1">{form.type === 'outbound' ? 'Marco genereerde zelf de lead.' : 'De lead kwam spontaan binnen.'}</p>
           </div>
 
-          {form.type === 'outbound' && (
-            <div>
-              <label className={lbl}>Toerekening outbound</label>
-              <div className="grid grid-cols-4 gap-1.5">
-                {OUTBOUND_CHOICES.map(p => (
-                  <button key={p} type="button" onClick={() => setForm(f => ({ ...f, outbound_pct: p }))}
-                    className={`py-2 rounded-lg border text-sm font-medium transition-colors ${form.outbound_pct === p ? 'border-[#fff848] bg-[#fff848]/10 text-black' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>{p}%</button>
-                ))}
-              </div>
+          {form.type === 'outbound' ? (
+            <div className="grid grid-cols-2 gap-3">
+              <YesNo label="Outreach (50%)" value={form.outreach} onChange={v => setForm(p => ({ ...p, outreach: v }))} />
+              <YesNo label="Closing (50%)" value={form.closing} onChange={v => setForm(p => ({ ...p, closing: v }))} />
             </div>
+          ) : (
+            <YesNo label="Closing (25%)" value={form.closing} onChange={v => setForm(p => ({ ...p, closing: v }))} />
           )}
 
           <div className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2.5 text-sm grid grid-cols-3 gap-2 text-center">
