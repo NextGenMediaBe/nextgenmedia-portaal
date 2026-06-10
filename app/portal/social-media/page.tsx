@@ -1,10 +1,12 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminSupabaseClient, trySignedUrl } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { PortalCalendar } from './portal-calendar'
 import { ShootBriefingView, type Shoot } from '@/components/portal/shoot-briefing-view'
 import { type Feedback } from '@/components/portal/shoot-feedback'
+import { type Idea } from '@/components/portal/shoot-ideas'
 
 type FeedbackRow = Feedback & { shoot_id: string }
+type IdeaRow = Idea & { shoot_id: string; attachment_path: string | null }
 
 export default async function PortalSocialMediaPage() {
   const supabase = await createClient()
@@ -52,6 +54,21 @@ export default async function PortalSocialMediaPage() {
     }
   }
 
+  // Shoot-ideeën van de klant (+ signed urls voor bijlagen) — server-side via admin
+  const ideasByShoot: Record<string, Idea[]> = {}
+  if (shoots.length > 0) {
+    const admin = createAdminSupabaseClient()
+    const { data: ideaRows } = await admin
+      .from('shoot_ideas')
+      .select('*')
+      .in('shoot_id', shoots.map((s) => s.id))
+      .order('created_at', { ascending: false })
+    for (const r of (ideaRows ?? []) as IdeaRow[]) {
+      const attachment_url = r.attachment_path ? await trySignedUrl(admin, 'contracts', r.attachment_path) : null
+      ;(ideasByShoot[r.shoot_id] ??= []).push({ ...r, attachment_url })
+    }
+  }
+
   const pendingCount = (items ?? []).filter((i) => i.status === 'ready_for_review').length
 
   return (
@@ -76,7 +93,7 @@ export default async function PortalSocialMediaPage() {
         clientId={client.id}
       />
 
-      <ShootBriefingView shoots={shoots} feedbackByShoot={feedbackByShoot} />
+      <ShootBriefingView shoots={shoots} feedbackByShoot={feedbackByShoot} ideasByShoot={ideasByShoot} />
     </div>
   )
 }

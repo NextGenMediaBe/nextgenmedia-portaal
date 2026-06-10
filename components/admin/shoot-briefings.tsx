@@ -1,10 +1,12 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Camera, Plus, Pencil, Trash2, Loader2, Check, X, Calendar, Clock, MapPin, MessageSquare } from 'lucide-react'
+import { Camera, Plus, Pencil, Trash2, Loader2, Check, X, Calendar, Clock, MapPin, MessageSquare, Lightbulb, Paperclip } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 
 type Feedback = { id: string; author_role: string; message: string; resolved: boolean; created_at: string }
+type Idea = { id: string; title: string | null; description: string | null; attachment_url: string | null; status: string; admin_note: string | null; created_at: string }
+const IDEA_STATUS = [{ v: 'new', l: 'Nieuw' }, { v: 'seen', l: 'Bekeken' }, { v: 'use', l: 'Meenemen in shoot' }, { v: 'discard', l: 'Niet gebruiken' }]
 
 export type Shoot = {
   id: string
@@ -115,6 +117,17 @@ function ShootCard({ shoot, base, onEdit, onDeleted }: {
 
   useEffect(() => { loadFeedback() }, [loadFeedback])
 
+  const [ideas, setIdeas] = useState<Idea[]>([])
+  const loadIdeas = useCallback(async () => {
+    try { const res = await fetch(`/api/admin/shoot-ideas?shoot_id=${shoot.id}`); const j = await res.json(); if (res.ok) setIdeas(j.ideas ?? []) } catch { /* stil */ }
+  }, [shoot.id])
+  useEffect(() => { loadIdeas() }, [loadIdeas])
+
+  const patchIdea = async (id: string, patch: { status?: string; admin_note?: string }) => {
+    setIdeas(list => list.map(i => i.id === id ? { ...i, ...patch } : i))
+    try { await fetch('/api/admin/shoot-ideas', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idea_id: id, ...patch }) }) } catch { /* stil */ }
+  }
+
   const toggleResolved = async (f: Feedback) => {
     try {
       const res = await fetch('/api/admin/shoot-feedback', {
@@ -179,6 +192,30 @@ function ShootCard({ shoot, base, onEdit, onDeleted }: {
                 </button>
               </div>
               <p className="text-gray-700 whitespace-pre-wrap">{f.message}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {ideas.length > 0 && (
+        <div className="mt-3 border-t border-gray-100 pt-3 space-y-2">
+          <div className="flex items-center gap-1.5 text-xs text-gray-500"><Lightbulb className="h-3.5 w-3.5" />Ideeën van de klant</div>
+          {ideas.map((i) => (
+            <div key={i.id} className="text-sm rounded-lg px-3 py-2 border border-gray-100 bg-gray-50/60 space-y-1.5">
+              <div className="flex items-start justify-between gap-2 flex-wrap">
+                <div className="min-w-0">
+                  <div className="font-medium">{i.title || 'Idee'}</div>
+                  {i.description && <p className="text-gray-600 whitespace-pre-wrap">{i.description}</p>}
+                  {i.attachment_url && <a href={i.attachment_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline mt-0.5"><Paperclip className="h-3 w-3" />Bijlage</a>}
+                  <div className="text-[11px] text-gray-400 mt-0.5">{formatDate(i.created_at)}</div>
+                </div>
+                <select value={i.status} onChange={(e) => patchIdea(i.id, { status: e.target.value })}
+                  className="text-xs px-2 py-1 rounded-lg border border-gray-200 shrink-0">
+                  {IDEA_STATUS.map(s => <option key={s.v} value={s.v}>{s.l}</option>)}
+                </select>
+              </div>
+              <input defaultValue={i.admin_note ?? ''} onBlur={(e) => { if (e.target.value !== (i.admin_note ?? '')) patchIdea(i.id, { admin_note: e.target.value }) }}
+                placeholder="Interne notitie…" className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg" />
             </div>
           ))}
         </div>

@@ -531,5 +531,82 @@ CREATE POLICY "vesting rev admin all" ON public.vesting_revenue
   USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
   WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
 
+-- ── purchases: aankoopaanvragen + goedkeuringen (>€1.000) ─────────────────────
+CREATE TABLE IF NOT EXISTS public.purchases (
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  title             text,
+  description       text,
+  amount_excl       numeric NOT NULL DEFAULT 0,
+  vat_pct           numeric NOT NULL DEFAULT 21,
+  supplier          text,
+  category          text,
+  requester_user_id uuid,
+  requester_email   text,
+  entry_date        date NOT NULL DEFAULT CURRENT_DATE,
+  attachment_path   text,
+  status            text NOT NULL DEFAULT 'pending',  -- concept|pending|approved|approved_under_threshold|rejected
+  needs_approval    boolean NOT NULL DEFAULT true,
+  cost_entry_id     uuid,
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  updated_at        timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_purchases_status ON public.purchases(status);
+
+CREATE TABLE IF NOT EXISTS public.purchase_approvals (
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  purchase_id       uuid NOT NULL REFERENCES public.purchases(id) ON DELETE CASCADE,
+  approver_user_id  uuid,
+  approver_email    text NOT NULL,
+  decision          text NOT NULL,        -- approved | rejected
+  comment           text,
+  decided_at        timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (purchase_id, approver_email)
+);
+CREATE INDEX IF NOT EXISTS idx_purchase_approvals_purchase ON public.purchase_approvals(purchase_id);
+
+ALTER TABLE public.purchases          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.purchase_approvals ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "purchases admin all"  ON public.purchases;
+DROP POLICY IF EXISTS "purchase appr admin"  ON public.purchase_approvals;
+CREATE POLICY "purchases admin all" ON public.purchases
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+CREATE POLICY "purchase appr admin" ON public.purchase_approvals
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
+DO $$
+BEGIN
+  DROP TRIGGER IF EXISTS trg_purchases_updated ON public.purchases;
+  CREATE TRIGGER trg_purchases_updated BEFORE UPDATE ON public.purchases FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+EXCEPTION WHEN others THEN NULL; END $$;
+
+-- ── shoot_ideas: ideeën/inspiratie van de klant per shoot (geen scriptwijziging) ─
+CREATE TABLE IF NOT EXISTS public.shoot_ideas (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  shoot_id        uuid NOT NULL REFERENCES public.shoot_briefings(id) ON DELETE CASCADE,
+  client_id       uuid NOT NULL REFERENCES public.clients(id) ON DELETE CASCADE,
+  title           text,
+  description     text,
+  attachment_path text,
+  status          text NOT NULL DEFAULT 'new',  -- new | seen | use | discard
+  admin_note      text,
+  created_at      timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_shoot_ideas_shoot ON public.shoot_ideas(shoot_id);
+
+ALTER TABLE public.shoot_ideas ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "shoot ideas admin all"       ON public.shoot_ideas;
+DROP POLICY IF EXISTS "shoot ideas client read own" ON public.shoot_ideas;
+CREATE POLICY "shoot ideas admin all" ON public.shoot_ideas
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+CREATE POLICY "shoot ideas client read own" ON public.shoot_ideas
+  FOR SELECT TO authenticated
+  USING (client_id IN (SELECT id FROM public.clients WHERE owner_user_id = auth.uid()));
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.
