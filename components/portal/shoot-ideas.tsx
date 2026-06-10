@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Lightbulb, Send, Loader2, Paperclip, Plus } from 'lucide-react'
+import { Lightbulb, Send, Loader2, Paperclip, Plus, Trash2 } from 'lucide-react'
 
 export type Idea = { id: string; title: string | null; description: string | null; attachment_url?: string | null; status: string; created_at: string }
 
@@ -17,6 +17,17 @@ export function ShootIdeas({ shootId, initialIdeas }: { shootId: string; initial
   const [file, setFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState<string | null>(null)
+
+  const remove = async (id: string) => {
+    if (!confirm('Dit idee verwijderen?')) return
+    setDeleting(id)
+    try {
+      const res = await fetch(`/api/portal/shoot-ideas?id=${id}`, { method: 'DELETE' })
+      const j = await res.json(); if (!res.ok) throw new Error(j.error)
+      router.refresh()
+    } catch (e) { alert(e instanceof Error ? e.message : 'Fout') } finally { setDeleting(null) }
+  }
 
   const submit = async () => {
     if (!title.trim() && !desc.trim()) { setError('Geef een titel of omschrijving'); return }
@@ -44,7 +55,12 @@ export function ShootIdeas({ shootId, initialIdeas }: { shootId: string; initial
             <div key={i.id} className="text-sm rounded-lg px-3 py-2 border border-gray-100 bg-gray-50/60">
               <div className="flex items-center justify-between gap-2">
                 <span className="font-medium">{i.title || 'Idee'}</span>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${STATUS_CLS[i.status] ?? 'bg-gray-100 text-gray-600'}`}>{STATUS_LABEL[i.status] ?? i.status}</span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${STATUS_CLS[i.status] ?? 'bg-gray-100 text-gray-600'}`}>{STATUS_LABEL[i.status] ?? i.status}</span>
+                  <button onClick={() => remove(i.id)} disabled={deleting === i.id} className="text-gray-300 hover:text-red-500" title="Verwijderen">
+                    {deleting === i.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
               </div>
               {i.description && <p className="text-gray-600 mt-0.5 whitespace-pre-wrap">{i.description}</p>}
               {i.attachment_url && <a href={i.attachment_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline mt-1"><Paperclip className="h-3 w-3" />Bijlage</a>}

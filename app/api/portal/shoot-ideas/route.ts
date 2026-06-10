@@ -47,3 +47,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
   }
 }
+
+// DELETE ?id= — klant verwijdert een eigen idee
+export async function DELETE(req: NextRequest) {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Niet ingelogd' }, { status: 401 })
+
+    const id = req.nextUrl.searchParams.get('id')
+    if (!id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })
+
+    const { data: client } = await supabase.from('clients').select('id').eq('owner_user_id', user.id).maybeSingle()
+    if (!client) return NextResponse.json({ error: 'Geen klantprofiel' }, { status: 403 })
+
+    const admin = createAdminSupabaseClient()
+    // Eigendomscheck: hoort het idee bij deze klant?
+    const { data: idea } = await admin.from('shoot_ideas').select('id, client_id').eq('id', id).maybeSingle()
+    if (!idea || idea.client_id !== client.id) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+
+    const { error } = await admin.from('shoot_ideas').delete().eq('id', id)
+    if (error) throw new Error(error.message)
+
+    try { revalidatePath('/portal/social-media') } catch { }
+    return NextResponse.json({ ok: true })
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+  }
+}
