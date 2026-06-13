@@ -608,5 +608,33 @@ CREATE POLICY "shoot ideas client read own" ON public.shoot_ideas
   FOR SELECT TO authenticated
   USING (client_id IN (SELECT id FROM public.clients WHERE owner_user_id = auth.uid()));
 
+-- ── batches: productiebatches (naam/kleur/contentperiode) + klant-koppeling ────
+CREATE TABLE IF NOT EXISTS public.batches (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name         text NOT NULL DEFAULT 'Batch',
+  color        text NOT NULL DEFAULT '#3b82f6',
+  start_month  integer NOT NULL DEFAULT 0,   -- ankermaand contentperiode (0-11)
+  shoot_offset integer NOT NULL DEFAULT 1,   -- aantal maanden vóór content = shoot
+  sort_order   integer NOT NULL DEFAULT 0,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  updated_at   timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.clients
+  ADD COLUMN IF NOT EXISTS batch_id uuid REFERENCES public.batches(id) ON DELETE SET NULL;
+
+ALTER TABLE public.batches ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "batches admin all" ON public.batches;
+CREATE POLICY "batches admin all" ON public.batches
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
+DO $$
+BEGIN
+  DROP TRIGGER IF EXISTS trg_batches_updated ON public.batches;
+  CREATE TRIGGER trg_batches_updated BEFORE UPDATE ON public.batches FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+EXCEPTION WHEN others THEN NULL; END $$;
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.

@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { Suspense } from 'react'
 import { LifecycleWidgets } from './lifecycle-widgets'
+import { ProductionThisMonth } from './production-widget'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { formatDate, SERVICE_LABELS } from '@/lib/utils'
@@ -272,6 +273,11 @@ export default async function CommandCenter() {
       {/* Klant-lifecycle widgets (batch, reviews, contractverlengingen) */}
       <Suspense fallback={<div className="card-base text-sm text-gray-400">Lifecycle laden…</div>}>
         <LifecycleWidgets />
+      </Suspense>
+
+      {/* Productie deze maand (klikbaar naar de productieplanning) */}
+      <Suspense fallback={<div className="card-base text-sm text-gray-400">Productie laden…</div>}>
+        <ProductionThisMonth />
       </Suspense>
 
       <div className="grid lg:grid-cols-2 gap-6">
