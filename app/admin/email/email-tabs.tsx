@@ -3,10 +3,11 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { FileText, Send, Bell } from 'lucide-react'
+import { FileText, Send, Bell, PenLine } from 'lucide-react'
 
 const TABS = [
   { href: '/admin/email', label: 'E-mail Templates', icon: FileText, exact: true },
+  { href: '/admin/email/signatures', label: 'Handtekeningen', icon: PenLine },
   { href: '/admin/email/sent', label: 'Verzonden mails', icon: Send },
   { href: '/admin/email/notifications', label: 'Interne meldingen', icon: Bell },
 ]

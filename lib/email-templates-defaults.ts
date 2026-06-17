@@ -1,6 +1,6 @@
 // Voorbeeldtemplates die de admin met één klik kan toevoegen. Puur (client-safe).
 
-export const DEFAULT_TEMPLATES: { name: string; subject: string; body: string; kind: string }[] = [
+export const DEFAULT_TEMPLATES: { name: string; subject: string; body: string; kind: string; cta_text: string; cta_link: string }[] = [
   {
     name: 'Nieuwe scripts klaar',
     kind: 'scripts',
@@ -9,13 +9,9 @@ export const DEFAULT_TEMPLATES: { name: string; subject: string; body: string; k
 
 Er werden nieuwe scripts toegevoegd aan jouw dashboard.
 
-Bekijk ze en keur ze goed of geef feedback.
-
-Open jouw dashboard:
-{{scripts_link}}
-
-Groetjes
-NextGenMedia`,
+Bekijk ze en keur ze goed of geef feedback.`,
+    cta_text: 'Scripts bekijken',
+    cta_link: '{{scripts_link}}',
   },
   {
     name: 'Nieuw contract beschikbaar',
@@ -25,11 +21,9 @@ NextGenMedia`,
 
 Er werd een nieuw contract toegevoegd aan jouw portaal.
 
-Bekijk en onderteken het contract via onderstaande link.
-{{contract_link}}
-
-Groetjes
-NextGenMedia`,
+Bekijk en onderteken het contract via onderstaande knop.`,
+    cta_text: 'Contract bekijken',
+    cta_link: '{{contract_link}}',
   },
   {
     name: 'Contentshoot ingepland',
@@ -39,10 +33,8 @@ NextGenMedia`,
 
 Er werd een contentshoot ingepland.
 
-Bekijk alle informatie in jouw dashboard.
-{{dashboard_link}}
-
-Groetjes
-NextGenMedia`,
+Bekijk alle informatie in jouw dashboard.`,
+    cta_text: 'Naar mijn dashboard',
+    cta_link: '{{contentshoot_link}}',
   },
 ]

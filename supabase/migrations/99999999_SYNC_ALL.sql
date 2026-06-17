@@ -773,5 +773,36 @@ BEGIN
   CREATE TRIGGER trg_email_templates_updated BEFORE UPDATE ON public.email_templates FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 EXCEPTION WHEN others THEN NULL; END $$;
 
+-- ── E-mailhandtekeningen + CTA op templates ───────────────────────────────────
+-- PNG-handtekeningen leven in de private 'contracts' bucket; bij verzenden maken
+-- we een langlopende signed URL zodat de mailclient de afbeelding kan tonen.
+CREATE TABLE IF NOT EXISTS public.email_signatures (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name        text NOT NULL,
+  image_path  text,                          -- pad in storage (private)
+  is_default  boolean NOT NULL DEFAULT false,
+  created_by  uuid,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.email_signatures ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "email signatures admin all" ON public.email_signatures;
+CREATE POLICY "email signatures admin all" ON public.email_signatures
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
+-- CTA + handtekening per template (additief, backward-compatible).
+ALTER TABLE public.email_templates
+  ADD COLUMN IF NOT EXISTS cta_text     text,
+  ADD COLUMN IF NOT EXISTS cta_link     text,
+  ADD COLUMN IF NOT EXISTS signature_id uuid;
+
+DO $$
+BEGIN
+  DROP TRIGGER IF EXISTS trg_email_signatures_updated ON public.email_signatures;
+  CREATE TRIGGER trg_email_signatures_updated BEFORE UPDATE ON public.email_signatures FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+EXCEPTION WHEN others THEN NULL; END $$;
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.

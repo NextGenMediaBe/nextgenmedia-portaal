@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { Mail, X, Loader2, Send, CheckCircle2 } from 'lucide-react'
 import { renderTemplate, type MailVars } from '@/lib/email-render'
 
-type Template = { id: string; name: string; subject: string; body: string; kind: string | null }
+type Template = { id: string; name: string; subject: string; body: string; kind: string | null; cta_text: string | null; cta_link: string | null; signature_id: string | null }
 
 export function SendMailButton({
   clientId, kind, contractId, shootId, label = 'Verstuur mail', className = 'btn-secondary text-sm',
@@ -37,6 +37,9 @@ function Dialog({
   const [templateId, setTemplateId] = useState('')
   const [subject, setSubject] = useState('')
   const [body, setBody] = useState('')
+  const [ctaText, setCtaText] = useState('')
+  const [ctaLink, setCtaLink] = useState('')
+  const [signatureId, setSignatureId] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
@@ -69,12 +72,15 @@ function Dialog({
     setTemplateId(t.id)
     setSubject(renderTemplate(t.subject, v))
     setBody(renderTemplate(t.body, v))
+    setCtaText(renderTemplate(t.cta_text ?? '', v))
+    setCtaLink(renderTemplate(t.cta_link ?? '', v))
+    setSignatureId(t.signature_id ?? '')
   }
 
   const onPick = (id: string) => {
     const t = templates.find((x) => x.id === id)
     if (t) applyTemplate(t, vars)
-    else { setTemplateId(''); }
+    else { setTemplateId(''); setCtaText(''); setCtaLink(''); setSignatureId('') }
   }
 
   const send = async () => {
@@ -85,7 +91,7 @@ function Dialog({
       const tpl = templates.find((t) => t.id === templateId)
       const res = await fetch('/api/admin/email/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to_email: toEmail, to_client_id: clientId, subject, body, template_id: templateId || null, template_name: tpl?.name ?? null, kind: kind ?? 'generic' }),
+        body: JSON.stringify({ to_email: toEmail, to_client_id: clientId, subject, body, cta_text: ctaText || null, cta_link: ctaLink || null, signature_id: signatureId || null, template_id: templateId || null, template_name: tpl?.name ?? null, kind: kind ?? 'generic' }),
       })
       const j = await res.json(); if (!res.ok) throw new Error(j.error)
       setDone(true)
@@ -126,8 +132,24 @@ function Dialog({
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Inhoud</label>
-              <textarea rows={10} className={inp} value={body} onChange={(e) => setBody(e.target.value)} />
+              <textarea rows={9} className={inp} value={body} onChange={(e) => setBody(e.target.value)} />
             </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Knop-tekst (CTA)</label>
+                <input className={inp} value={ctaText} onChange={(e) => setCtaText(e.target.value)} placeholder="Bv. Contract bekijken" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Knop-link</label>
+                <input className={inp} value={ctaLink} onChange={(e) => setCtaLink(e.target.value)} placeholder="https://…" />
+              </div>
+            </div>
+            {ctaText && ctaLink && (
+              <div className="rounded-lg border border-gray-100 bg-gray-50 p-3 text-center">
+                <span className="text-[11px] text-gray-400 block mb-1">Voorbeeld knop in de mail</span>
+                <span className="inline-block rounded-lg bg-gray-900 px-5 py-2 text-sm font-semibold text-white">{ctaText}</span>
+              </div>
+            )}
             {error && <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</div>}
             <div className="flex gap-2 pt-1">
               <button onClick={send} disabled={sending || !toEmail} className="btn-primary flex-1 justify-center">{sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Verstuur mail</button>

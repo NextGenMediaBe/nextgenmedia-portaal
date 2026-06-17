@@ -2,7 +2,7 @@
 
 export const PLACEHOLDERS = [
   '{{klantnaam}}', '{{bedrijfsnaam}}', '{{email}}', '{{dienst}}', '{{datum}}', '{{uur}}',
-  '{{contractnaam}}', '{{dashboard_link}}', '{{contract_link}}', '{{scripts_link}}', '{{website_link}}',
+  '{{contractnaam}}', '{{dashboard_link}}', '{{contract_link}}', '{{scripts_link}}', '{{website_link}}', '{{contentshoot_link}}',
 ]
 
 export type MailVars = Record<string, string>

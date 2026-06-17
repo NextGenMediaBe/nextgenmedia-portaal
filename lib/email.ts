@@ -17,12 +17,13 @@ export function baseUrl(): string {
 
 export type SendResult = { ok: boolean; id?: string; error?: string }
 
-/** Verstuurt één mail. Tekst wordt als platte tekst + simpele HTML verzonden. */
-export async function sendEmail(opts: { to: string | string[]; subject: string; text: string }): Promise<SendResult> {
+/** Verstuurt één mail. Geef `html` mee voor opgemaakte mails; anders wordt de
+ *  tekst als simpele HTML verzonden. */
+export async function sendEmail(opts: { to: string | string[]; subject: string; text: string; html?: string }): Promise<SendResult> {
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) return { ok: false, error: 'Geen mailprovider geconfigureerd (RESEND_API_KEY ontbreekt).' }
 
-  const html = `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;line-height:1.6;color:#111;white-space:pre-wrap">${escapeHtml(opts.text)}</div>`
+  const html = opts.html ?? `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;line-height:1.6;color:#111;white-space:pre-wrap">${escapeHtml(opts.text)}</div>`
 
   try {
     const res = await fetch('https://api.resend.com/emails', {

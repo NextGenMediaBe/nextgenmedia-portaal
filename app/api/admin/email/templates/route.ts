@@ -39,6 +39,9 @@ export async function POST(req: NextRequest) {
       subject: b.subject || '',
       body: b.body || '',
       kind: b.kind || 'generic',
+      cta_text: b.cta_text || null,
+      cta_link: b.cta_link || null,
+      signature_id: b.signature_id || null,
       created_by: actor.id,
     }).select('id').single()
     if (error) throw new Error(error.message)
@@ -58,6 +61,9 @@ export async function PATCH(req: NextRequest) {
     if (b.subject !== undefined) patch.subject = b.subject
     if (b.body !== undefined) patch.body = b.body
     if (b.kind !== undefined) patch.kind = b.kind
+    if (b.cta_text !== undefined) patch.cta_text = b.cta_text || null
+    if (b.cta_link !== undefined) patch.cta_link = b.cta_link || null
+    if (b.signature_id !== undefined) patch.signature_id = b.signature_id || null
     if (Object.keys(patch).length === 0) return NextResponse.json({ error: 'Geen wijzigingen' }, { status: 400 })
     const admin = createAdminSupabaseClient()
     const { error } = await admin.from('email_templates').update(patch).eq('id', b.id)

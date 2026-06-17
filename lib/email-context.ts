@@ -58,6 +58,7 @@ export async function buildClientMailContext(opts: {
     contract_link: contractLink,
     scripts_link: `${base}/portal/social-media`,
     website_link: `${base}/portal/website`,
+    contentshoot_link: `${base}/portal/social-media`,
   }
 
   return { toEmail: client.email || '', clientName: client.company_name || '', vars }
