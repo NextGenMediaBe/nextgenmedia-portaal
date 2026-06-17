@@ -40,7 +40,12 @@ export function buildEmailHtml(opts: EmailHtmlOpts): string {
     : ''
 
   const signature = opts.signatureUrl
-    ? `<img src="${escapeHtml(opts.signatureUrl)}" alt="${escapeHtml(opts.signatureName ?? 'Handtekening')}" style="max-width:220px;height:auto;margin-top:8px" />`
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:24px;border-top:1px solid #eef0f2;width:100%">
+         <tr><td style="padding-top:16px">
+           <img src="${escapeHtml(opts.signatureUrl)}" alt="${escapeHtml(opts.signatureName ?? 'Handtekening')}"
+                width="200" style="display:block;width:200px;max-width:60%;height:auto;border:0;outline:none;text-decoration:none" />
+         </td></tr>
+       </table>`
     : ''
 
   return `<!DOCTYPE html>
