@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { ChevronLeft, FileText, CheckCircle2, ExternalLink, Settings2, Download } from 'lucide-react'
 import { ContractActions } from './contract-actions'
 import { ContractPrintButton } from './contract-print-button'
+import { SendMailButton } from '@/components/admin/send-mail-button'
 
 async function getContract(id: string) {
   try {
@@ -97,6 +98,9 @@ export default async function ContractDetailPage({ params }: { params: { id: str
           )}
         </div>
         <div className="flex items-center gap-2 flex-wrap shrink-0">
+          {clientId && (
+            <SendMailButton clientId={clientId} kind="contract" contractId={c.id} label="Verstuur contractmail" />
+          )}
           {!isSigned && (
             <Link
               href={`/admin/contracts/${c.id}/setup`}

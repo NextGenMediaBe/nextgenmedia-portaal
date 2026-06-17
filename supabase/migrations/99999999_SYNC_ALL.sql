@@ -709,5 +709,69 @@ BEGIN
   CREATE TRIGGER trg_partner_payments_updated BEFORE UPDATE ON public.partner_payments FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 EXCEPTION WHEN others THEN NULL; END $$;
 
+-- ── E-mail Center: templates, verzendlog, meldingsstatus ──────────────────────
+-- Mails gaan nooit automatisch naar klanten; enkel admins versturen bewust.
+-- Admin-meldingen mogen wel automatisch (per uur, via cron).
+CREATE TABLE IF NOT EXISTS public.email_templates (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name        text NOT NULL,
+  subject     text NOT NULL DEFAULT '',
+  body        text NOT NULL DEFAULT '',
+  kind        text,                         -- optionele categorie: scripts/contract/shoot/generic
+  created_by  uuid,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.email_templates ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "email templates admin all" ON public.email_templates;
+CREATE POLICY "email templates admin all" ON public.email_templates
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
+CREATE TABLE IF NOT EXISTS public.email_messages (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  to_email      text NOT NULL,
+  to_client_id  uuid,
+  subject       text NOT NULL,
+  body          text NOT NULL,
+  template_id   uuid,
+  template_name text,
+  kind          text,                       -- scripts/contract/shoot/admin_notify/generic
+  audience      text NOT NULL DEFAULT 'client',  -- 'client' | 'admin'
+  status        text NOT NULL DEFAULT 'sent',    -- 'sent' | 'delivered' | 'error'
+  error         text,
+  provider_id   text,
+  sent_by       uuid,
+  sent_by_email text,
+  created_at    timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_email_messages_created ON public.email_messages (created_at DESC);
+ALTER TABLE public.email_messages ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "email messages admin all" ON public.email_messages;
+CREATE POLICY "email messages admin all" ON public.email_messages
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
+-- Singleton-rij die bijhoudt tot wanneer admins al gemeld zijn.
+CREATE TABLE IF NOT EXISTS public.admin_notify_state (
+  id           text PRIMARY KEY DEFAULT 'singleton',
+  last_run_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at   timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.admin_notify_state ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "admin notify state admin all" ON public.admin_notify_state;
+CREATE POLICY "admin notify state admin all" ON public.admin_notify_state
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
+DO $$
+BEGIN
+  DROP TRIGGER IF EXISTS trg_email_templates_updated ON public.email_templates;
+  CREATE TRIGGER trg_email_templates_updated BEFORE UPDATE ON public.email_templates FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+EXCEPTION WHEN others THEN NULL; END $$;
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.

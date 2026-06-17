@@ -1,0 +1,23 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { requireAdmin } from '@/lib/supabase/server'
+import { buildClientMailContext } from '@/lib/email-context'
+
+// GET ?client_id=&kind=&contract_id=&shoot_id= → ontvanger + placeholder-waarden
+export async function GET(req: NextRequest) {
+  try {
+    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    const sp = req.nextUrl.searchParams
+    const clientId = sp.get('client_id')
+    if (!clientId) return NextResponse.json({ error: 'client_id vereist' }, { status: 400 })
+    const ctx = await buildClientMailContext({
+      clientId,
+      kind: sp.get('kind') ?? undefined,
+      contractId: sp.get('contract_id'),
+      shootId: sp.get('shoot_id'),
+    })
+    if (!ctx) return NextResponse.json({ error: 'Klant niet gevonden' }, { status: 404 })
+    return NextResponse.json(ctx)
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+  }
+}

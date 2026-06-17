@@ -7,6 +7,7 @@ import { Plus, X, Loader2, Sparkles, CheckSquare, Trash2, AlertTriangle } from '
 import { GenerateDialog } from './generate-dialog'
 import { ClickUpSyncControl } from '@/components/admin/clickup-sync-control'
 import { ShootBriefings } from '@/components/admin/shoot-briefings'
+import { SendMailButton } from '@/components/admin/send-mail-button'
 
 type Client = { id: string; company_name: string }
 
@@ -298,6 +299,8 @@ export function SocialMediaAdmin({
             )}
             {!selectMode ? (
               <>
+                <SendMailButton clientId={selectedClient} kind="scripts" label="Verstuur mail" />
+                <SendMailButton clientId={selectedClient} kind="shoot" label="Verstuur uitnodiging" />
                 <button
                   onClick={() => setSelectMode(true)}
                   className="btn-secondary"
