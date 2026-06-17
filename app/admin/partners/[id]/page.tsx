@@ -3,13 +3,15 @@ export const dynamic = 'force-dynamic'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import { formatEuro, formatDate } from '@/lib/utils'
-import { ArrowLeft, Briefcase, CheckCircle2, Clock, TrendingUp } from 'lucide-react'
+import { computePartnerFinance } from '@/lib/partner-finance'
+import { ArrowLeft, Briefcase, CheckCircle2, Clock, TrendingUp, Users, HandCoins, Repeat } from 'lucide-react'
 import Link from 'next/link'
 import { PartnerLedger } from './partner-ledger'
 import { PartnerActions } from './partner-actions'
 import { CredentialsCard } from '@/components/credentials-card'
 import { CommissionDeals } from './commission-deals'
 import { SettlementHistory } from './settlement-history'
+import { PartnerPayments, type Payment } from './partner-payments'
 
 
 const STATUS_STYLE: Record<string, string> = {
@@ -29,6 +31,16 @@ const LEDGER_KIND_LABEL: Record<string, string> = {
   manual_credit: 'Handmatig tegoed',
   manual_debit: 'Handmatige debet',
   settlement: 'Afrekening',
+}
+
+function Kpi({ label, value, sub, Icon }: { label: string; value: string | number; sub?: string; Icon?: React.ElementType }) {
+  return (
+    <div className="rounded-xl border border-gray-100 p-3">
+      <div className="flex items-center gap-1.5 text-[11px] text-gray-500">{Icon && <Icon className="h-3.5 w-3.5 text-gray-400" />}{label}</div>
+      <div className="mt-1 text-lg font-bold">{value}</div>
+      {sub && <div className="text-[11px] text-gray-400">{sub}</div>}
+    </div>
+  )
 }
 
 export default async function PartnerDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -54,6 +66,7 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
     { data: settlementRows },
     { data: commissionRows },
     { data: salesRows },
+    { data: paymentRows },
   ] = await Promise.all([
     admin.from('freelancer_assignments')
       .select('*')
@@ -78,6 +91,10 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
       .select('*')
       .eq('freelancer_id', id)
       .order('sale_date', { ascending: false }),
+    admin.from('partner_payments')
+      .select('*')
+      .eq('freelancer_id', id)
+      .order('created_at', { ascending: false }),
   ])
 
   const clientMap = new Map((clientRows ?? []).map((c) => [c.id, c]))
@@ -114,14 +131,8 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
       ? l.direction
       : (l.amount >= 0 ? 'we_pay_partner' : 'partner_pays_us')
 
-  const pendingLedger = ledger.filter(l => l.status === 'pending')
-  const pendingOwedToPartner = pendingLedger
-    .filter(l => dirOf(l) === 'we_pay_partner')
-    .reduce((s, l) => s + Math.abs(l.amount), 0)
-  const pendingOwedByPartner = pendingLedger
-    .filter(l => dirOf(l) === 'partner_pays_us')
-    .reduce((s, l) => s + Math.abs(l.amount), 0)
-  const netPending = pendingOwedToPartner - pendingOwedByPartner
+  const payments = (paymentRows ?? []) as Payment[]
+  const fin = computePartnerFinance({ ledger, payments, deals: commissionDeals, sales: commissionSales })
 
   // Group sales per referral deal
   const salesByDeal: Record<string, typeof commissionSales> = {}
@@ -237,7 +248,7 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
             </div>
           </div>
 
-          {/* Pending ledger balance */}
+          {/* Openstaand saldo — partner betaalt ons MIN wij betalen partner */}
           <div className="card-base">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold text-sm">Openstaand saldo</h3>
@@ -245,19 +256,33 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
             </div>
             <div className="grid grid-cols-3 gap-3 text-center">
               <div>
-                <div className="text-xs text-gray-500 mb-0.5">Aan partner</div>
-                <div className="text-lg font-bold text-green-600">{formatEuro(pendingOwedToPartner)}</div>
+                <div className="text-xs text-gray-500 mb-0.5">Partner betaalt ons</div>
+                <div className="text-lg font-bold text-red-600">{formatEuro(fin.openByPartner)}</div>
               </div>
               <div>
-                <div className="text-xs text-gray-500 mb-0.5">Van partner</div>
-                <div className="text-lg font-bold text-red-600">{formatEuro(pendingOwedByPartner)}</div>
+                <div className="text-xs text-gray-500 mb-0.5">Wij betalen partner</div>
+                <div className="text-lg font-bold text-green-600">{formatEuro(fin.openToPartner)}</div>
               </div>
               <div>
-                <div className="text-xs text-gray-500 mb-0.5">Netto</div>
-                <div className={`text-lg font-bold ${netPending >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {netPending >= 0 ? '+' : ''}{formatEuro(netPending)}
+                <div className="text-xs text-gray-500 mb-0.5">Netto saldo</div>
+                <div className={`text-lg font-bold ${fin.net >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                  {fin.net >= 0 ? '+' : '−'}{formatEuro(Math.abs(fin.net))}
                 </div>
+                <div className="text-[10px] text-gray-400 mt-0.5">{fin.net > 0 ? 'partner betaalt ons' : fin.net < 0 ? 'wij betalen partner' : 'vereffend'}</div>
               </div>
+            </div>
+          </div>
+
+          {/* Samenwerking-KPI's */}
+          <div className="card-base">
+            <h3 className="font-semibold text-sm mb-3 flex items-center gap-2"><Users className="h-4 w-4 text-gray-400" />Samenwerking</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <Kpi label="Wij → partner (klanten)" value={fin.clientsWeReferred} sub={`${formatEuro(fin.revenueWeReferred)} omzet`} />
+              <Kpi label="Partner → ons (klanten)" value={fin.clientsPartnerReferred} sub={`${formatEuro(fin.revenuePartnerReferred)} omzet`} />
+              <Kpi label="Onderaanneming" value={fin.subToPartnerCount + fin.subByPartnerCount} sub={`${formatEuro(fin.subToPartnerTotal + fin.subByPartnerTotal)}`} Icon={Repeat} />
+              <Kpi label="Commissie wij verdienen" value={formatEuro(fin.commissionWeEarned)} Icon={HandCoins} />
+              <Kpi label="Commissie partner verdient" value={formatEuro(fin.commissionPartnerEarned)} Icon={HandCoins} />
+              <Kpi label="Open saldo (netto)" value={`${fin.net >= 0 ? '+' : '−'}${formatEuro(Math.abs(fin.net))}`} />
             </div>
           </div>
         </div>
@@ -339,7 +364,10 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
         </div>
       )}
 
-      {/* Settlements — mark paid / delete (Client Component) */}
+      {/* Betalingen — registreren + goedkeuren/annuleren */}
+      <PartnerPayments partnerId={id} payments={payments} />
+
+      {/* Settlements — legacy afrekenhistorie (alleen indien aanwezig) */}
       <SettlementHistory partnerId={id} settlements={settlements} />
 
       {/* Assignments */}

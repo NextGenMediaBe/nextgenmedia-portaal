@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2, X, HandCoins, ArrowRightLeft, Briefcase } from 'lucide-react'
+import { Loader2, X, ArrowRightLeft, Briefcase } from 'lucide-react'
 
 type Client = { id: string; company_name: string }
 
@@ -11,7 +11,7 @@ type Props = {
   clients: Client[]
 }
 
-type ModalType = 'outbound' | 'inbound' | 'settle' | null
+type ModalType = 'outbound' | 'inbound' | null
 
 export function PartnerLedger({ partnerId, clients }: Props) {
   const router = useRouter()
@@ -25,7 +25,6 @@ export function PartnerLedger({ partnerId, clients }: Props) {
   const [outboundForm, setOutboundForm] = useState({ title: '', amount: '', clientId: '', occurredOn: today })
   // "inbound" = the partner pays us (they gave us a paid job)
   const [inboundForm, setInboundForm] = useState({ title: '', amount: '', clientId: '', occurredOn: today })
-  const [settleNotes, setSettleNotes] = useState('')
 
   const close = () => { setModal(null); setError(null) }
 
@@ -75,21 +74,17 @@ export function PartnerLedger({ partnerId, clients }: Props) {
     })
   }
 
-  const submitSettle = () => post(`/api/admin/partners/${partnerId}/settle`, { notes: settleNotes || null })
-
   const inp = 'input-base'
   const lbl = 'block text-sm font-medium text-gray-700 mb-1'
 
   const modalTitle: Record<NonNullable<ModalType>, string> = {
     outbound: 'Wij betalen partner',
     inbound: 'Partner betaalt ons',
-    settle: 'Settlement aanmaken',
   }
 
   const handleAction = () => {
     if (modal === 'outbound') return submitOutbound()
     if (modal === 'inbound') return submitInbound()
-    if (modal === 'settle') return submitSettle()
   }
 
   const form = modal === 'outbound' ? outboundForm : modal === 'inbound' ? inboundForm : null
@@ -98,22 +93,19 @@ export function PartnerLedger({ partnerId, clients }: Props) {
   return (
     <>
       <div className="card-base">
-        <h2 className="font-semibold mb-1">Handmatige boekingen</h2>
+        <h2 className="font-semibold mb-1">Onderaanneming (vast bedrag)</h2>
         <p className="text-xs text-gray-500 mb-4">
-          Voor onderaanneming en losse posten. Commissie op aangeleverde klanten beheer je via de commissiedeals hierboven.
+          Voor onderaanneming en losse posten — altijd een vast bedrag, nooit commissie. Commissie op aangeleverde klanten
+          beheer je via de doorverwijzingen hierboven. Betalingen registreer je hieronder.
         </p>
         <div className="flex flex-wrap gap-2">
           <button onClick={() => { setError(null); setModal('outbound') }} className="btn-secondary flex items-center gap-1.5 text-sm">
             <Briefcase className="h-4 w-4" />
-            Wij betalen partner
+            Wij geven partner opdracht
           </button>
           <button onClick={() => { setError(null); setModal('inbound') }} className="btn-secondary flex items-center gap-1.5 text-sm">
             <ArrowRightLeft className="h-4 w-4" />
-            Partner betaalt ons
-          </button>
-          <button onClick={() => { setError(null); setModal('settle') }} className="btn-primary flex items-center gap-1.5 text-sm">
-            <HandCoins className="h-4 w-4" />
-            Settlement aanmaken
+            Partner geeft ons opdracht
           </button>
         </div>
       </div>
@@ -167,20 +159,6 @@ export function PartnerLedger({ partnerId, clients }: Props) {
               </div>
             )}
 
-            {/* Settle */}
-            {modal === 'settle' && (
-              <div className="space-y-3">
-                <p className="text-sm text-gray-500">
-                  Alle openstaande posten worden samengebracht in één afrekening. De netto balans wordt berekend
-                  (wat wij de partner betalen min wat de partner ons betaalt) en alle posten worden gemarkeerd als afgerekend.
-                </p>
-                <div>
-                  <label className={lbl}>Notities (optioneel)</label>
-                  <textarea rows={3} className={inp} placeholder="Afrekening periode..." value={settleNotes} onChange={(e) => setSettleNotes(e.target.value)} />
-                </div>
-              </div>
-            )}
-
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{error}</div>
             )}
@@ -188,7 +166,7 @@ export function PartnerLedger({ partnerId, clients }: Props) {
             <div className="flex gap-2 pt-1">
               <button onClick={handleAction} disabled={loading} className="btn-primary flex-1 justify-center">
                 {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-                {modal === 'settle' ? 'Settlement aanmaken' : 'Toevoegen'}
+                Toevoegen
               </button>
               <button onClick={close} disabled={loading} className="btn-secondary">Annuleren</button>
             </div>

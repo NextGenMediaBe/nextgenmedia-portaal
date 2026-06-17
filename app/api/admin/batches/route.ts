@@ -44,7 +44,7 @@ export async function PATCH(req: NextRequest) {
       if (!body.client_id) return NextResponse.json({ error: 'client_id vereist' }, { status: 400 })
       const { error } = await admin.from('clients').update({ batch_id: body.batch_id || null }).eq('id', body.client_id)
       if (error) throw new Error(error.message)
-      try { revalidatePath('/admin/productie') } catch { }
+      try { revalidatePath('/admin/maandplanning') } catch { }
       return NextResponse.json({ ok: true })
     }
 
@@ -58,7 +58,7 @@ export async function PATCH(req: NextRequest) {
     if (Object.keys(patch).length === 0) return NextResponse.json({ error: 'Geen wijzigingen' }, { status: 400 })
     const { error } = await admin.from('batches').update(patch).eq('id', body.id)
     if (error) throw new Error(error.message)
-    try { revalidatePath('/admin/productie') } catch { }
+    try { revalidatePath('/admin/maandplanning') } catch { }
     return NextResponse.json({ ok: true })
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
@@ -73,7 +73,7 @@ export async function DELETE(req: NextRequest) {
     const admin = createAdminSupabaseClient()
     const { error } = await admin.from('batches').delete().eq('id', id)
     if (error) throw new Error(error.message)
-    try { revalidatePath('/admin/productie') } catch { }
+    try { revalidatePath('/admin/maandplanning') } catch { }
     return NextResponse.json({ ok: true })
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })

@@ -2,7 +2,6 @@ export const dynamic = 'force-dynamic'
 
 import { Suspense } from 'react'
 import { LifecycleWidgets } from './lifecycle-widgets'
-import { ProductionThisMonth } from './production-widget'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { formatDate, SERVICE_LABELS } from '@/lib/utils'
@@ -275,11 +274,6 @@ export default async function CommandCenter() {
         <LifecycleWidgets />
       </Suspense>
 
-      {/* Productie deze maand (klikbaar naar de productieplanning) */}
-      <Suspense fallback={<div className="card-base text-sm text-gray-400">Productie laden…</div>}>
-        <ProductionThisMonth />
-      </Suspense>
-
       <div className="grid lg:grid-cols-2 gap-6">
         {/* Scripts pending review */}
         <div className="card-base">
@@ -418,20 +412,27 @@ export default async function CommandCenter() {
                 const isExpired = sc.daysLeft < 0
                 const isCritical = !isExpired && sc.daysLeft <= 14
                 const isWarning = !isExpired && !isCritical && sc.daysLeft <= 30
-                const badgeCls = isExpired ? 'bg-red-100 text-red-700' : isCritical ? 'bg-red-50 text-red-600' : isWarning ? 'bg-amber-100 text-amber-700' : 'bg-yellow-50 text-yellow-700'
+                const badgeCls = isExpired ? 'bg-red-100 text-red-700' : isCritical ? 'bg-red-100 text-red-700' : isWarning ? 'bg-amber-100 text-amber-700' : 'bg-yellow-50 text-yellow-700'
+                const statusLabel = isExpired ? 'Verlopen' : isCritical ? 'Kritiek' : isWarning ? 'Loopt af' : 'Aandacht'
                 return (
                   <Link
                     key={sc.id}
                     href={`/admin/clients?q=${encodeURIComponent(sc.client_name ?? '')}`}
-                    className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-gray-50 transition-colors"
+                    className="flex items-center justify-between gap-2 py-2 px-3 rounded-lg hover:bg-gray-50 transition-colors"
                   >
                     <div className="min-w-0">
                       <div className="text-sm font-medium text-gray-900 truncate">{sc.client_name}</div>
-                      <div className="text-xs text-gray-400 capitalize">{sc.service_slug?.replace(/-/g, ' ')}</div>
+                      <div className="text-xs text-gray-400">
+                        <span className="capitalize">{SERVICE_LABELS[sc.service_slug] ?? sc.service_slug?.replace(/-/g, ' ')}</span>
+                        {' · '}einddatum {formatDate(sc.end_date)}
+                      </div>
                     </div>
-                    <span className={`status-badge shrink-0 ml-2 ${badgeCls}`}>
-                      {isExpired ? `${Math.abs(sc.daysLeft)}d verlopen` : `${sc.daysLeft}d resterend`}
-                    </span>
+                    <div className="flex flex-col items-end shrink-0">
+                      <span className={`status-badge ${badgeCls}`}>{statusLabel}</span>
+                      <span className={`text-[11px] mt-0.5 ${isExpired || isCritical ? 'text-red-600' : isWarning ? 'text-amber-600' : 'text-gray-400'}`}>
+                        {isExpired ? `${Math.abs(sc.daysLeft)}d verlopen` : `nog ${sc.daysLeft}d`}
+                      </span>
+                    </div>
                   </Link>
                 )
               })}

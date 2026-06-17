@@ -17,7 +17,6 @@ const NAV = [
   { label: 'Command Center', href: '/admin', icon: LayoutDashboard, exact: true },
   { label: 'Klanten',        href: '/admin/clients',              icon: Users },
   { label: 'Contracten',     href: '/admin/contracts',            icon: FileText },
-  { label: 'Productie',      href: '/admin/productie',            icon: CalendarDays },
   {
     label: 'Diensten', href: '/admin/services', icon: Briefcase,
     children: [

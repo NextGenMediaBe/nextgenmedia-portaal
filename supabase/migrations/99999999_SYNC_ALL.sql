@@ -636,5 +636,78 @@ BEGIN
   CREATE TRIGGER trg_batches_updated BEFORE UPDATE ON public.batches FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 EXCEPTION WHEN others THEN NULL; END $$;
 
+-- ── month_planning_clients: klanten handmatig aan een fase/maand koppelen ─────
+-- Maandplanning wordt klantgericht: per maand (YYYY-MM) koppelt de admin klanten
+-- aan een fase, optioneel met een planning-type (onboarding / strategie) + notitie.
+CREATE TABLE IF NOT EXISTS public.month_planning_clients (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  plan_month    text NOT NULL,                 -- 'YYYY-MM'
+  client_id     uuid NOT NULL REFERENCES public.clients(id) ON DELETE CASCADE,
+  phase         text NOT NULL,                 -- fase-slug (zie lib/month-phases)
+  planning_type text,                          -- 'onboarding' | 'strategie' | 'standaard'
+  note          text,
+  sort_order    integer NOT NULL DEFAULT 0,
+  created_by    uuid,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_at    timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_month_plan_clients_month ON public.month_planning_clients (plan_month);
+
+ALTER TABLE public.month_planning_clients ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "month plan clients admin all" ON public.month_planning_clients;
+CREATE POLICY "month plan clients admin all" ON public.month_planning_clients
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
+DO $$
+BEGIN
+  DROP TRIGGER IF EXISTS trg_month_plan_clients_updated ON public.month_planning_clients;
+  CREATE TRIGGER trg_month_plan_clients_updated BEFORE UPDATE ON public.month_planning_clients FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+EXCEPTION WHEN others THEN NULL; END $$;
+
+-- ── partner_payments: echte geldstromen (los van de verplichtingen-ledger) ─────
+-- Een betaling vereffent (een deel van) het openstaande saldo. Wordt NOOIT
+-- verwijderd; enkel status: pending → approved | cancelled. Zowel admin als
+-- partner mogen registreren; partner-registraties starten als 'pending'.
+CREATE TABLE IF NOT EXISTS public.partner_payments (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  freelancer_id   uuid NOT NULL REFERENCES public.freelancers(id) ON DELETE CASCADE,
+  direction       text NOT NULL,               -- 'we_pay_partner' | 'partner_pays_us'
+  amount          numeric NOT NULL,
+  paid_on         date NOT NULL DEFAULT CURRENT_DATE,
+  note            text,
+  proof_path      text,
+  status          text NOT NULL DEFAULT 'pending',  -- 'pending' | 'approved' | 'cancelled'
+  created_by_role text,                         -- 'admin' | 'partner'
+  created_by      uuid,
+  approved_by     uuid,
+  approved_at     timestamptz,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  updated_at      timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_partner_payments_freelancer ON public.partner_payments (freelancer_id);
+
+ALTER TABLE public.partner_payments ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "partner payments admin all"     ON public.partner_payments;
+DROP POLICY IF EXISTS "partner payments partner read"  ON public.partner_payments;
+DROP POLICY IF EXISTS "partner payments partner insert" ON public.partner_payments;
+CREATE POLICY "partner payments admin all" ON public.partner_payments
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+CREATE POLICY "partner payments partner read" ON public.partner_payments
+  FOR SELECT TO authenticated
+  USING (freelancer_id IN (SELECT id FROM public.freelancers WHERE user_id = auth.uid()));
+CREATE POLICY "partner payments partner insert" ON public.partner_payments
+  FOR INSERT TO authenticated
+  WITH CHECK (freelancer_id IN (SELECT id FROM public.freelancers WHERE user_id = auth.uid()) AND status = 'pending');
+
+DO $$
+BEGIN
+  DROP TRIGGER IF EXISTS trg_partner_payments_updated ON public.partner_payments;
+  CREATE TRIGGER trg_partner_payments_updated BEFORE UPDATE ON public.partner_payments FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+EXCEPTION WHEN others THEN NULL; END $$;
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.

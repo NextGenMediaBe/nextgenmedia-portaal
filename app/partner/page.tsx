@@ -35,27 +35,27 @@ export default async function PartnerDashboard() {
     clientMap = new Map((clients ?? []).map((c) => [c.id, c.company_name]))
   }
 
-  // Real money balance from the ledger. select('*') so the direction column is
-  // included regardless of schema version.
-  const { data: ledgerRows } = await admin
-    .from('partner_ledger_entries')
-    .select('*')
-    .eq('freelancer_id', partner.id)
+  // Real money balance: obligations (non-cancelled ledger) minus approved
+  // payments. select('*') so the direction column is included regardless of schema.
+  const [{ data: ledgerRows }, { data: paymentRows }] = await Promise.all([
+    admin.from('partner_ledger_entries').select('*').eq('freelancer_id', partner.id),
+    admin.from('partner_payments').select('direction, amount, status').eq('freelancer_id', partner.id),
+  ])
   const ledger = (ledgerRows ?? []) as Array<{ status: string; amount: number; direction?: string | null }>
-  const pendingLedger = ledger.filter((l) => l.status === 'pending')
+  const paymentsRaw = (paymentRows ?? []) as Array<{ direction: string; amount: number; status: string }>
+  const live = ledger.filter((l) => l.status !== 'cancelled')
+  const approvedPay = paymentsRaw.filter((p) => p.status === 'approved')
   // From the partner's perspective: we_pay_partner = they RECEIVE (green),
   // partner_pays_us = they PAY (red).
-  const toReceive = pendingLedger
-    .filter((l) => normalizeDirection(l.direction, l.amount) === 'we_pay_partner')
-    .reduce((s, l) => s + Math.abs(Number(l.amount)), 0)
-  const toPay = pendingLedger
-    .filter((l) => normalizeDirection(l.direction, l.amount) === 'partner_pays_us')
-    .reduce((s, l) => s + Math.abs(Number(l.amount)), 0)
+  const grossReceive = live.filter((l) => normalizeDirection(l.direction, l.amount) === 'we_pay_partner').reduce((s, l) => s + Math.abs(Number(l.amount)), 0)
+  const grossPay = live.filter((l) => normalizeDirection(l.direction, l.amount) === 'partner_pays_us').reduce((s, l) => s + Math.abs(Number(l.amount)), 0)
+  const paidReceive = approvedPay.filter((p) => p.direction === 'we_pay_partner').reduce((s, p) => s + Math.abs(Number(p.amount)), 0)
+  const paidPay = approvedPay.filter((p) => p.direction === 'partner_pays_us').reduce((s, p) => s + Math.abs(Number(p.amount)), 0)
+  const toReceive = Math.max(0, grossReceive - paidReceive)
+  const toPay = Math.max(0, grossPay - paidPay)
   const net = toReceive - toPay            // positief = partner ontvangt netto
-  // Lifetime received (all non-cancelled we_pay_partner entries)
-  const lifetimeReceived = ledger
-    .filter((l) => l.status !== 'cancelled' && normalizeDirection(l.direction, l.amount) === 'we_pay_partner')
-    .reduce((s, l) => s + Math.abs(Number(l.amount)), 0)
+  // Lifetime received = approved payments NextGenMedia made to the partner
+  const lifetimeReceived = paidReceive
 
   const all = (assignments ?? []).map((a) => ({
     ...a,
