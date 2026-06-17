@@ -30,13 +30,18 @@ export async function POST(req: NextRequest) {
 
     const admin = createAdminSupabaseClient()
 
-    // Handtekening: gekozen template-handtekening, anders de standaardhandtekening.
+    // Handtekening: 'NONE' = geen, 'DEFAULT'/leeg = standaard, anders specifiek id.
     let signatureUrl: string | null = null
     let signatureName: string | null = null
-    let sigId: string | null = b.signature_id || null
-    if (!sigId) {
+    const choice = b.signature_id as string | null | undefined
+    let sigId: string | null = null
+    if (choice === 'NONE') {
+      sigId = null
+    } else if (!choice || choice === 'DEFAULT') {
       const { data: def } = await admin.from('email_signatures').select('id').eq('is_default', true).maybeSingle()
       sigId = def?.id ?? null
+    } else {
+      sigId = choice
     }
     if (sigId) {
       const { data: sig } = await admin.from('email_signatures').select('name, image_path').eq('id', sigId).maybeSingle()

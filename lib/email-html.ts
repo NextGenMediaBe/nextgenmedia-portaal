@@ -32,7 +32,7 @@ export function buildEmailHtml(opts: EmailHtmlOpts): string {
     ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 24px">
          <tr><td style="border-radius:10px;background:#111827">
            <a href="${escapeHtml(opts.ctaLink!)}" target="_blank"
-              style="display:inline-block;padding:12px 28px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:10px">
+              style="display:inline-block;padding:13px 30px;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:10px;border-bottom:3px solid #fff848">
              ${escapeHtml(opts.ctaText!)}
            </a>
          </td></tr>
@@ -50,8 +50,8 @@ export function buildEmailHtml(opts: EmailHtmlOpts): string {
     <tr><td align="center">
       <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e5e7eb">
         <!-- Header -->
-        <tr><td style="background:#111827;padding:20px 28px">
-          <span style="font-size:18px;font-weight:800;color:#ffffff;letter-spacing:-0.02em">NextGen<span style="color:${ACCENT}">Media</span></span>
+        <tr><td style="background:#ffffff;padding:22px 28px 18px;border-bottom:3px solid ${ACCENT}">
+          <span style="font-size:19px;font-weight:800;color:#111827;letter-spacing:-0.02em">NextGen<span style="color:#111827;border-bottom:3px solid ${ACCENT};padding-bottom:1px">Media</span></span>
         </td></tr>
         <!-- Body -->
         <tr><td style="padding:28px">
