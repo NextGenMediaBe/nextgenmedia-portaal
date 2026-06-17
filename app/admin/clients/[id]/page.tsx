@@ -10,6 +10,7 @@ import { DeleteClientButton } from './delete-client-button'
 import { PortalAccessCard } from './portal-access-card'
 import { CredentialsCard } from '@/components/credentials-card'
 import { ClientLifecycleBlock } from './client-lifecycle'
+import { ClientMonths } from './client-months'
 
 async function getClient(id: string) {
   const admin = createAdminSupabaseClient()
@@ -151,6 +152,9 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
 
           {/* Klant Lifecycle (batch, contract, reviews) */}
           <ClientLifecycleBlock clientId={id} companyName={client.company_name} />
+
+          {/* Gepland in maanden */}
+          <ClientMonths clientId={id} />
 
           {/* Revenue */}
           <div className="card-base space-y-3">
