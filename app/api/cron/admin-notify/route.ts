@@ -23,8 +23,9 @@ export async function GET(req: NextRequest) {
 
   const admin = createAdminSupabaseClient()
 
-  // Laatste meldingstijdstip ophalen (singleton-rij), of nu initialiseren.
-  let lastRun = new Date(Date.now() - 3600_000).toISOString()
+  // Laatste meldingstijdstip ophalen (singleton-rij). Bij een koude start kijken
+  // we 24u terug zodat de eerste dagelijkse mail meteen de hele vorige dag dekt.
+  let lastRun = new Date(Date.now() - 24 * 3600_000).toISOString()
   try {
     const { data } = await admin.from('admin_notify_state').select('last_run_at').eq('id', 'singleton').maybeSingle()
     if (data?.last_run_at) lastRun = data.last_run_at
