@@ -4,8 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Plus, X, Loader2, Pencil, Trash2, Sparkles, FileText } from 'lucide-react'
 import { PLACEHOLDERS } from '@/lib/email-render'
 
-type Template = { id: string; name: string; subject: string; body: string; kind: string | null; cta_text: string | null; cta_link: string | null; signature_id: string | null }
-type SignatureOpt = { id: string; name: string }
+type Template = { id: string; name: string; subject: string; body: string; kind: string | null; cta_text: string | null; cta_link: string | null }
 
 export function TemplatesManager() {
   const [templates, setTemplates] = useState<Template[]>([])
@@ -104,20 +103,14 @@ function TemplateDialog({ template, onClose, onSaved }: { template: Template | n
   const [body, setBody] = useState(template?.body ?? '')
   const [ctaText, setCtaText] = useState(template?.cta_text ?? '')
   const [ctaLink, setCtaLink] = useState(template?.cta_link ?? '')
-  const [signatureId, setSignatureId] = useState(template?.signature_id ?? '')
-  const [signatures, setSignatures] = useState<SignatureOpt[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    fetch('/api/admin/email/signatures').then((r) => r.json()).then((j) => setSignatures((j.signatures ?? []) as SignatureOpt[])).catch(() => {})
-  }, [])
 
   const submit = async () => {
     if (!name.trim()) { setError('Naam is verplicht'); return }
     setLoading(true); setError(null)
     try {
-      const payload = { name, subject, body, cta_text: ctaText || null, cta_link: ctaLink || null, signature_id: signatureId || null }
+      const payload = { name, subject, body, cta_text: ctaText || null, cta_link: ctaLink || null }
       const res = await fetch('/api/admin/email/templates', {
         method: isEdit ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(isEdit ? { id: template!.id, ...payload } : payload),
@@ -162,14 +155,6 @@ function TemplateDialog({ template, onClose, onSaved }: { template: Template | n
               <label className="block text-xs font-medium text-gray-600 mb-1">CTA-knop link</label>
               <input className={inp} value={ctaLink} onChange={(e) => setCtaLink(e.target.value)} placeholder="{{contract_link}}" />
             </div>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">E-mailhandtekening</label>
-            <select className={inp} value={signatureId} onChange={(e) => setSignatureId(e.target.value)}>
-              <option value="">— Geen handtekening —</option>
-              {signatures.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-            {signatures.length === 0 && <p className="text-[11px] text-gray-400 mt-1">Maak handtekeningen aan onder E-mail Center → Handtekeningen.</p>}
           </div>
           {error && <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</div>}
           <div className="flex gap-2 pt-1">

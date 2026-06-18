@@ -4,8 +4,7 @@ import { useEffect, useState } from 'react'
 import { Mail, X, Loader2, Send, CheckCircle2 } from 'lucide-react'
 import { renderTemplate, type MailVars } from '@/lib/email-render'
 
-type Template = { id: string; name: string; subject: string; body: string; kind: string | null; cta_text: string | null; cta_link: string | null; signature_id: string | null }
-type SignatureOpt = { id: string; name: string; is_default: boolean }
+type Template = { id: string; name: string; subject: string; body: string; kind: string | null; cta_text: string | null; cta_link: string | null }
 
 export function SendMailButton({
   clientId, kind, contractId, shootId, label = 'Verstuur mail', className = 'btn-secondary text-sm',
@@ -40,8 +39,6 @@ function Dialog({
   const [body, setBody] = useState('')
   const [ctaText, setCtaText] = useState('')
   const [ctaLink, setCtaLink] = useState('')
-  const [signatures, setSignatures] = useState<SignatureOpt[]>([])
-  const [signatureSel, setSignatureSel] = useState('DEFAULT') // 'DEFAULT' | 'NONE' | <uuid>
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
@@ -53,16 +50,13 @@ function Dialog({
         if (kind) qs.set('kind', kind)
         if (contractId) qs.set('contract_id', contractId)
         if (shootId) qs.set('shoot_id', shootId)
-        const [ctxRes, tplRes, sigRes] = await Promise.all([
+        const [ctxRes, tplRes] = await Promise.all([
           fetch(`/api/admin/email/context?${qs.toString()}`),
           fetch('/api/admin/email/templates'),
-          fetch('/api/admin/email/signatures'),
         ])
         const ctx = await ctxRes.json()
         const tpl = await tplRes.json()
-        const sig = await sigRes.json()
         if (ctxRes.ok) { setToEmail(ctx.toEmail ?? ''); setVars(ctx.vars ?? {}) }
-        setSignatures((sig.signatures ?? []) as SignatureOpt[])
         const list = (tpl.templates ?? []) as Template[]
         setTemplates(list)
         // Suggereer een template dat bij dit type past.
@@ -79,13 +73,12 @@ function Dialog({
     setBody(renderTemplate(t.body, v))
     setCtaText(renderTemplate(t.cta_text ?? '', v))
     setCtaLink(renderTemplate(t.cta_link ?? '', v))
-    setSignatureSel(t.signature_id ?? 'DEFAULT')
   }
 
   const onPick = (id: string) => {
     const t = templates.find((x) => x.id === id)
     if (t) applyTemplate(t, vars)
-    else { setTemplateId(''); setCtaText(''); setCtaLink(''); setSignatureSel('DEFAULT') }
+    else { setTemplateId(''); setCtaText(''); setCtaLink('') }
   }
 
   const send = async () => {
@@ -96,7 +89,7 @@ function Dialog({
       const tpl = templates.find((t) => t.id === templateId)
       const res = await fetch('/api/admin/email/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to_email: toEmail, to_client_id: clientId, subject, body, cta_text: ctaText || null, cta_link: ctaLink || null, signature_id: signatureSel, template_id: templateId || null, template_name: tpl?.name ?? null, kind: kind ?? 'generic' }),
+        body: JSON.stringify({ to_email: toEmail, to_client_id: clientId, subject, body, cta_text: ctaText || null, cta_link: ctaLink || null, template_id: templateId || null, template_name: tpl?.name ?? null, kind: kind ?? 'generic' }),
       })
       const j = await res.json(); if (!res.ok) throw new Error(j.error)
       setDone(true)
@@ -155,14 +148,6 @@ function Dialog({
                 <span className="inline-block rounded-lg bg-gray-900 px-5 py-2 text-sm font-semibold text-white" style={{ borderBottom: '3px solid #fff848' }}>{ctaText}</span>
               </div>
             )}
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Handtekening</label>
-              <select className={inp} value={signatureSel} onChange={(e) => setSignatureSel(e.target.value)}>
-                <option value="DEFAULT">Standaardhandtekening</option>
-                <option value="NONE">Geen handtekening</option>
-                {signatures.map((s) => <option key={s.id} value={s.id}>{s.name}{s.is_default ? ' (standaard)' : ''}</option>)}
-              </select>
-            </div>
             {error && <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</div>}
             <div className="flex gap-2 pt-1">
               <button onClick={send} disabled={sending || !toEmail} className="btn-primary flex-1 justify-center">{sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Verstuur mail</button>

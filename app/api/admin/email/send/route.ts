@@ -3,9 +3,6 @@ import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
 import { sendEmail } from '@/lib/email'
 import { buildEmailHtml, buildEmailText } from '@/lib/email-html'
 
-// Publieke bucket: permanente URL die mailclients altijd kunnen tonen.
-const BUCKET = 'email-assets'
-
 async function requireAdminUser() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -31,30 +28,7 @@ export async function POST(req: NextRequest) {
 
     const admin = createAdminSupabaseClient()
 
-    // Handtekening: 'NONE' = geen, 'DEFAULT'/leeg = standaard, anders specifiek id.
-    let signatureUrl: string | null = null
-    let signatureName: string | null = null
-    const choice = b.signature_id as string | null | undefined
-    let sigId: string | null = null
-    if (choice === 'NONE') {
-      sigId = null
-    } else if (!choice || choice === 'DEFAULT') {
-      const { data: def } = await admin.from('email_signatures').select('id').eq('is_default', true).maybeSingle()
-      sigId = def?.id ?? null
-    } else {
-      sigId = choice
-    }
-    if (sigId) {
-      const { data: sig } = await admin.from('email_signatures').select('name, image_path').eq('id', sigId).maybeSingle()
-      if (sig) {
-        signatureName = sig.name
-        if (sig.image_path) {
-          signatureUrl = admin.storage.from(BUCKET).getPublicUrl(sig.image_path).data.publicUrl
-        }
-      }
-    }
-
-    const htmlOpts = { bodyText: body, ctaText, ctaLink, signatureUrl, signatureName }
+    const htmlOpts = { bodyText: body, ctaText, ctaLink }
     const html = buildEmailHtml(htmlOpts)
     const text = buildEmailText(htmlOpts)
 

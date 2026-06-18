@@ -19,8 +19,6 @@ export type EmailHtmlOpts = {
   bodyText: string
   ctaText?: string | null
   ctaLink?: string | null
-  signatureUrl?: string | null
-  signatureName?: string | null
 }
 
 const ACCENT = '#fff848'
@@ -39,15 +37,6 @@ export function buildEmailHtml(opts: EmailHtmlOpts): string {
        </table>`
     : ''
 
-  const signature = opts.signatureUrl
-    ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:24px;border-top:1px solid #eef0f2;width:100%">
-         <tr><td style="padding-top:16px">
-           <img src="${escapeHtml(opts.signatureUrl)}" alt="${escapeHtml(opts.signatureName ?? 'Handtekening')}"
-                width="200" style="display:block;width:200px;max-width:60%;height:auto;border:0;outline:none;text-decoration:none" />
-         </td></tr>
-       </table>`
-    : ''
-
   return `<!DOCTYPE html>
 <html lang="nl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="x-apple-disable-message-reformatting"></head>
 <body style="margin:0;padding:0;background:#f3f4f6">
@@ -62,7 +51,6 @@ export function buildEmailHtml(opts: EmailHtmlOpts): string {
         <tr><td style="padding:28px">
           ${paragraphs(opts.bodyText)}
           ${cta}
-          ${signature}
         </td></tr>
         <!-- Footer -->
         <tr><td style="padding:18px 28px;background:#f9fafb;border-top:1px solid #f0f0f0">
