@@ -2,23 +2,21 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
 import { randomUUID } from 'crypto'
 
-const BUCKET = 'contracts'
+// Publieke bucket: permanente URL die mailclients altijd kunnen tonen.
+const BUCKET = 'email-assets'
 
-// GET — alle handtekeningen + tijdelijke preview-URL
+// GET — alle handtekeningen + permanente publieke URL
 export async function GET() {
   try {
     if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const admin = createAdminSupabaseClient()
     const { data, error } = await admin.from('email_signatures').select('*').order('created_at', { ascending: true })
     if (error) throw new Error(error.message)
-    const out = await Promise.all((data ?? []).map(async (s: { id: string; name: string; image_path: string | null; is_default: boolean }) => {
+    const out = (data ?? []).map((s: { id: string; name: string; image_path: string | null; is_default: boolean }) => {
       let url: string | null = null
-      if (s.image_path) {
-        const { data: signed } = await admin.storage.from(BUCKET).createSignedUrl(s.image_path, 60 * 60) // 1u preview
-        url = signed?.signedUrl ?? null
-      }
+      if (s.image_path) url = admin.storage.from(BUCKET).getPublicUrl(s.image_path).data.publicUrl
       return { id: s.id, name: s.name, is_default: s.is_default, previewUrl: url }
-    }))
+    })
     return NextResponse.json({ signatures: out })
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })

@@ -804,5 +804,13 @@ BEGIN
   CREATE TRIGGER trg_email_signatures_updated BEFORE UPDATE ON public.email_signatures FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 EXCEPTION WHEN others THEN NULL; END $$;
 
+-- ── Publieke bucket voor e-mailafbeeldingen (handtekeningen) ──────────────────
+-- E-mailclients (Gmail/Outlook) kunnen private signed URLs niet betrouwbaar tonen.
+-- Branding-afbeeldingen zoals handtekeningen horen daarom in een publieke bucket
+-- met een permanente publieke URL. Contracten blijven in hun private bucket.
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('email-assets', 'email-assets', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.

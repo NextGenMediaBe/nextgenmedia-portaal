@@ -3,7 +3,8 @@ import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
 import { sendEmail } from '@/lib/email'
 import { buildEmailHtml, buildEmailText } from '@/lib/email-html'
 
-const BUCKET = 'contracts'
+// Publieke bucket: permanente URL die mailclients altijd kunnen tonen.
+const BUCKET = 'email-assets'
 
 async function requireAdminUser() {
   const supabase = await createClient()
@@ -48,8 +49,7 @@ export async function POST(req: NextRequest) {
       if (sig) {
         signatureName = sig.name
         if (sig.image_path) {
-          const { data: signed } = await admin.storage.from(BUCKET).createSignedUrl(sig.image_path, 60 * 60 * 24 * 365)
-          signatureUrl = signed?.signedUrl ?? null
+          signatureUrl = admin.storage.from(BUCKET).getPublicUrl(sig.image_path).data.publicUrl
         }
       }
     }
