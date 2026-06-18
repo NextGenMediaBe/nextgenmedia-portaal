@@ -778,5 +778,10 @@ ALTER TABLE public.email_templates
   ADD COLUMN IF NOT EXISTS cta_text text,
   ADD COLUMN IF NOT EXISTS cta_link text;
 
+-- ── Rapportlog-velden op email_messages (admin-rapportmails) ──────────────────
+ALTER TABLE public.email_messages
+  ADD COLUMN IF NOT EXISTS trigger_type text,      -- 'auto' | 'manual'
+  ADD COLUMN IF NOT EXISTS item_count   integer;
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.
