@@ -1,5 +1,6 @@
 import 'server-only'
 import { decryptSecret } from '@/lib/crypto'
+import { createAdminSupabaseClient } from '@/lib/supabase/server'
 
 // Server-side Framer-publicatie. API-calls gebeuren UITSLUITEND hier (server),
 // nooit vanuit de frontend. De API key wordt versleuteld bewaard en pas hier
@@ -85,11 +86,7 @@ export async function publishBlogToFramer(config: FramerClientConfig, blog: Blog
   const v = validateFramerConfig(config)
   if (!v.ok) return { ok: false, error: `Ontbrekende Framer-configuratie: ${v.missing.join(', ')}` }
 
-  // Veiligheids-/idempotentie-voorbereiding (klaar voor de echte client):
   const apiKey = decryptSecret(config.apiKeyEncrypted)
-  void apiKey; void opts // gebruikt zodra de echte client geactiveerd is
-  const fieldData = buildFieldData(config.fieldMap as Record<string, string>, blog)
-  void fieldData
 
   if (process.env.FRAMER_ENABLED !== 'true') {
     return {
@@ -158,4 +155,84 @@ export async function publishBlogToFramer(config: FramerClientConfig, blog: Blog
   } finally {
     try { await framer?.disconnect() } catch { /* altijd netjes sluiten */ }
   }
+}
+
+// ── Manager-helpers: logging, verbinding testen, collecties + velden ──────────
+
+type FramerAction = 'connect' | 'publish' | 'deploy' | 'disconnect' | 'test'
+
+/** Best-effort logregel in framer_logs. Breekt nooit de flow. */
+export async function logFramerAction(clientId: string | null, blogId: string | null, actie: FramerAction, status: 'ok' | 'gefaald', foutmelding?: string | null): Promise<void> {
+  try {
+    const admin = createAdminSupabaseClient()
+    await admin.from('framer_logs').insert({ client_id: clientId, blog_id: blogId, actie, status, foutmelding: foutmelding ?? null })
+  } catch { /* logging mag nooit breken */ }
+}
+
+/** Markeert de laatste geslaagde synchronisatie van een klant. */
+export async function markFramerSync(clientId: string): Promise<void> {
+  try { await createAdminSupabaseClient().from('clients').update({ framer_last_sync: new Date().toISOString() }).eq('id', clientId) } catch { }
+}
+
+/** Automatische field-map-suggestie op basis van veldnamen. */
+export function suggestFieldMap(fields: { id: string; name: string; type: string }[]): Record<string, string> {
+  const out: Record<string, string> = {}
+  const pick = (key: string, matchers: RegExp[], typePref?: string) => {
+    const f = fields.find((x) => matchers.some((m) => m.test(x.name)) && (!typePref || x.type === typePref)) ?? fields.find((x) => matchers.some((m) => m.test(x.name)))
+    if (f) out[key] = f.id
+  }
+  pick('titel', [/titel/i, /title/i, /naam/i])
+  pick('content', [/content/i, /inhoud/i, /body/i, /tekst/i], 'formattedText')
+  pick('thumbnail', [/thumb/i, /image/i, /afbeeld/i, /foto/i], 'image')
+  pick('excerpt', [/excerpt/i, /samenvat/i, /intro/i, /beschrijv/i, /description/i])
+  return out
+}
+
+async function withFramer<T>(config: FramerClientConfig, fn: (framer: { getCollections: () => Promise<unknown[]>; disconnect: () => Promise<void> }) => Promise<T>): Promise<{ ok: true; data: T } | { ok: false; error: string }> {
+  if (!config.projectUrl) return { ok: false, error: 'Geen Framer project URL ingesteld.' }
+  const apiKey = decryptSecret(config.apiKeyEncrypted)
+  if (!apiKey) return { ok: false, error: 'Geen Framer API key ingesteld.' }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let framer: any = null
+  try {
+    const mod = await import('framer-api')
+    framer = await mod.connect(config.projectUrl, apiKey)
+    const data = await fn(framer)
+    return { ok: true, data }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Framer-verbinding mislukt' }
+  } finally {
+    try { await framer?.disconnect() } catch { /* altijd netjes sluiten */ }
+  }
+}
+
+/** Test de verbinding: connect → getCollections → disconnect. */
+export async function testFramerConnection(config: FramerClientConfig): Promise<{ ok: boolean; collections?: number; error?: string }> {
+  const r = await withFramer(config, async (framer) => (await framer.getCollections()).length)
+  return r.ok ? { ok: true, collections: r.data } : { ok: false, error: r.error }
+}
+
+/** Haalt de beschikbare CMS-collecties op. */
+export async function listFramerCollections(config: FramerClientConfig): Promise<{ ok: boolean; collections?: { id: string; name: string }[]; error?: string }> {
+  const r = await withFramer(config, async (framer) => {
+    const cols = await framer.getCollections()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (cols as any[]).map((c) => ({ id: String(c.id), name: String(c.name ?? c.id) }))
+  })
+  return r.ok ? { ok: true, collections: r.data } : { ok: false, error: r.error }
+}
+
+/** Haalt de velden van een collectie op (voor automatische field-map). */
+export async function listFramerFields(config: FramerClientConfig, collectionId: string): Promise<{ ok: boolean; fields?: { id: string; name: string; type: string }[]; error?: string }> {
+  const r = await withFramer(config, async (framer) => {
+    const cols = await framer.getCollections()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const col = (cols as any[]).find((c) => c.id === collectionId)
+    if (!col) throw new Error(`Collectie ${collectionId} niet gevonden.`)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fields = typeof col.getFields === 'function' ? await col.getFields() : (col.fields ?? [])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (fields as any[]).filter((f) => f && f.type !== 'divider').map((f) => ({ id: String(f.id), name: String(f.name ?? ''), type: String(f.type ?? 'string') }))
+  })
+  return r.ok ? { ok: true, fields: r.data } : { ok: false, error: r.error }
 }

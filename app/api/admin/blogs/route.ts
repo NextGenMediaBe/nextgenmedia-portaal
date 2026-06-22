@@ -3,7 +3,7 @@ import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { generateBlogsForClient, sendBlogReviewMail } from '@/lib/blog-generate'
 import { generateBlog, slugify } from '@/lib/blog-ai'
-import { publishBlogToFramer, type FramerClientConfig } from '@/lib/framer'
+import { publishBlogToFramer, logFramerAction, markFramerSync, type FramerClientConfig } from '@/lib/framer'
 
 const CLIENT_BLOG_COLS = 'id, company_name, website_url, niche, blog_brand_context, blog_aantal_per_cyclus, blog_frequentie_maanden, blog_volgende_generatie_datum'
 
@@ -99,6 +99,12 @@ export async function PATCH(req: NextRequest) {
       }
       const { error } = await admin.from('blogs').update(patch).eq('id', b.id)
       if (error) throw new Error(error.message)
+
+      // Logboek + laatste synchronisatie (enkel bij echte publicatiepoging).
+      if (!result.pending) {
+        await logFramerAction(blog.client_id, blog.id, 'publish', result.ok ? 'ok' : 'gefaald', result.ok ? null : result.error)
+        if (result.ok) await markFramerSync(blog.client_id)
+      }
       try { revalidatePath('/admin/blogs') } catch { }
       return NextResponse.json({ ok: true, published: result.ok, pending: !!result.pending, warning: result.warning ?? null, error: result.ok ? null : result.error })
     }

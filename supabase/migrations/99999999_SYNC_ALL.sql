@@ -920,5 +920,27 @@ BEGIN
   CREATE TRIGGER trg_blogs_updated BEFORE UPDATE ON public.blogs FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 EXCEPTION WHEN others THEN NULL; END $$;
 
+-- ── Framer Manager: publicatielogs + laatste synchronisatie ───────────────────
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS framer_last_sync timestamptz;
+
+CREATE TABLE IF NOT EXISTS public.framer_logs (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id   uuid REFERENCES public.clients(id) ON DELETE CASCADE,
+  blog_id     uuid,
+  actie       text NOT NULL,             -- connect | publish | deploy | disconnect | test
+  status      text NOT NULL,             -- ok | gefaald
+  foutmelding text,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_framer_logs_client ON public.framer_logs (client_id);
+CREATE INDEX IF NOT EXISTS idx_framer_logs_created ON public.framer_logs (created_at DESC);
+
+ALTER TABLE public.framer_logs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "framer logs admin all" ON public.framer_logs;
+CREATE POLICY "framer logs admin all" ON public.framer_logs
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.

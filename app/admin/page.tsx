@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { Suspense } from 'react'
 import { LifecycleWidgets } from './lifecycle-widgets'
 import { ClientTasksWidget } from './client-tasks-widget'
+import { FramerStatusWidget } from './framer-status-widget'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { formatDate, SERVICE_LABELS } from '@/lib/utils'
@@ -278,6 +279,11 @@ export default async function CommandCenter() {
       {/* Open klanttaken */}
       <Suspense fallback={<div className="card-base text-sm text-gray-400">Taken laden…</div>}>
         <ClientTasksWidget />
+      </Suspense>
+
+      {/* Framer status */}
+      <Suspense fallback={<div className="card-base text-sm text-gray-400">Framer laden…</div>}>
+        <FramerStatusWidget />
       </Suspense>
 
       <div className="grid lg:grid-cols-2 gap-6">
