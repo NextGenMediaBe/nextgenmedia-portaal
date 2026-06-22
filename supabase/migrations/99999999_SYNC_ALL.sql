@@ -870,5 +870,55 @@ BEGIN
   CREATE TRIGGER trg_invoices_updated BEFORE UPDATE ON public.invoices FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 EXCEPTION WHEN others THEN NULL; END $$;
 
+-- ── Blogs: per-klant instellingen + gegenereerde blogs + Framer-publicatie ────
+-- Additieve kolommen op clients (bloginstellingen + Framer-config). API key wordt
+-- versleuteld opgeslagen (AES-GCM, lib/crypto) — nooit als platte tekst exposen.
+ALTER TABLE public.clients
+  ADD COLUMN IF NOT EXISTS blogs_inbegrepen              boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS blog_startdatum               date,
+  ADD COLUMN IF NOT EXISTS blog_frequentie_maanden       integer NOT NULL DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS blog_aantal_per_cyclus        integer NOT NULL DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS blog_volgende_generatie_datum date,
+  ADD COLUMN IF NOT EXISTS blog_brand_context            text,
+  ADD COLUMN IF NOT EXISTS framer_project_url            text,
+  ADD COLUMN IF NOT EXISTS framer_api_key                text,   -- AES-GCM encrypted
+  ADD COLUMN IF NOT EXISTS framer_blog_collection_id     text,
+  ADD COLUMN IF NOT EXISTS framer_field_map              jsonb;
+
+CREATE TABLE IF NOT EXISTS public.blogs (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id        uuid NOT NULL REFERENCES public.clients(id) ON DELETE CASCADE,
+  titel            text NOT NULL DEFAULT '',
+  slug             text NOT NULL DEFAULT '',
+  content          text,
+  meta_title       text,
+  meta_description text,
+  thumbnail_url    text,
+  status           text NOT NULL DEFAULT 'klaar_voor_review', -- klaar_voor_review | goedgekeurd | gepubliceerd | gefaald
+  gegenereerd_op   timestamptz NOT NULL DEFAULT now(),
+  goedgekeurd_op   timestamptz,
+  gepubliceerd_op  timestamptz,
+  framer_item_id   text,
+  foutmelding      text,
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  updated_at       timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_blogs_client ON public.blogs (client_id);
+CREATE INDEX IF NOT EXISTS idx_blogs_status ON public.blogs (status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_blogs_client_slug ON public.blogs (client_id, slug);
+
+ALTER TABLE public.blogs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "blogs admin all" ON public.blogs;
+CREATE POLICY "blogs admin all" ON public.blogs
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
+DO $$
+BEGIN
+  DROP TRIGGER IF EXISTS trg_blogs_updated ON public.blogs;
+  CREATE TRIGGER trg_blogs_updated BEFORE UPDATE ON public.blogs FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+EXCEPTION WHEN others THEN NULL; END $$;
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.

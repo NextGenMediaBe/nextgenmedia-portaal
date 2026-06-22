@@ -12,6 +12,7 @@ import { CredentialsCard } from '@/components/credentials-card'
 import { ClientLifecycleBlock } from './client-lifecycle'
 import { ClientMonths } from './client-months'
 import { ClientTasks } from './client-tasks'
+import { ClientBlogs } from './client-blogs'
 
 async function getClient(id: string) {
   const admin = createAdminSupabaseClient()
@@ -159,6 +160,9 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
 
           {/* Klanttaken */}
           <ClientTasks clientId={id} />
+
+          {/* Blogs */}
+          <ClientBlogs clientId={id} />
 
           {/* Revenue */}
           <div className="card-base space-y-3">
