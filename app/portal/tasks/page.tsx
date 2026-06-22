@@ -17,10 +17,21 @@ export default async function PortalTasksPage() {
   if (clientIds.length > 0) {
     const admin = createAdminSupabaseClient()
     const { data } = await admin.from('client_tasks')
-      .select('id, title, description, deadline, priority, status, client_note, completed_at')
+      .select('id, title, description, deadline, priority, status, client_note, completed_at, attachment_path, attachment_name')
       .in('client_id', clientIds)
       .order('created_at', { ascending: false })
-    tasks = (data ?? []) as PortalTask[]
+    const rows = (data ?? []) as Array<PortalTask & { attachment_path: string | null }>
+    // Veilige, tijdelijke download-URL per bijlage (private bucket, alleen server).
+    tasks = await Promise.all(rows.map(async (t) => {
+      let attachmentUrl: string | null = null
+      if (t.attachment_path) {
+        const { data: s } = await admin.storage.from('contracts').createSignedUrl(t.attachment_path, 60 * 60)
+        attachmentUrl = s?.signedUrl ?? null
+      }
+      const { attachment_path: _omit, ...rest } = t
+      void _omit
+      return { ...rest, attachmentUrl }
+    }))
   }
 
   return (

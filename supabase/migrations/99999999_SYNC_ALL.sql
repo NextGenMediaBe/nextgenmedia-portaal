@@ -807,12 +807,14 @@ CREATE TABLE IF NOT EXISTS public.client_tasks (
   priority      text NOT NULL DEFAULT 'normaal',  -- laag | normaal | hoog
   status        text NOT NULL DEFAULT 'open',      -- open | in_progress | done | cancelled
   attachment_path text,
+  attachment_name text,
   client_note   text,
   completed_at  timestamptz,
   created_by    uuid,
   created_at    timestamptz NOT NULL DEFAULT now(),
   updated_at    timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE public.client_tasks ADD COLUMN IF NOT EXISTS attachment_name text;
 CREATE INDEX IF NOT EXISTS idx_client_tasks_client ON public.client_tasks (client_id);
 
 ALTER TABLE public.client_tasks ENABLE ROW LEVEL SECURITY;

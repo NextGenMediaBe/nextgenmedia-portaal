@@ -47,17 +47,18 @@ export async function POST(req: NextRequest) {
 
     const admin = createAdminSupabaseClient()
     let attachmentPath: string | null = null
+    let attachmentName: string | null = null
     const file = fd.get('attachment') as File | null
     if (file && file.size > 0) {
       const ext = (file.name.split('.').pop() ?? 'pdf').replace(/[^a-z0-9]/gi, '').toLowerCase() || 'pdf'
       const path = `client-tasks/${client_id}/${randomUUID()}.${ext}`
       const { error: upErr } = await admin.storage.from(BUCKET).upload(path, Buffer.from(await file.arrayBuffer()), { contentType: file.type || 'application/octet-stream', upsert: false })
-      if (!upErr) attachmentPath = path
+      if (!upErr) { attachmentPath = path; attachmentName = file.name.slice(0, 200) }
     }
 
     const { data, error } = await admin.from('client_tasks').insert({
       client_id, title: title.slice(0, 200), description, deadline, priority, status,
-      attachment_path: attachmentPath, created_by: actor.id,
+      attachment_path: attachmentPath, attachment_name: attachmentName, created_by: actor.id,
     }).select('id').single()
     if (error) throw new Error(error.message)
     try { revalidatePath(`/admin/clients/${client_id}`); revalidatePath('/admin') } catch { }

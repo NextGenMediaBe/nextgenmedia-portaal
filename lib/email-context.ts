@@ -76,7 +76,8 @@ export async function buildClientMailContext(opts: {
     taak_titel: taakTitel,
     taak_beschrijving: taakBeschrijving,
     deadline: taakDeadline,
-    taak_link: `${base}/portal/tasks`,
+    taak_deadline: taakDeadline,
+    taak_link: opts.taskId ? `${base}/portal/tasks#taak-${opts.taskId}` : `${base}/portal/tasks`,
   }
 
   return { toEmail: client.email || '', clientName: client.company_name || '', vars }

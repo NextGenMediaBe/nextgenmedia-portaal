@@ -9,7 +9,7 @@ import { readJson, fileTooBig, MAX_UPLOAD_MB } from '@/lib/upload'
 type Task = {
   id: string; title: string; description: string | null; deadline: string | null
   priority: string; status: string; client_note: string | null; completed_at: string | null
-  attachmentUrl?: string | null
+  attachmentUrl?: string | null; attachment_name?: string | null
 }
 
 const STATUS: Record<string, { label: string; cls: string }> = {
@@ -81,7 +81,7 @@ export function ClientTasks({ clientId }: { clientId: string }) {
                     {t.description && <p className="text-xs text-gray-500 mt-0.5 whitespace-pre-wrap">{t.description}</p>}
                     <div className="text-[11px] text-gray-400 mt-1 flex items-center gap-2 flex-wrap">
                       {t.deadline && <span>Deadline {formatDate(t.deadline)}</span>}
-                      {t.attachmentUrl && <a href={t.attachmentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline"><Paperclip className="h-3 w-3" />Bijlage</a>}
+                      {t.attachmentUrl && <a href={t.attachmentUrl} target="_blank" rel="noreferrer" download className="inline-flex items-center gap-1 text-blue-600 hover:underline"><Paperclip className="h-3 w-3" />{t.attachment_name || 'Bijlage'}</a>}
                     </div>
                     {t.client_note && <div className="mt-1 text-xs text-gray-600 bg-gray-50 rounded-lg px-2 py-1">Opmerking klant: {t.client_note}</div>}
                     {t.completed_at && <div className="mt-1 text-[11px] text-green-600 inline-flex items-center gap-1"><CheckCircle2 className="h-3 w-3" />Klant voltooide op {formatDate(t.completed_at)}</div>}
@@ -95,7 +95,7 @@ export function ClientTasks({ clientId }: { clientId: string }) {
                   <select value={t.status} onChange={(e) => setStatus(t.id, e.target.value)} className="rounded-lg border border-gray-200 px-2 py-1 text-xs">
                     {STATUS_OPTS.map((s) => <option key={s} value={s}>{STATUS[s].label}</option>)}
                   </select>
-                  <SendMailButton clientId={clientId} kind="task" taskId={t.id} label="Mail voorbereiden" className="btn-secondary text-xs" />
+                  <SendMailButton clientId={clientId} kind="task" taskId={t.id} label="Mail klant" className="btn-secondary text-xs" />
                   <span className={`status-badge text-[10px] ${st.cls}`}>{st.label}</span>
                 </div>
               </div>

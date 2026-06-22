@@ -38,21 +38,23 @@ Bekijk alle informatie in jouw dashboard.`,
     cta_link: '{{contentshoot_link}}',
   },
   {
-    name: 'Nieuwe taak',
+    name: 'Nieuwe taak toegevoegd',
     kind: 'task',
     subject: 'Nieuwe taak in jouw NextGenMedia portaal',
     body: `Hallo {{klantnaam}},
 
-Er staat een nieuwe taak klaar in jouw portaal.
+Er werd een nieuwe taak toegevoegd aan jouw NextGenMedia portaal.
 
 Taak:
 {{taak_titel}}
 
 Deadline:
-{{deadline}}
+{{taak_deadline}}
 
 Beschrijving:
-{{taak_beschrijving}}`,
+{{taak_beschrijving}}
+
+Bekijk de taak via onderstaande knop:`,
     cta_text: 'Bekijk de taak',
     cta_link: '{{taak_link}}',
   },

@@ -2,12 +2,13 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2, CheckCircle2, ListChecks } from 'lucide-react'
+import { Loader2, CheckCircle2, ListChecks, Paperclip } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 
 export type PortalTask = {
   id: string; title: string; description: string | null; deadline: string | null
   priority: string; status: string; client_note: string | null; completed_at: string | null
+  attachment_name?: string | null; attachmentUrl?: string | null
 }
 
 const STATUS: Record<string, { label: string; cls: string }> = {
@@ -52,7 +53,7 @@ export function PortalTasks({ initialTasks }: { initialTasks: PortalTask[] }) {
         const pr = PRIO[t.priority] ?? PRIO.normaal
         const done = t.status === 'done'
         return (
-          <div key={t.id} className="card-base">
+          <div key={t.id} id={`taak-${t.id}`} className="card-base scroll-mt-24">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="font-medium flex items-center gap-2 flex-wrap">
@@ -61,6 +62,11 @@ export function PortalTasks({ initialTasks }: { initialTasks: PortalTask[] }) {
                 </div>
                 {t.description && <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{t.description}</p>}
                 {t.deadline && <div className="text-xs text-gray-400 mt-1">Deadline: {formatDate(t.deadline)}</div>}
+                {t.attachmentUrl && (
+                  <a href={t.attachmentUrl} target="_blank" rel="noopener noreferrer" download className="mt-2 inline-flex items-center gap-1.5 text-sm text-blue-600 hover:underline">
+                    <Paperclip className="h-3.5 w-3.5" />{t.attachment_name || 'Bijlage downloaden'}
+                  </a>
+                )}
                 {t.client_note && <div className="mt-2 text-xs text-gray-600 bg-gray-50 rounded-lg px-2.5 py-1.5">Jouw opmerking: {t.client_note}</div>}
               </div>
               <span className={`status-badge ${st.cls} shrink-0`}>{st.label}</span>
