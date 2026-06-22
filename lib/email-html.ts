@@ -48,7 +48,7 @@ export function buildEmailHtml(opts: EmailHtmlOpts): string {
           <span style="font-size:19px;font-weight:800;color:#111827;letter-spacing:-0.02em">NextGen<span style="color:#111827;border-bottom:3px solid ${ACCENT};padding-bottom:1px">Media</span></span>
         </td></tr>
         <!-- Body -->
-        <tr><td style="padding:28px">
+        <tr><td style="padding:32px 32px 28px">
           ${paragraphs(opts.bodyText)}
           ${cta}
         </td></tr>

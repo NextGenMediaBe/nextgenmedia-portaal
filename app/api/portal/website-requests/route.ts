@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
 import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
+import { notifyMaintenanceRequest } from '@/lib/admin-alerts'
 
 // Store images in the 'contracts' bucket (always exists, admin service role bypasses RLS)
 // under a webdesign/ prefix so they stay separate from contract PDFs.
@@ -121,6 +122,9 @@ export async function POST(req: NextRequest) {
       revalidatePath('/portal/website')
       revalidatePath('/admin')
     } catch { }
+
+    // Directe interne adminmail (best-effort, breekt de flow nooit).
+    await notifyMaintenanceRequest(inserted.id)
 
     return NextResponse.json({ id: inserted.id })
   } catch (err) {

@@ -780,8 +780,22 @@ ALTER TABLE public.email_templates
 
 -- ── Rapportlog-velden op email_messages (admin-rapportmails) ──────────────────
 ALTER TABLE public.email_messages
-  ADD COLUMN IF NOT EXISTS trigger_type text,      -- 'auto' | 'manual'
-  ADD COLUMN IF NOT EXISTS item_count   integer;
+  ADD COLUMN IF NOT EXISTS trigger_type text,      -- 'auto' | 'manual' | 'event'
+  ADD COLUMN IF NOT EXISTS item_count   integer,
+  ADD COLUMN IF NOT EXISTS related_id   text;       -- gerelateerde aanvraag/klant/script
+
+-- ── Throttle voor event-gedreven adminmails (1 mail per sleutel per uur) ───────
+-- Bv. key = 'scripts:<client_id>' → max één scriptmelding per klant per uur.
+CREATE TABLE IF NOT EXISTS public.admin_notify_throttle (
+  key          text PRIMARY KEY,
+  last_sent_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.admin_notify_throttle ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "admin throttle admin all" ON public.admin_notify_throttle;
+CREATE POLICY "admin throttle admin all" ON public.admin_notify_throttle
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
 
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.

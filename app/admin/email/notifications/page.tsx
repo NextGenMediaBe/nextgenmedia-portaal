@@ -9,18 +9,23 @@ const STATUS: Record<string, { label: string; cls: string }> = {
   sent: { label: 'Verzonden', cls: 'bg-green-100 text-green-700' },
   error: { label: 'Fout', cls: 'bg-red-100 text-red-700' },
 }
+const KIND_LABEL: Record<string, string> = {
+  maintenance_alert: 'Onderhoudsaanvraag',
+  script_alert: 'Scriptactiviteit',
+  admin_notify: 'Samenvatting',
+}
 
 export default async function NotificationsPage() {
   let lastRun: string | null = null
   let rows: Array<{
     id: string; created_at: string; to_email: string; status: string
-    trigger_type: string | null; item_count: number | null
+    trigger_type: string | null; item_count: number | null; kind: string | null
   }> = []
   try {
     const admin = createAdminSupabaseClient()
     const [{ data: state }, { data: msgs }] = await Promise.all([
       admin.from('admin_notify_state').select('last_run_at').eq('id', 'singleton').maybeSingle(),
-      admin.from('email_messages').select('id, created_at, to_email, status, trigger_type, item_count').eq('audience', 'admin').order('created_at', { ascending: false }).limit(50),
+      admin.from('email_messages').select('id, created_at, to_email, status, trigger_type, item_count, kind').eq('audience', 'admin').order('created_at', { ascending: false }).limit(50),
     ])
     lastRun = state?.last_run_at ?? null
     rows = (msgs ?? []) as typeof rows
@@ -33,7 +38,7 @@ export default async function NotificationsPage() {
           <div>
             <h2 className="font-semibold text-sm flex items-center gap-2"><Bell className="h-4 w-4 text-gray-400" />Admin-meldingen</h2>
             <p className="text-sm text-gray-500 mt-1 max-w-2xl">
-              Het systeem bundelt wijzigingen in een dagelijkse samenvatting voor admins. Je kan ook manueel een rapport opvragen.
+              Admins krijgen direct een mail bij een nieuwe onderhoudsaanvraag, en bij scriptfeedback/goedkeuringen (max één mail per klant per uur om spam te voorkomen). Je kan ook manueel een volledig rapport opvragen.
               <span className="block mt-1 text-gray-400">Deze meldingen gaan uitsluitend naar admins — nooit naar klanten.</span>
             </p>
           </div>
@@ -54,7 +59,8 @@ export default async function NotificationsPage() {
               <thead>
                 <tr className="border-b border-gray-100">
                   <th className="table-th">Datum</th>
-                  <th className="table-th">Type</th>
+                  <th className="table-th">Soort</th>
+                  <th className="table-th">Trigger</th>
                   <th className="table-th">Verzonden naar</th>
                   <th className="table-th">Items</th>
                   <th className="table-th">Status</th>
@@ -66,8 +72,9 @@ export default async function NotificationsPage() {
                   return (
                     <tr key={m.id} className="hover:bg-gray-50/50">
                       <td className="table-td text-gray-500 text-xs whitespace-nowrap">{formatDate(m.created_at)}</td>
+                      <td className="table-td text-gray-700 text-xs">{KIND_LABEL[m.kind ?? ''] ?? 'Melding'}</td>
                       <td className="table-td">
-                        <span className="status-badge bg-gray-100 text-gray-600">{m.trigger_type === 'manual' ? 'Manueel' : 'Automatisch'}</span>
+                        <span className="status-badge bg-gray-100 text-gray-600">{m.trigger_type === 'manual' ? 'Manueel' : m.trigger_type === 'event' ? 'Direct' : 'Automatisch'}</span>
                       </td>
                       <td className="table-td text-gray-500 text-xs max-w-[260px] truncate">{m.to_email}</td>
                       <td className="table-td">{m.item_count ?? 0}</td>

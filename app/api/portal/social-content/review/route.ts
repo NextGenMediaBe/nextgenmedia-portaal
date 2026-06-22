@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { notifyClientScriptActivity } from '@/lib/admin-alerts'
 
 export async function POST(req: NextRequest) {
   try {
@@ -36,6 +37,9 @@ export async function POST(req: NextRequest) {
       revalidatePath('/portal/social-media')
       revalidatePath('/admin/services/social-media')
     } catch { }
+
+    // Directe interne adminmail met 1-uur bundeling per klant (best-effort).
+    await notifyClientScriptActivity(client.id)
 
     return NextResponse.json({ ok: true })
   } catch (err) {
