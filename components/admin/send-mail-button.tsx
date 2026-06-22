@@ -7,12 +7,13 @@ import { renderTemplate, type MailVars } from '@/lib/email-render'
 type Template = { id: string; name: string; subject: string; body: string; kind: string | null; cta_text: string | null; cta_link: string | null }
 
 export function SendMailButton({
-  clientId, kind, contractId, shootId, label = 'Verstuur mail', className = 'btn-secondary text-sm',
+  clientId, kind, contractId, shootId, taskId, label = 'Verstuur mail', className = 'btn-secondary text-sm',
 }: {
   clientId: string
   kind?: string
   contractId?: string
   shootId?: string
+  taskId?: string
   label?: string
   className?: string
 }) {
@@ -20,15 +21,15 @@ export function SendMailButton({
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} className={className}><Mail className="h-4 w-4" />{label}</button>
-      {open && <Dialog clientId={clientId} kind={kind} contractId={contractId} shootId={shootId} onClose={() => setOpen(false)} />}
+      {open && <Dialog clientId={clientId} kind={kind} contractId={contractId} shootId={shootId} taskId={taskId} onClose={() => setOpen(false)} />}
     </>
   )
 }
 
 function Dialog({
-  clientId, kind, contractId, shootId, onClose,
+  clientId, kind, contractId, shootId, taskId, onClose,
 }: {
-  clientId: string; kind?: string; contractId?: string; shootId?: string; onClose: () => void
+  clientId: string; kind?: string; contractId?: string; shootId?: string; taskId?: string; onClose: () => void
 }) {
   const [loadingCtx, setLoadingCtx] = useState(true)
   const [toEmail, setToEmail] = useState('')
@@ -50,6 +51,7 @@ function Dialog({
         if (kind) qs.set('kind', kind)
         if (contractId) qs.set('contract_id', contractId)
         if (shootId) qs.set('shoot_id', shootId)
+        if (taskId) qs.set('task_id', taskId)
         const [ctxRes, tplRes] = await Promise.all([
           fetch(`/api/admin/email/context?${qs.toString()}`),
           fetch('/api/admin/email/templates'),

@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { useRefresh } from '@/lib/use-refresh'
 import { Logo } from '@/components/logo'
-import { LayoutDashboard, FileText, Calendar, Globe, LogOut, RefreshCcw, Menu, X } from 'lucide-react'
+import { LayoutDashboard, FileText, Calendar, Globe, LogOut, RefreshCcw, Menu, X, ListChecks } from 'lucide-react'
 
 type NavItem = {
   label: string
@@ -20,6 +20,7 @@ type NavItem = {
 const NAV: NavItem[] = [
   { label: 'Dashboard',    href: '/portal',               icon: LayoutDashboard, exact: true },
   { label: 'Contracten',   href: '/portal/contracts',     icon: FileText },
+  { label: 'Taken',        href: '/portal/tasks',         icon: ListChecks },
   { label: 'Social Media', href: '/portal/social-media',  icon: Calendar, requiresService: 'social-media' },
   { label: 'Website',      href: '/portal/website',       icon: Globe,    requiresService: 'webdesign' },
 ]

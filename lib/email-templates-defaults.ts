@@ -37,4 +37,23 @@ Bekijk alle informatie in jouw dashboard.`,
     cta_text: 'Naar mijn dashboard',
     cta_link: '{{contentshoot_link}}',
   },
+  {
+    name: 'Nieuwe taak',
+    kind: 'task',
+    subject: 'Nieuwe taak in jouw NextGenMedia portaal',
+    body: `Hallo {{klantnaam}},
+
+Er staat een nieuwe taak klaar in jouw portaal.
+
+Taak:
+{{taak_titel}}
+
+Deadline:
+{{deadline}}
+
+Beschrijving:
+{{taak_beschrijving}}`,
+    cta_text: 'Bekijk de taak',
+    cta_link: '{{taak_link}}',
+  },
 ]

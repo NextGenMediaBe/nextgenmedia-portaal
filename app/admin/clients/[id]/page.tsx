@@ -11,6 +11,7 @@ import { PortalAccessCard } from './portal-access-card'
 import { CredentialsCard } from '@/components/credentials-card'
 import { ClientLifecycleBlock } from './client-lifecycle'
 import { ClientMonths } from './client-months'
+import { ClientTasks } from './client-tasks'
 
 async function getClient(id: string) {
   const admin = createAdminSupabaseClient()
@@ -155,6 +156,9 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
 
           {/* Gepland in maanden */}
           <ClientMonths clientId={id} />
+
+          {/* Klanttaken */}
+          <ClientTasks clientId={id} />
 
           {/* Revenue */}
           <div className="card-base space-y-3">

@@ -797,5 +797,40 @@ CREATE POLICY "admin throttle admin all" ON public.admin_notify_throttle
   USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
   WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
 
+-- ── client_tasks: taken die admin aan een klant geeft (alle diensten) ─────────
+CREATE TABLE IF NOT EXISTS public.client_tasks (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id     uuid NOT NULL REFERENCES public.clients(id) ON DELETE CASCADE,
+  title         text NOT NULL,
+  description   text,
+  deadline      date,
+  priority      text NOT NULL DEFAULT 'normaal',  -- laag | normaal | hoog
+  status        text NOT NULL DEFAULT 'open',      -- open | in_progress | done | cancelled
+  attachment_path text,
+  client_note   text,
+  completed_at  timestamptz,
+  created_by    uuid,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_at    timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_client_tasks_client ON public.client_tasks (client_id);
+
+ALTER TABLE public.client_tasks ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "client tasks admin all"  ON public.client_tasks;
+DROP POLICY IF EXISTS "client tasks read own"   ON public.client_tasks;
+CREATE POLICY "client tasks admin all" ON public.client_tasks
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+CREATE POLICY "client tasks read own" ON public.client_tasks
+  FOR SELECT TO authenticated
+  USING (client_id IN (SELECT id FROM public.clients WHERE owner_user_id = auth.uid()));
+
+DO $$
+BEGIN
+  DROP TRIGGER IF EXISTS trg_client_tasks_updated ON public.client_tasks;
+  CREATE TRIGGER trg_client_tasks_updated BEFORE UPDATE ON public.client_tasks FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+EXCEPTION WHEN others THEN NULL; END $$;
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.

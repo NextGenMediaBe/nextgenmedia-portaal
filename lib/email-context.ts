@@ -12,6 +12,7 @@ export async function buildClientMailContext(opts: {
   kind?: string
   contractId?: string | null
   shootId?: string | null
+  taskId?: string | null
 }): Promise<MailContext | null> {
   const admin = createAdminSupabaseClient()
   const { data: client } = await admin.from('clients').select('*').eq('id', opts.clientId).maybeSingle()
@@ -46,6 +47,19 @@ export async function buildClientMailContext(opts: {
     if (shoot?.start_time) uur = shoot.start_time
   }
 
+  // Taakvelden (optioneel)
+  let taakTitel = ''
+  let taakBeschrijving = ''
+  let taakDeadline = ''
+  if (opts.taskId) {
+    const { data: task } = await admin.from('client_tasks').select('title, description, deadline').eq('id', opts.taskId).maybeSingle()
+    if (task) {
+      taakTitel = task.title ?? ''
+      taakBeschrijving = task.description ?? ''
+      taakDeadline = task.deadline ? new Date(task.deadline + 'T00:00:00').toLocaleDateString('nl-BE', { day: 'numeric', month: 'long', year: 'numeric' }) : ''
+    }
+  }
+
   const vars: MailVars = {
     klantnaam: client.contact_name || client.company_name || 'klant',
     bedrijfsnaam: client.company_name || '',
@@ -59,6 +73,10 @@ export async function buildClientMailContext(opts: {
     scripts_link: `${base}/portal/social-media`,
     website_link: `${base}/portal/website`,
     contentshoot_link: `${base}/portal/social-media`,
+    taak_titel: taakTitel,
+    taak_beschrijving: taakBeschrijving,
+    deadline: taakDeadline,
+    taak_link: `${base}/portal/tasks`,
   }
 
   return { toEmail: client.email || '', clientName: client.company_name || '', vars }

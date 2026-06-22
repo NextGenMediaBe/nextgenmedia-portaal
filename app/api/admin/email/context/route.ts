@@ -14,6 +14,7 @@ export async function GET(req: NextRequest) {
       kind: sp.get('kind') ?? undefined,
       contractId: sp.get('contract_id'),
       shootId: sp.get('shoot_id'),
+      taskId: sp.get('task_id'),
     })
     if (!ctx) return NextResponse.json({ error: 'Klant niet gevonden' }, { status: 404 })
     return NextResponse.json(ctx)
