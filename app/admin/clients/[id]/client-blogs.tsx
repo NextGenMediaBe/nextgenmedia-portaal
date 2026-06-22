@@ -2,15 +2,12 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Newspaper, Loader2, Save, Sparkles, CheckCircle2, XCircle, ArrowRight } from 'lucide-react'
+import { Newspaper, Loader2, Save, Sparkles, CheckCircle2, XCircle, ArrowRight, Plug } from 'lucide-react'
 import { toast } from 'sonner'
-import { formatDate } from '@/lib/utils'
 
 type Settings = {
   blogs_inbegrepen: boolean; blog_startdatum: string | null; blog_frequentie_maanden: number | null
   blog_aantal_per_cyclus: number | null; blog_volgende_generatie_datum: string | null; blog_brand_context: string | null
-  framer_project_url: string | null; framer_blog_collection_id: string | null; framer_field_map: unknown
-  has_api_key: boolean; api_key_encrypted: boolean
 }
 type Blog = { id: string; titel: string; status: string; gegenereerd_op: string }
 
@@ -20,10 +17,7 @@ const STATUS_CLS: Record<string, string> = { klaar_voor_review: 'bg-amber-100 te
 export function ClientBlogs({ clientId }: { clientId: string }) {
   const [s, setS] = useState<Settings | null>(null)
   const [framerValid, setFramerValid] = useState(false)
-  const [framerMissing, setFramerMissing] = useState<string[]>([])
   const [blogs, setBlogs] = useState<Blog[]>([])
-  const [apiKey, setApiKey] = useState('')
-  const [fieldMapText, setFieldMapText] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [generating, setGenerating] = useState(false)
@@ -37,8 +31,12 @@ export function ClientBlogs({ clientId }: { clientId: string }) {
       ])
       const sj = await setRes.json(); const bj = await blogRes.json()
       if (setRes.ok) {
-        setS(sj.settings); setFramerValid(sj.framerValid); setFramerMissing(sj.framerMissing ?? [])
-        setFieldMapText(sj.settings.framer_field_map ? JSON.stringify(sj.settings.framer_field_map, null, 2) : '')
+        setS({
+          blogs_inbegrepen: sj.settings.blogs_inbegrepen, blog_startdatum: sj.settings.blog_startdatum,
+          blog_frequentie_maanden: sj.settings.blog_frequentie_maanden, blog_aantal_per_cyclus: sj.settings.blog_aantal_per_cyclus,
+          blog_volgende_generatie_datum: sj.settings.blog_volgende_generatie_datum, blog_brand_context: sj.settings.blog_brand_context,
+        })
+        setFramerValid(sj.framerValid)
       }
       if (blogRes.ok) setBlogs((bj.blogs ?? []) as Blog[])
     } catch { /* stil */ } finally { setLoading(false) }
@@ -52,23 +50,20 @@ export function ClientBlogs({ clientId }: { clientId: string }) {
     if (!s) return
     setSaving(true)
     try {
-      const body: Record<string, unknown> = {
-        client_id: clientId,
-        blogs_inbegrepen: s.blogs_inbegrepen,
-        blog_startdatum: s.blog_startdatum,
-        blog_frequentie_maanden: s.blog_frequentie_maanden,
-        blog_aantal_per_cyclus: s.blog_aantal_per_cyclus,
-        blog_brand_context: s.blog_brand_context,
-        framer_project_url: s.framer_project_url,
-        framer_blog_collection_id: s.framer_blog_collection_id,
-        framer_field_map: fieldMapText.trim() || null,
-        blog_volgende_generatie_datum: s.blog_volgende_generatie_datum,
-      }
-      if (apiKey.trim()) body.framer_api_key = apiKey.trim()
-      const res = await fetch('/api/admin/blog-settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const res = await fetch('/api/admin/blog-settings', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: clientId,
+          blogs_inbegrepen: s.blogs_inbegrepen,
+          blog_startdatum: s.blog_startdatum,
+          blog_frequentie_maanden: s.blog_frequentie_maanden,
+          blog_aantal_per_cyclus: s.blog_aantal_per_cyclus,
+          blog_brand_context: s.blog_brand_context,
+          blog_volgende_generatie_datum: s.blog_volgende_generatie_datum,
+        }),
+      })
       const j = await res.json(); if (!res.ok) throw new Error(j.error)
       toast.success('Bloginstellingen opgeslagen.')
-      setApiKey('')
       await load()
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Fout') } finally { setSaving(false) }
   }
@@ -86,17 +81,12 @@ export function ClientBlogs({ clientId }: { clientId: string }) {
   if (loading || !s) return <div className="card-base"><div className="py-4 text-center text-gray-400"><Loader2 className="h-4 w-4 animate-spin mx-auto" /></div></div>
 
   const inp = 'w-full px-3 py-2 text-sm border border-gray-200 rounded-lg'
-  // Setup-checklist (#12)
   const checklist: { ok: boolean; label: string }[] = [
     { ok: s.blogs_inbegrepen, label: 'Blogs inbegrepen aangezet' },
     { ok: !!s.blog_startdatum, label: 'Startdatum ingesteld' },
     { ok: !!s.blog_frequentie_maanden, label: 'Frequentie ingesteld' },
     { ok: !!s.blog_aantal_per_cyclus, label: 'Aantal per cyclus ingesteld' },
     { ok: !!s.blog_brand_context, label: 'Brand context ingevuld' },
-    { ok: !!s.framer_project_url, label: 'Framer project URL' },
-    { ok: s.has_api_key, label: 'Framer API key' + (s.has_api_key && !s.api_key_encrypted ? ' (let op: niet versleuteld — stel BLOG_ENC_KEY in)' : '') },
-    { ok: !!s.framer_blog_collection_id, label: 'Framer collection ID' },
-    { ok: framerValid, label: 'Field map compleet (titel, content)' },
   ]
 
   return (
@@ -121,19 +111,19 @@ export function ClientBlogs({ clientId }: { clientId: string }) {
           </div>
           <div><label className="block text-xs text-gray-600 mb-1">Brand context</label><textarea rows={3} className={inp} value={s.blog_brand_context ?? ''} onChange={(e) => upd({ blog_brand_context: e.target.value })} placeholder="Toon, doelgroep, thema's, do's & don'ts…" /></div>
 
-          <div className="border-t border-gray-100 pt-3 space-y-3">
-            <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">Framer</div>
-            <div><label className="block text-xs text-gray-600 mb-1">Project URL</label><input className={inp} value={s.framer_project_url ?? ''} onChange={(e) => upd({ framer_project_url: e.target.value })} placeholder="https://…framer…" /></div>
-            <div>
-              <label className="block text-xs text-gray-600 mb-1">API key {s.has_api_key && <span className="text-green-600">· ingesteld{s.api_key_encrypted ? ' (versleuteld)' : ''}</span>}</label>
-              <input type="password" className={inp} value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={s.has_api_key ? '•••••• (laat leeg om te behouden)' : 'Plak hier de Framer API key'} />
-            </div>
-            <div><label className="block text-xs text-gray-600 mb-1">Collection ID</label><input className={inp} value={s.framer_blog_collection_id ?? ''} onChange={(e) => upd({ framer_blog_collection_id: e.target.value })} /></div>
-            <div><label className="block text-xs text-gray-600 mb-1">Field map (JSON: titel, content, slug, datum, thumbnail → field IDs)</label><textarea rows={6} className={`${inp} font-mono text-xs`} value={fieldMapText} onChange={(e) => setFieldMapText(e.target.value)} placeholder={'{\n  "titel": "field_id",\n  "content": "field_id",\n  "slug": "field_id"\n}'} /></div>
+          {/* Framer status — read-only. Configuratie gebeurt in Framer Manager. */}
+          <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-3 flex items-center justify-between gap-2 flex-wrap">
+            <span className="text-sm inline-flex items-center gap-2">
+              <Plug className="h-4 w-4 text-gray-400" />
+              {framerValid
+                ? <span className="inline-flex items-center gap-1.5 text-green-700">🟢 Framer gekoppeld</span>
+                : <span className="inline-flex items-center gap-1.5 text-amber-700">🟠 Framer nog niet geconfigureerd</span>}
+            </span>
+            <Link href={`/admin/framer`} className="btn-secondary text-xs">Beheer in Framer Manager</Link>
           </div>
 
           <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-3">
-            <div className="text-xs font-medium text-gray-500 mb-2">Setup-checklist</div>
+            <div className="text-xs font-medium text-gray-500 mb-2">Checklist</div>
             <div className="space-y-1">
               {checklist.map((c) => (
                 <div key={c.label} className="flex items-center gap-2 text-xs">
@@ -142,7 +132,6 @@ export function ClientBlogs({ clientId }: { clientId: string }) {
                 </div>
               ))}
             </div>
-            {!framerValid && framerMissing.length > 0 && <p className="text-[11px] text-amber-600 mt-2">Publicatie geblokkeerd tot compleet: {framerMissing.join(', ')}.</p>}
           </div>
         </>
       )}

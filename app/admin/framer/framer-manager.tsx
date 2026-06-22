@@ -77,6 +77,8 @@ function ClientCard({ row, onChanged }: { row: Row; onChanged: () => void }) {
   const [fields, setFields] = useState<{ id: string; name: string; type: string }[] | null>(null)
   const [map, setMap] = useState<Record<string, string>>({})
   const [logs, setLogs] = useState<LogRow[] | null>(null)
+  const [projectUrl, setProjectUrl] = useState(row.project_url ?? '')
+  const [apiKey, setApiKey] = useState('')
 
   const call = async (action: string, extra?: object) => {
     setBusy(action)
@@ -154,6 +156,20 @@ function ClientCard({ row, onChanged }: { row: Row; onChanged: () => void }) {
 
       {open && (
         <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
+          {/* Framer-toegang — enige plaats waar dit wordt ingesteld */}
+          <div className="rounded-xl border border-gray-100 p-3 space-y-2">
+            <div className="text-xs font-medium text-gray-600">Framer-toegang</div>
+            <div>
+              <label className="block text-[11px] text-gray-500 mb-1">Framer project</label>
+              <input className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg" value={projectUrl} onChange={(e) => setProjectUrl(e.target.value)} placeholder="https://…framer…" />
+            </div>
+            <div>
+              <label className="block text-[11px] text-gray-500 mb-1">Framer toegangssleutel {row.connected && <span className="text-green-600">· ingesteld</span>}</label>
+              <input type="password" className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={row.connected ? '•••••• (laat leeg om te behouden)' : 'Plak hier de Framer toegangssleutel'} />
+            </div>
+            <button onClick={() => { const patch: Record<string, unknown> = { framer_project_url: projectUrl }; if (apiKey.trim()) patch.framer_api_key = apiKey.trim(); saveSettings(patch, 'Framer-toegang opgeslagen.'); setApiKey('') }} disabled={busy === 'save'} className="btn-secondary text-xs"><Save className="h-3.5 w-3.5" />Toegang opslaan</button>
+          </div>
+
           <div className="flex flex-wrap gap-2">
             <button onClick={analyze} disabled={busy === 'analyze' || busy === 'save'} className="btn-primary text-xs">{busy === 'analyze' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}Analyseer Framer project</button>
             <button onClick={testPublish} disabled={busy === 'test_publish'} className="btn-secondary text-xs">{busy === 'test_publish' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FlaskConical className="h-3.5 w-3.5" />}Test publicatie</button>
