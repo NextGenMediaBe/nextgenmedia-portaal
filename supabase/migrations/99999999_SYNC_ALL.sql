@@ -834,5 +834,41 @@ BEGIN
   CREATE TRIGGER trg_client_tasks_updated BEFORE UPDATE ON public.client_tasks FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 EXCEPTION WHEN others THEN NULL; END $$;
 
+-- ── invoices: interne factuuropvolging, gekoppeld aan revenue_entries ─────────
+-- Geen boekhoudpakket: enkel "wat moeten we factureren / gefactureerd / betaald"
+-- en de koppeling met de omzetmodule. Bedragen excl. btw als basis.
+CREATE TABLE IF NOT EXISTS public.invoices (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id     uuid REFERENCES public.clients(id) ON DELETE SET NULL,
+  service_slug  text,
+  invoice_month text NOT NULL,                  -- 'YYYY-MM'
+  invoice_date  date,
+  description   text,
+  amount_excl   numeric NOT NULL DEFAULT 0,
+  vat_pct       numeric NOT NULL DEFAULT 21,
+  amount_incl   numeric NOT NULL DEFAULT 0,
+  status        text NOT NULL DEFAULT 'te_factureren', -- te_factureren | gefactureerd | betaald | geannuleerd
+  revenue_id    uuid REFERENCES public.revenue_entries(id) ON DELETE SET NULL,
+  note          text,
+  created_by    uuid,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_at    timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_invoices_month ON public.invoices (invoice_month);
+CREATE INDEX IF NOT EXISTS idx_invoices_revenue ON public.invoices (revenue_id);
+
+ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "invoices admin all" ON public.invoices;
+CREATE POLICY "invoices admin all" ON public.invoices
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
+DO $$
+BEGIN
+  DROP TRIGGER IF EXISTS trg_invoices_updated ON public.invoices;
+  CREATE TRIGGER trg_invoices_updated BEFORE UPDATE ON public.invoices FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+EXCEPTION WHEN others THEN NULL; END $$;
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.
