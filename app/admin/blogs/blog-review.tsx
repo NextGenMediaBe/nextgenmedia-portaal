@@ -34,9 +34,22 @@ export function BlogReview({ initialBlogs, clients, initialClient }: { initialBl
       const res = await fetch('/api/admin/blogs', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, ...body }) })
       const j = await res.json(); if (!res.ok) throw new Error(j.error)
       if (body && (body as { action?: string }).action === 'approve') {
-        if (j.published) toast.success('Gepubliceerd naar Framer.')
-        else if (j.pending) toast.message('Goedgekeurd — Framer-publicatie nog te activeren.')
-        else toast.error(`Publicatie mislukt: ${j.error ?? 'onbekend'}`)
+        // Openstaande Framer-wijzigingen → admin bevestigt en publiceert alsnog.
+        if (j.needsConfirm) {
+          setBusy(null)
+          if (confirm(`${j.warning ?? 'Er staan nog niet-gepubliceerde wijzigingen in dit Framer-project.'}\n\nToch publiceren?`)) {
+            await act(id, { action: 'approve', confirm_override: true })
+          }
+          return
+        }
+        if (j.published) {
+          toast.success('Gepubliceerd op Framer.')
+          if (j.firstPublish) toast.message('Eerste publicatie voor deze klant — controleer het resultaat op de website.')
+        } else if (j.pending) {
+          toast.message('Goedgekeurd — Publicatie gestart.')
+        } else {
+          toast.error(`Publicatie mislukt: ${j.error ?? 'onbekend'}`)
+        }
       } else if (okMsg) toast.success(okMsg)
       refresh()
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Fout') } finally { setBusy(null) }

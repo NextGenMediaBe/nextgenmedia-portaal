@@ -43,6 +43,7 @@ export type BlogForPublish = {
 export type PublishResult = {
   ok: boolean
   pending?: boolean          // integratie nog niet geactiveerd (geen echte fout)
+  needsConfirm?: boolean     // openstaande Framer-wijzigingen → admin moet bevestigen
   framerItemId?: string
   error?: string
   warning?: string           // bv. onverwachte getChangedPaths
@@ -82,7 +83,7 @@ export function buildFieldData(fieldMap: Record<string, string>, blog: BlogForPu
  * `pending`-resultaat terug i.p.v. een echte publicatie — zo gaat er nooit
  * ongeteste/niet-goedgekeurde content live en blijft de build groen.
  */
-export async function publishBlogToFramer(config: FramerClientConfig, blog: BlogForPublish, opts?: { confirmOverride?: boolean }): Promise<PublishResult> {
+export async function publishBlogToFramer(config: FramerClientConfig, blog: BlogForPublish, opts?: { confirmOverride?: boolean; clientId?: string }): Promise<PublishResult> {
   const v = validateFramerConfig(config)
   if (!v.ok) return { ok: false, error: `Ontbrekende Framer-configuratie: ${v.missing.join(', ')}` }
 
@@ -100,11 +101,13 @@ export async function publishBlogToFramer(config: FramerClientConfig, blog: Blog
   // connect() neemt per aanroep project + key → elke klant publiceert naar zijn
   // eigen Framer-project. Dynamische import zodat de (ESM) package alleen laadt
   // wanneer er effectief gepubliceerd wordt.
+  const cid = opts?.clientId ?? null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let framer: any = null
   try {
     const mod = await import('framer-api')
     framer = await mod.connect(config.projectUrl as string, apiKey)
+    await logFramerAction(cid, blog.id, 'connect', 'ok')
 
     const collections = await framer.getCollections()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -131,35 +134,38 @@ export async function publishBlogToFramer(config: FramerClientConfig, blog: Blog
     }
 
     // Veiligheidscheck vóór publish: onverwachte openstaande wijzigingen.
-    let warning: string | undefined
     try {
       const changed = await framer.getChangedPaths()
       const total = ((changed?.added?.length ?? 0) + (changed?.removed?.length ?? 0) + (changed?.modified?.length ?? 0))
+      await logFramerAction(cid, blog.id, 'getChangedPaths', 'ok')
       if (total > 1 && !opts?.confirmOverride) {
-        warning = `Er staan ${total} onverwachte Framer-wijzigingen open. Bevestig publicatie om door te gaan.`
-        return { ok: false, warning, error: warning }
+        const warning = 'Er staan nog niet-gepubliceerde wijzigingen in dit Framer-project.'
+        return { ok: false, needsConfirm: true, warning, error: warning }
       }
     } catch { /* getChangedPaths optioneel */ }
 
-    // Item toevoegen of updaten (addItems met bestaande id = merge/update).
+    // Item toevoegen of updaten (addItems met bestaande id = merge/update → geen duplicaat).
     await collection.addItems([itemId ? { id: itemId, slug: blog.slug, fieldData: fd } : { slug: blog.slug, fieldData: fd }])
 
     // Publiceren + naar productie deployen.
     const pub = await framer.publish()
+    await logFramerAction(cid, blog.id, 'publish', 'ok')
     const deploymentId = pub?.deployment?.id ?? pub?.deployment ?? pub?.deploymentId
-    if (deploymentId) { try { await framer.deploy(deploymentId) } catch { /* deploy best-effort */ } }
+    if (deploymentId) { try { await framer.deploy(deploymentId); await logFramerAction(cid, blog.id, 'deploy', 'ok') } catch (e) { await logFramerAction(cid, blog.id, 'deploy', 'gefaald', e instanceof Error ? e.message : null) } }
 
-    return { ok: true, framerItemId: itemId ?? blog.slug, warning }
+    return { ok: true, framerItemId: itemId ?? blog.slug }
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Framer-publicatie mislukt' }
+    const msg = err instanceof Error ? err.message : 'Framer-publicatie mislukt'
+    await logFramerAction(cid, blog.id, 'publish', 'gefaald', msg)
+    return { ok: false, error: msg }
   } finally {
-    try { await framer?.disconnect() } catch { /* altijd netjes sluiten */ }
+    try { await framer?.disconnect(); await logFramerAction(cid, blog.id, 'disconnect', 'ok') } catch { /* altijd netjes sluiten */ }
   }
 }
 
 // ── Manager-helpers: logging, verbinding testen, collecties + velden ──────────
 
-type FramerAction = 'connect' | 'publish' | 'deploy' | 'disconnect' | 'test'
+type FramerAction = 'connect' | 'getChangedPaths' | 'publish' | 'deploy' | 'disconnect' | 'test'
 
 /** Best-effort logregel in framer_logs. Breekt nooit de flow. */
 export async function logFramerAction(clientId: string | null, blogId: string | null, actie: FramerAction, status: 'ok' | 'gefaald', foutmelding?: string | null): Promise<void> {

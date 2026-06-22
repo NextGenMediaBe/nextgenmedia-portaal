@@ -3,7 +3,7 @@ import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { generateBlogsForClient, sendBlogReviewMail } from '@/lib/blog-generate'
 import { generateBlog, slugify } from '@/lib/blog-ai'
-import { publishBlogToFramer, logFramerAction, markFramerSync, type FramerClientConfig } from '@/lib/framer'
+import { publishBlogToFramer, markFramerSync, type FramerClientConfig } from '@/lib/framer'
 
 const CLIENT_BLOG_COLS = 'id, company_name, website_url, niche, blog_brand_context, blog_aantal_per_cyclus, blog_frequentie_maanden, blog_volgende_generatie_datum'
 
@@ -81,11 +81,20 @@ export async function PATCH(req: NextRequest) {
         collectionId: client?.framer_blog_collection_id ?? null,
         fieldMap: (client?.framer_field_map ?? null) as Record<string, string> | null,
       }
+      // Eerste publicatie voor deze klant? (vóór de poging bepalen)
+      const { count: prevPublished } = await admin.from('blogs').select('id', { count: 'exact', head: true }).eq('client_id', blog.client_id).eq('status', 'gepubliceerd')
+      const firstPublish = (prevPublished ?? 0) === 0
+
       const result = await publishBlogToFramer(config, {
         id: blog.id, titel: blog.titel, slug: blog.slug, content: blog.content,
         meta_title: blog.meta_title, meta_description: blog.meta_description, thumbnail_url: blog.thumbnail_url,
         framer_item_id: blog.framer_item_id,
-      }, { confirmOverride: !!b.confirm_override })
+      }, { confirmOverride: !!b.confirm_override, clientId: blog.client_id })
+
+      // Openstaande Framer-wijzigingen → admin moet bevestigen; status onveranderd.
+      if (result.needsConfirm) {
+        return NextResponse.json({ ok: true, needsConfirm: true, warning: result.warning ?? null })
+      }
 
       const nowIso = new Date().toISOString()
       const patch: Record<string, unknown> = { status: 'goedgekeurd', goedgekeurd_op: blog.goedgekeurd_op ?? nowIso }
@@ -93,20 +102,17 @@ export async function PATCH(req: NextRequest) {
         patch.status = 'gepubliceerd'; patch.gepubliceerd_op = nowIso; patch.foutmelding = null
         if (result.framerItemId) patch.framer_item_id = result.framerItemId
       } else if (result.pending) {
-        patch.foutmelding = result.error ?? null // info: integratie nog te activeren
+        patch.foutmelding = result.error ?? null // info: integratie nog te activeren (FRAMER_ENABLED uit)
       } else {
         patch.status = 'gefaald'; patch.foutmelding = result.error ?? 'Publicatie mislukt'
       }
       const { error } = await admin.from('blogs').update(patch).eq('id', b.id)
       if (error) throw new Error(error.message)
 
-      // Logboek + laatste synchronisatie (enkel bij echte publicatiepoging).
-      if (!result.pending) {
-        await logFramerAction(blog.client_id, blog.id, 'publish', result.ok ? 'ok' : 'gefaald', result.ok ? null : result.error)
-        if (result.ok) await markFramerSync(blog.client_id)
-      }
+      // Granulaire logging gebeurt in publishBlogToFramer; hier enkel last-sync.
+      if (result.ok) await markFramerSync(blog.client_id)
       try { revalidatePath('/admin/blogs') } catch { }
-      return NextResponse.json({ ok: true, published: result.ok, pending: !!result.pending, warning: result.warning ?? null, error: result.ok ? null : result.error })
+      return NextResponse.json({ ok: true, published: result.ok, pending: !!result.pending, firstPublish, error: result.ok ? null : result.error })
     }
 
     // ── Velden bewerken / opslaan ───────────────────────────────────────────
