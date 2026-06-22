@@ -114,15 +114,15 @@ export async function publishBlogToFramer(config: FramerClientConfig, blog: Blog
     const collection = (collections as any[]).find((c) => c.id === config.collectionId)
     if (!collection) return { ok: false, error: `Framer-collectie ${config.collectionId} niet gevonden in dit project.` }
 
-    // fieldData in Framer-vorm: { [fieldId]: { value } }
+    // fieldData in Framer-vorm: { [fieldId]: { type, value } } — type is verplicht.
     const fm = config.fieldMap as Record<string, string>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fd: Record<string, any> = {}
-    if (fm.titel) fd[fm.titel] = { value: blog.titel }
-    if (fm.content) fd[fm.content] = { value: blog.content ?? '' }
-    if (fm.thumbnail && blog.thumbnail_url) fd[fm.thumbnail] = { value: blog.thumbnail_url }
-    if (fm.datum) fd[fm.datum] = { value: new Date().toISOString() }
-    if (fm.excerpt && blog.meta_description) fd[fm.excerpt] = { value: blog.meta_description }
+    if (fm.titel) fd[fm.titel] = { type: 'string', value: blog.titel }
+    if (fm.content) fd[fm.content] = { type: 'formattedText', value: blog.content ?? '' }
+    if (fm.thumbnail && blog.thumbnail_url) fd[fm.thumbnail] = { type: 'image', value: blog.thumbnail_url }
+    if (fm.datum) fd[fm.datum] = { type: 'date', value: new Date().toISOString() }
+    if (fm.excerpt && blog.meta_description) fd[fm.excerpt] = { type: 'string', value: blog.meta_description }
 
     // Idempotent: bestaand item zoeken (op framer_item_id, anders op slug).
     let itemId: string | null = blog.framer_item_id
@@ -310,8 +310,8 @@ export async function testPublish(config: FramerClientConfig): Promise<{ ok: boo
     const slug = `ngm-test-${Date.now().toString(36)}`
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fd: Record<string, any> = {}
-    if (fm.titel) fd[fm.titel] = { value: 'NGM testblog (mag verwijderd worden)' }
-    if (fm.content) fd[fm.content] = { value: 'Test' }
+    if (fm.titel) fd[fm.titel] = { type: 'string', value: 'NGM testblog (mag verwijderd worden)' }
+    if (fm.content) fd[fm.content] = { type: 'formattedText', value: 'Test' }
     await col.addItems([{ slug, fieldData: fd }])
     // Opruimen: terugzoeken op slug en verwijderen (geen publish/deploy).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
