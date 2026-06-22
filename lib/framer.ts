@@ -95,11 +95,67 @@ export async function publishBlogToFramer(config: FramerClientConfig, blog: Blog
     return {
       ok: false,
       pending: true,
-      error: 'Framer-publicatie is nog niet geactiveerd (te verifiëren). Configuratie is volledig; activeer de Framer-integratie om live te publiceren.',
+      error: 'Framer-publicatie is nog niet geactiveerd. Configuratie is volledig — zet FRAMER_ENABLED=true en test op één klant om live te publiceren.',
     }
   }
 
-  // ── Hier komt de geverifieerde framer-api flow (connect → … → disconnect). ──
-  // Bewust nog niet geïmplementeerd tot de package-methoden bevestigd zijn.
-  return { ok: false, pending: true, error: 'Framer-integratie geactiveerd maar nog niet geïmplementeerd — bevestig de framer-api methoden.' }
+  // ── Echte per-klant publicatie via framer-api (connect → … → disconnect) ────
+  // connect() neemt per aanroep project + key → elke klant publiceert naar zijn
+  // eigen Framer-project. Dynamische import zodat de (ESM) package alleen laadt
+  // wanneer er effectief gepubliceerd wordt.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let framer: any = null
+  try {
+    const mod = await import('framer-api')
+    framer = await mod.connect(config.projectUrl as string, apiKey)
+
+    const collections = await framer.getCollections()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const collection = (collections as any[]).find((c) => c.id === config.collectionId)
+    if (!collection) return { ok: false, error: `Framer-collectie ${config.collectionId} niet gevonden in dit project.` }
+
+    // fieldData in Framer-vorm: { [fieldId]: { value } }
+    const fm = config.fieldMap as Record<string, string>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fd: Record<string, any> = {}
+    if (fm.titel) fd[fm.titel] = { value: blog.titel }
+    if (fm.content) fd[fm.content] = { value: blog.content ?? '' }
+    if (fm.thumbnail && blog.thumbnail_url) fd[fm.thumbnail] = { value: blog.thumbnail_url }
+    if (fm.datum) fd[fm.datum] = { value: new Date().toISOString() }
+    if (fm.excerpt && blog.meta_description) fd[fm.excerpt] = { value: blog.meta_description }
+
+    // Idempotent: bestaand item zoeken (op framer_item_id, anders op slug).
+    let itemId: string | null = blog.framer_item_id
+    if (!itemId) {
+      const items = await collection.getItems()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const match = (items as any[]).find((it) => it.slug === blog.slug)
+      if (match) itemId = match.id
+    }
+
+    // Veiligheidscheck vóór publish: onverwachte openstaande wijzigingen.
+    let warning: string | undefined
+    try {
+      const changed = await framer.getChangedPaths()
+      const total = ((changed?.added?.length ?? 0) + (changed?.removed?.length ?? 0) + (changed?.modified?.length ?? 0))
+      if (total > 1 && !opts?.confirmOverride) {
+        warning = `Er staan ${total} onverwachte Framer-wijzigingen open. Bevestig publicatie om door te gaan.`
+        return { ok: false, warning, error: warning }
+      }
+    } catch { /* getChangedPaths optioneel */ }
+
+    // Item toevoegen of updaten (addItems met bestaande id = merge/update).
+    await collection.addItems([itemId ? { id: itemId, slug: blog.slug, fieldData: fd } : { slug: blog.slug, fieldData: fd }])
+
+    // Publiceren + naar productie deployen.
+    const pub = await framer.publish()
+    const deploymentId = pub?.deployment?.id ?? pub?.deployment ?? pub?.deploymentId
+    if (deploymentId) { try { await framer.deploy(deploymentId) } catch { /* deploy best-effort */ } }
+
+    return { ok: true, framerItemId: itemId ?? blog.slug, warning }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Framer-publicatie mislukt' }
+  } finally {
+    try { await framer?.disconnect() } catch { /* altijd netjes sluiten */ }
+  }
 }
