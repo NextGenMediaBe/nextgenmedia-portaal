@@ -47,7 +47,9 @@ export type PublishResult = {
   warning?: string           // bv. onverwachte getChangedPaths
 }
 
-const REQUIRED_FIELDS = ['titel', 'content', 'slug'] as const
+// Slug is in Framer de ingebouwde item-slug (geen CMS-veld), dus niet verplicht
+// in de field-map. Enkel titel + content moeten gemapt zijn.
+const REQUIRED_FIELDS = ['titel', 'content'] as const
 
 /** Controleert of alle Framer-config aanwezig is om te mogen publiceren. */
 export function validateFramerConfig(c: FramerClientConfig): { ok: boolean; missing: string[] } {

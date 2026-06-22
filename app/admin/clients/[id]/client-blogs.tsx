@@ -96,7 +96,7 @@ export function ClientBlogs({ clientId }: { clientId: string }) {
     { ok: !!s.framer_project_url, label: 'Framer project URL' },
     { ok: s.has_api_key, label: 'Framer API key' + (s.has_api_key && !s.api_key_encrypted ? ' (let op: niet versleuteld — stel BLOG_ENC_KEY in)' : '') },
     { ok: !!s.framer_blog_collection_id, label: 'Framer collection ID' },
-    { ok: framerValid, label: 'Field map compleet (titel, content, slug)' },
+    { ok: framerValid, label: 'Field map compleet (titel, content)' },
   ]
 
   return (
