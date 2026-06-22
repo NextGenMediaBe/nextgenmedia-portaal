@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { ChevronLeft, Loader2, Upload } from 'lucide-react'
+import { readJson, fileTooBig, MAX_UPLOAD_MB } from '@/lib/upload'
 
 export default function NewContractPage() {
   const [loading, setLoading] = useState(false)
@@ -34,6 +35,7 @@ export default function NewContractPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!file) { setError('Selecteer een PDF-bestand'); return }
+    if (fileTooBig(file)) { setError(`PDF te groot — max ${MAX_UPLOAD_MB} MB. Comprimeer het bestand en probeer opnieuw.`); return }
     setLoading(true)
     setError(null)
 
@@ -51,10 +53,9 @@ export default function NewContractPage() {
       if (form.already_signed) fd.append('signed_at', form.signed_at)
 
       const res = await fetch('/api/admin/contracts', { method: 'POST', body: fd })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error)
+      const json = await readJson(res)
       // Hard redirect — guarantees the contracts list shows the new contract
-      window.location.href = `/admin/contracts/${json.id}`
+      window.location.href = `/admin/contracts/${json.id as string}`
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Fout')
     } finally {

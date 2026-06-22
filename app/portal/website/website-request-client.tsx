@@ -11,6 +11,7 @@ import {
   resolveFriendlyKind,
   cleanDescription,
 } from '@/lib/utils'
+import { readJson, MAX_UPLOAD_MB } from '@/lib/upload'
 
 type Request = { id: string; title: string; description: string | null; kind: string; status: string; created_at: string }
 
@@ -91,6 +92,8 @@ export function WebsiteRequestClient({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    const totalMb = images.reduce((s, f) => s + f.size, 0) / (1024 * 1024)
+    if (totalMb > MAX_UPLOAD_MB) { alert(`De afbeeldingen zijn samen te groot (max ${MAX_UPLOAD_MB} MB). Verklein of upload er minder tegelijk.`); return }
     setLoading(true)
     try {
       const fd = new FormData()
@@ -101,11 +104,10 @@ export function WebsiteRequestClient({
       images.forEach((img) => fd.append('images', img))
 
       const res = await fetch('/api/portal/website-requests', { method: 'POST', body: fd })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error)
+      const json = await readJson(res)
 
       setRequests((prev) => [{
-        id: json.id,
+        id: json.id as string,
         title: form.title,
         description: form.description || null,
         kind: form.kind,

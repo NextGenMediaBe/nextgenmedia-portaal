@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2, X, Plus, Check } from 'lucide-react'
+import { readJson, fileTooBig, MAX_UPLOAD_MB } from '@/lib/upload'
 
 export function PartnerPaymentForm() {
   const router = useRouter()
@@ -15,6 +16,7 @@ export function PartnerPaymentForm() {
 
   const submit = async () => {
     if (!form.amount || parseFloat(form.amount) <= 0) { setError('Geef een geldig bedrag'); return }
+    if (fileTooBig(proof)) { setError(`Bewijs te groot — max ${MAX_UPLOAD_MB} MB.`); return }
     setLoading(true); setError(null)
     try {
       const fd = new FormData()
@@ -22,7 +24,7 @@ export function PartnerPaymentForm() {
       fd.append('paid_on', form.paid_on); fd.append('note', form.note)
       if (proof) fd.append('proof', proof)
       const res = await fetch('/api/partner/payments', { method: 'POST', body: fd })
-      const j = await res.json(); if (!res.ok) throw new Error(j.error)
+      await readJson(res)
       setOpen(false); setForm({ direction: 'partner_pays_us', amount: '', paid_on: today, note: '' }); setProof(null)
       router.refresh()
     } catch (e) { setError(e instanceof Error ? e.message : 'Fout') } finally { setLoading(false) }

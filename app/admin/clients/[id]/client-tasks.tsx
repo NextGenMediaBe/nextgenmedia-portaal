@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Plus, X, Loader2, Pencil, Trash2, Paperclip, ListChecks, CheckCircle2 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { SendMailButton } from '@/components/admin/send-mail-button'
+import { readJson, fileTooBig, MAX_UPLOAD_MB } from '@/lib/upload'
 
 type Task = {
   id: string; title: string; description: string | null; deadline: string | null
@@ -123,6 +124,7 @@ function TaskDialog({ clientId, task, onClose, onSaved }: { clientId: string; ta
 
   const submit = async () => {
     if (!title.trim()) { setError('Titel is verplicht'); return }
+    if (fileTooBig(file)) { setError(`Bijlage te groot — max ${MAX_UPLOAD_MB} MB.`); return }
     setLoading(true); setError(null)
     try {
       let res: Response
@@ -135,7 +137,7 @@ function TaskDialog({ clientId, task, onClose, onSaved }: { clientId: string; ta
         if (file) fd.append('attachment', file)
         res = await fetch('/api/admin/tasks', { method: 'POST', body: fd })
       }
-      const j = await res.json(); if (!res.ok) throw new Error(j.error)
+      await readJson(res)
       onSaved()
     } catch (e) { setError(e instanceof Error ? e.message : 'Fout') } finally { setLoading(false) }
   }

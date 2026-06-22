@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, X, Loader2 } from 'lucide-react'
+import { readJson, fileTooBig, MAX_UPLOAD_MB } from '@/lib/upload'
 
 const euro = (n: number) => new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(n)
 const CATEGORIES = ['Hardware', 'Software', 'Marketing', 'Materiaal', 'Reiskosten', 'Overige']
@@ -27,6 +28,7 @@ export function PurchaseForm() {
     e.preventDefault()
     if (!form.title.trim()) { setError('Titel is verplicht'); return }
     if (excl <= 0) { setError('Bedrag is verplicht'); return }
+    if (fileTooBig(file)) { setError(`Bijlage te groot — max ${MAX_UPLOAD_MB} MB.`); return }
     setLoading(true); setError(null)
     try {
       const fd = new FormData()
@@ -34,7 +36,7 @@ export function PurchaseForm() {
       fd.append('concept', String(concept))
       if (file) fd.append('attachment', file)
       const res = await fetch('/api/admin/purchases', { method: 'POST', body: fd })
-      const j = await res.json(); if (!res.ok) throw new Error(j.error)
+      await readJson(res)
       setOpen(false)
       setForm({ title: '', description: '', amount_excl: '', vat_pct: '21', supplier: '', category: 'Hardware', entry_date: today }); setFile(null)
       router.refresh()

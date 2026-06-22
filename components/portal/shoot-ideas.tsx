@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Lightbulb, Send, Loader2, Paperclip, Plus, Trash2 } from 'lucide-react'
+import { readJson, fileTooBig, MAX_UPLOAD_MB } from '@/lib/upload'
 
 export type Idea = { id: string; title: string | null; description: string | null; attachment_url?: string | null; status: string; created_at: string }
 
@@ -31,13 +32,14 @@ export function ShootIdeas({ shootId, initialIdeas }: { shootId: string; initial
 
   const submit = async () => {
     if (!title.trim() && !desc.trim()) { setError('Geef een titel of omschrijving'); return }
+    if (fileTooBig(file)) { setError(`Bijlage te groot — max ${MAX_UPLOAD_MB} MB.`); return }
     setLoading(true); setError(null)
     try {
       const fd = new FormData()
       fd.append('shoot_id', shootId); fd.append('title', title); fd.append('description', desc)
       if (file) fd.append('attachment', file)
       const res = await fetch('/api/portal/shoot-ideas', { method: 'POST', body: fd })
-      const j = await res.json(); if (!res.ok) throw new Error(j.error)
+      await readJson(res)
       setTitle(''); setDesc(''); setFile(null); setAdding(false); router.refresh()
     } catch (e) { setError(e instanceof Error ? e.message : 'Fout') } finally { setLoading(false) }
   }
