@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
 import {
   validateFramerConfig, testFramerConnection, listFramerCollections, listFramerFields, suggestFieldMap,
-  logFramerAction, type FramerClientConfig,
+  analyzeFramerProject, testPublish, friendlyMissing, logFramerAction, type FramerClientConfig,
 } from '@/lib/framer'
 
 type ClientRow = {
   id: string; company_name: string; framer_project_url: string | null; framer_api_key: string | null
   framer_blog_collection_id: string | null; framer_field_map: unknown; framer_last_sync: string | null
+  blog_brand_context?: string | null
 }
 
 function configOf(c: ClientRow): FramerClientConfig {
@@ -17,15 +18,23 @@ function configOf(c: ClientRow): FramerClientConfig {
   }
 }
 
-// GET — overzicht per klant (blogs_inbegrepen) + dashboardstats
-export async function GET() {
+// GET — overzicht per klant (blogs_inbegrepen) + dashboardstats, of ?logs=<client_id>
+export async function GET(req: NextRequest) {
   try {
     if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const admin = createAdminSupabaseClient()
+
+    // Logs van één klant opvragen
+    const logsFor = req.nextUrl.searchParams.get('logs')
+    if (logsFor) {
+      const { data } = await admin.from('framer_logs').select('id, actie, status, foutmelding, created_at').eq('client_id', logsFor).order('created_at', { ascending: false }).limit(50)
+      return NextResponse.json({ logs: data ?? [] })
+    }
+
     const startToday = new Date(); startToday.setHours(0, 0, 0, 0)
 
     const [{ data: clients }, { data: blogs }, { data: logs }] = await Promise.all([
-      admin.from('clients').select('id, company_name, framer_project_url, framer_api_key, framer_blog_collection_id, framer_field_map, framer_last_sync').eq('blogs_inbegrepen', true).is('archived_at', null).order('company_name'),
+      admin.from('clients').select('id, company_name, framer_project_url, framer_api_key, framer_blog_collection_id, framer_field_map, framer_last_sync, blog_brand_context').eq('blogs_inbegrepen', true).is('archived_at', null).order('company_name'),
       admin.from('blogs').select('client_id, status'),
       admin.from('framer_logs').select('client_id, actie, status, created_at').gte('created_at', startToday.toISOString()),
     ])
@@ -34,15 +43,18 @@ export async function GET() {
     const countBy = (cid: string, st: string) => blogRows.filter((b) => b.client_id === cid && b.status === st).length
 
     const rows = ((clients ?? []) as ClientRow[]).map((c) => {
-      const valid = validateFramerConfig(configOf(c)).ok
+      const cfg = configOf(c)
+      const valid = validateFramerConfig(cfg).ok
+      const missing = friendlyMissing(cfg, { brandContext: !!c.blog_brand_context })
       const failed = countBy(c.id, 'gefaald')
-      const state = failed > 0 ? 'rood' : valid ? 'groen' : 'oranje'
+      const state = failed > 0 ? 'rood' : (valid && missing.length === 0) ? 'groen' : 'oranje'
       return {
         id: c.id, company_name: c.company_name,
         connected: !!(c.framer_project_url && c.framer_api_key),
         project_url: c.framer_project_url,
         collection_linked: !!c.framer_blog_collection_id,
         framer_valid: valid,
+        missing,
         last_sync: c.framer_last_sync,
         published: countBy(c.id, 'gepubliceerd'),
         review: countBy(c.id, 'klaar_voor_review'),
@@ -95,6 +107,16 @@ export async function POST(req: NextRequest) {
       if (!collId) return NextResponse.json({ error: 'Geen collectie geselecteerd' }, { status: 400 })
       const r = await listFramerFields(config, collId)
       if (r.ok && r.fields) return NextResponse.json({ ok: true, fields: r.fields, suggested: suggestFieldMap(r.fields) })
+      return NextResponse.json(r)
+    }
+    if (b.action === 'analyze') {
+      const r = await analyzeFramerProject(config)
+      await logFramerAction(b.client_id, null, 'connect', r.ok ? 'ok' : 'gefaald', r.ok ? null : r.error)
+      return NextResponse.json(r)
+    }
+    if (b.action === 'test_publish') {
+      const r = await testPublish(config)
+      await logFramerAction(b.client_id, null, 'publish', r.ok ? 'ok' : 'gefaald', r.ok ? `Testpublicatie: ${r.error}` : 'Testpublicatie ok')
       return NextResponse.json(r)
     }
     return NextResponse.json({ error: 'Onbekende actie' }, { status: 400 })

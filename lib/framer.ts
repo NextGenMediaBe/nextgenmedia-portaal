@@ -185,7 +185,17 @@ export function suggestFieldMap(fields: { id: string; name: string; type: string
   pick('content', [/content/i, /inhoud/i, /body/i, /tekst/i], 'formattedText')
   pick('thumbnail', [/thumb/i, /image/i, /afbeeld/i, /foto/i], 'image')
   pick('excerpt', [/excerpt/i, /samenvat/i, /intro/i, /beschrijv/i, /description/i])
+  pick('datum', [/datum/i, /date/i, /publish/i], 'date')
   return out
+}
+
+/** Kiest automatisch de meest waarschijnlijke blogcollectie. */
+export function detectBlogCollection(collections: { id: string; name: string }[]): { id: string | null; candidates: { id: string; name: string }[] } {
+  const blogMatches = collections.filter((c) => /blog/i.test(c.name))
+  if (blogMatches.length === 1) return { id: blogMatches[0].id, candidates: blogMatches }
+  if (blogMatches.length > 1) return { id: null, candidates: blogMatches }
+  if (collections.length === 1) return { id: collections[0].id, candidates: collections }
+  return { id: null, candidates: collections }
 }
 
 async function withFramer<T>(config: FramerClientConfig, fn: (framer: { getCollections: () => Promise<unknown[]>; disconnect: () => Promise<void> }) => Promise<T>): Promise<{ ok: true; data: T } | { ok: false; error: string }> {
@@ -235,4 +245,89 @@ export async function listFramerFields(config: FramerClientConfig, collectionId:
     return (fields as any[]).filter((f) => f && f.type !== 'divider').map((f) => ({ id: String(f.id), name: String(f.name ?? ''), type: String(f.type ?? 'string') }))
   })
   return r.ok ? { ok: true, fields: r.data } : { ok: false, error: r.error }
+}
+
+export type AnalyzeResult = {
+  ok: boolean
+  error?: string
+  collections?: { id: string; name: string }[]
+  detectedId?: string | null
+  needsChoice?: boolean
+  fields?: { id: string; name: string; type: string }[]
+  suggested?: Record<string, string>
+}
+
+/** Eén-klik analyse: verbind, detecteer blogcollectie, lees velden, stel map voor. */
+export async function analyzeFramerProject(config: FramerClientConfig): Promise<AnalyzeResult> {
+  if (!config.projectUrl) return { ok: false, error: 'Geen Framer project ingevuld.' }
+  const apiKey = decryptSecret(config.apiKeyEncrypted)
+  if (!apiKey) return { ok: false, error: 'Geen Framer toegangssleutel ingevuld.' }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let framer: any = null
+  try {
+    const mod = await import('framer-api')
+    framer = await mod.connect(config.projectUrl, apiKey)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cols = (await framer.getCollections()) as any[]
+    const collections = cols.map((c) => ({ id: String(c.id), name: String(c.name ?? c.id) }))
+    const det = detectBlogCollection(collections)
+    if (!det.id) return { ok: true, collections, detectedId: null, needsChoice: true }
+    const col = cols.find((c) => String(c.id) === det.id)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rawFields = col && typeof col.getFields === 'function' ? await col.getFields() : (col?.fields ?? [])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fields = (rawFields as any[]).filter((f) => f && f.type !== 'divider').map((f) => ({ id: String(f.id), name: String(f.name ?? ''), type: String(f.type ?? 'string') }))
+    return { ok: true, collections, detectedId: det.id, needsChoice: false, fields, suggested: suggestFieldMap(fields) }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Analyse mislukt' }
+  } finally {
+    try { await framer?.disconnect() } catch { /* altijd sluiten */ }
+  }
+}
+
+/** Test of de configuratie schrijftoegang heeft: maakt + verwijdert een testitem.
+ *  Publiceert/deployt NIET, zodat er nooit een testblog live komt. */
+export async function testPublish(config: FramerClientConfig): Promise<{ ok: boolean; error?: string }> {
+  const v = validateFramerConfig(config)
+  if (!v.ok) return { ok: false, error: `Ontbrekend: ${v.missing.join(', ')}` }
+  const apiKey = decryptSecret(config.apiKeyEncrypted)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let framer: any = null
+  try {
+    const mod = await import('framer-api')
+    framer = await mod.connect(config.projectUrl as string, apiKey)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cols = (await framer.getCollections()) as any[]
+    const col = cols.find((c) => String(c.id) === config.collectionId)
+    if (!col) return { ok: false, error: 'Blogcollectie niet gevonden.' }
+    const fm = config.fieldMap as Record<string, string>
+    const slug = `ngm-test-${Date.now().toString(36)}`
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fd: Record<string, any> = {}
+    if (fm.titel) fd[fm.titel] = { value: 'NGM testblog (mag verwijderd worden)' }
+    if (fm.content) fd[fm.content] = { value: 'Test' }
+    await col.addItems([{ slug, fieldData: fd }])
+    // Opruimen: terugzoeken op slug en verwijderen (geen publish/deploy).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const items = (await col.getItems()) as any[]
+    const made = items.find((it) => it.slug === slug)
+    if (made) await col.removeItems([made.id])
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Testpublicatie mislukt' }
+  } finally {
+    try { await framer?.disconnect() } catch { /* altijd sluiten */ }
+  }
+}
+
+/** Vertaalt validatie-ontbrekende items naar niet-technische taal. */
+export function friendlyMissing(config: FramerClientConfig, opts: { brandContext?: boolean }): string[] {
+  const out: string[] = []
+  if (!config.projectUrl) out.push('Framer project ontbreekt')
+  if (!decryptSecret(config.apiKeyEncrypted)) out.push('Framer toegangssleutel ontbreekt')
+  if (!config.collectionId) out.push('Blogcollectie niet gekozen')
+  const fm = config.fieldMap
+  if (!fm || !fm.titel || !fm.content) out.push('Framer velden niet gekoppeld')
+  if (opts.brandContext === false) out.push('Brand context ontbreekt')
+  return out
 }

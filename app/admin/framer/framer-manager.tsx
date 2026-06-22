@@ -2,19 +2,20 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Loader2, Plug, Database, ListChecks, RefreshCw, Save, ExternalLink, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { Loader2, Plug, Wand2, FlaskConical, ScrollText, Save, ExternalLink, CheckCircle2, AlertTriangle, Info } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatDate } from '@/lib/utils'
 
 type Row = {
   id: string; company_name: string; connected: boolean; project_url: string | null
-  collection_linked: boolean; framer_valid: boolean; last_sync: string | null
+  collection_linked: boolean; framer_valid: boolean; missing: string[]; last_sync: string | null
   published: number; review: number; approved: number; failed: number; state: 'groen' | 'oranje' | 'rood'
 }
 type Stats = { linkedProjects: number; activeProjects: number; publishedToday: number; failedTotal: number; failedToday: number; readyToPublish: number }
+type LogRow = { id: string; actie: string; status: string; foutmelding: string | null; created_at: string }
 
 const STATE_DOT: Record<string, string> = { groen: 'bg-green-500', oranje: 'bg-amber-500', rood: 'bg-red-500' }
-const FIELD_KEYS = ['titel', 'content', 'thumbnail', 'excerpt', 'datum', 'slug'] as const
+const FIELD_KEYS = ['titel', 'content', 'thumbnail', 'excerpt', 'datum'] as const
 
 export function FramerManager() {
   const [rows, setRows] = useState<Row[]>([])
@@ -32,6 +33,17 @@ export function FramerManager() {
 
   return (
     <div className="space-y-5">
+      {/* Hoe werkt dit? */}
+      <div className="rounded-2xl border border-sky-100 bg-sky-50/60 p-4">
+        <div className="flex items-center gap-2 text-sm font-semibold text-sky-900 mb-2"><Info className="h-4 w-4" />Hoe werkt dit?</div>
+        <ol className="text-sm text-sky-900/90 space-y-1 list-decimal list-inside">
+          <li>Vul bij de klant het <b>Framer project</b> en de <b>Framer toegangssleutel</b> in (klantdetail → Blogs).</li>
+          <li>Klik hieronder op <b>Analyseer Framer project</b> — de app kiest automatisch de blogcollectie en koppelt de velden.</li>
+          <li>Doe een <b>Test publicatie</b> om te bevestigen dat alles werkt.</li>
+          <li>Blogs worden automatisch gegenereerd; je <b>keurt ze goed</b> om ze live te zetten.</li>
+        </ol>
+      </div>
+
       {stats && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <Kpi label="Gekoppelde projecten" value={stats.linkedProjects} />
@@ -64,6 +76,7 @@ function ClientCard({ row, onChanged }: { row: Row; onChanged: () => void }) {
   const [collections, setCollections] = useState<{ id: string; name: string }[] | null>(null)
   const [fields, setFields] = useState<{ id: string; name: string; type: string }[] | null>(null)
   const [map, setMap] = useState<Record<string, string>>({})
+  const [logs, setLogs] = useState<LogRow[] | null>(null)
 
   const call = async (action: string, extra?: object) => {
     setBusy(action)
@@ -83,21 +96,46 @@ function ClientCard({ row, onChanged }: { row: Row; onChanged: () => void }) {
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Fout') } finally { setBusy(null) }
   }
 
-  const test = async () => { const j = await call('test'); if (j) toast.success(`Framer verbonden — ${j.collections} collectie(s).`) }
+  // Eén-klik: analyseer en configureer automatisch.
+  const analyze = async () => {
+    const j = await call('analyze')
+    if (!j) return
+    if (j.needsChoice) { setCollections(j.collections ?? []); toast.message('Meerdere collecties gevonden — kies de blogcollectie hieronder.'); return }
+    if (j.detectedId && j.suggested) {
+      const detName = (j.collections ?? []).find((c: { id: string; name: string }) => c.id === j.detectedId)?.name ?? 'blogcollectie'
+      await saveSettings({ framer_blog_collection_id: j.detectedId, framer_field_map: j.suggested }, `Automatisch geconfigureerd ✓ (collectie: ${detName})`)
+    } else {
+      toast.error('Geen blogcollectie gevonden in dit project.')
+    }
+  }
+
+  const testPublish = async () => { const j = await call('test_publish'); if (j) toast.success('Framer configuratie werkt — testitem aangemaakt en weer verwijderd.') }
   const getCollections = async () => { const j = await call('collections'); if (j) setCollections(j.collections ?? []) }
-  const getFields = async () => { const j = await call('fields'); if (j) { setFields(j.fields ?? []); setMap(j.suggested ?? {}) } }
+  const chooseCollection = async (id: string) => {
+    await saveSettings({ framer_blog_collection_id: id }, 'Blogcollectie gekoppeld.')
+    const j = await call('fields', { collection_id: id }); if (j) { setFields(j.fields ?? []); setMap(j.suggested ?? {}) }
+  }
+  const loadLogs = async () => {
+    if (logs) { setLogs(null); return }
+    setBusy('logs')
+    try { const res = await fetch(`/api/admin/framer?logs=${row.id}`); const j = await res.json(); if (res.ok) setLogs(j.logs ?? []) } finally { setBusy(null) }
+  }
 
   return (
     <div className="card-base">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="min-w-0">
-          <div className="font-medium flex items-center gap-2">
+          <div className="font-medium flex items-center gap-2 flex-wrap">
             <span className={`h-2.5 w-2.5 rounded-full ${STATE_DOT[row.state]}`} />{row.company_name}
-            {row.framer_valid ? <span className="inline-flex items-center gap-1 text-[10px] text-green-700"><CheckCircle2 className="h-3 w-3" />Volledig gekoppeld</span> : <span className="inline-flex items-center gap-1 text-[10px] text-amber-600"><AlertTriangle className="h-3 w-3" />Onvolledig</span>}
+            {row.state === 'groen' ? <span className="inline-flex items-center gap-1 text-[10px] text-green-700"><CheckCircle2 className="h-3 w-3" />Volledig geconfigureerd</span>
+              : <span className="inline-flex items-center gap-1 text-[10px] text-amber-600"><AlertTriangle className="h-3 w-3" />Aandacht nodig</span>}
           </div>
+          {row.missing.length > 0 && (
+            <div className="mt-1 text-xs text-amber-700">Ontbreekt: {row.missing.join(' · ')}</div>
+          )}
           <div className="text-xs text-gray-400 mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
             <span>Verbonden: {row.connected ? 'ja' : 'nee'}</span>
-            <span>Collectie: {row.collection_linked ? 'gekoppeld' : 'nee'}</span>
+            <span>Blogcollectie: {row.collection_linked ? 'gekoppeld' : 'nee'}</span>
             <span>Laatste sync: {row.last_sync ? formatDate(row.last_sync) : '—'}</span>
             {row.project_url && <a href={row.project_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline inline-flex items-center gap-1">project <ExternalLink className="h-3 w-3" /></a>}
           </div>
@@ -110,25 +148,28 @@ function ClientCard({ row, onChanged }: { row: Row; onChanged: () => void }) {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <Link href={`/admin/blogs?client=${row.id}`} className="btn-secondary text-xs">Review</Link>
-          <button onClick={() => setOpen((o) => !o)} className="btn-secondary text-xs">{open ? 'Sluiten' : 'Configureren'}</button>
+          <button onClick={() => setOpen((o) => !o)} className="btn-secondary text-xs">{open ? 'Sluiten' : 'Beheren'}</button>
         </div>
       </div>
 
       {open && (
         <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
           <div className="flex flex-wrap gap-2">
-            <button onClick={test} disabled={busy === 'test'} className="btn-secondary text-xs">{busy === 'test' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plug className="h-3.5 w-3.5" />}Test Framer verbinding</button>
-            <button onClick={getCollections} disabled={busy === 'collections'} className="btn-secondary text-xs">{busy === 'collections' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Database className="h-3.5 w-3.5" />}Collecties ophalen</button>
-            <button onClick={getFields} disabled={busy === 'fields'} className="btn-secondary text-xs">{busy === 'fields' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ListChecks className="h-3.5 w-3.5" />}Velden ophalen</button>
+            <button onClick={analyze} disabled={busy === 'analyze' || busy === 'save'} className="btn-primary text-xs">{busy === 'analyze' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}Analyseer Framer project</button>
+            <button onClick={testPublish} disabled={busy === 'test_publish'} className="btn-secondary text-xs">{busy === 'test_publish' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FlaskConical className="h-3.5 w-3.5" />}Test publicatie</button>
+            <button onClick={getCollections} disabled={busy === 'collections'} className="btn-secondary text-xs">{busy === 'collections' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}Blogcollectie kiezen</button>
+            <button onClick={loadLogs} disabled={busy === 'logs'} className="btn-secondary text-xs">{busy === 'logs' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ScrollText className="h-3.5 w-3.5" />}{logs ? 'Logs verbergen' : 'Logs'}</button>
           </div>
+
+          <p className="text-[11px] text-gray-400">Tip: klik op <b>Analyseer Framer project</b> — de app kiest automatisch de blogcollectie en koppelt de velden. Je hoeft geen technische ID&apos;s op te zoeken.</p>
 
           {collections && (
             <div className="rounded-xl border border-gray-100 p-3 space-y-2">
-              <div className="text-xs font-medium text-gray-600">Kies CMS-collectie</div>
+              <div className="text-xs font-medium text-gray-600">Kies de blogcollectie</div>
               {collections.length === 0 ? <p className="text-xs text-gray-400">Geen collecties gevonden.</p> : collections.map((c) => (
                 <label key={c.id} className="flex items-center justify-between gap-2 text-sm">
-                  <span>{c.name} <span className="text-gray-400 text-xs">({c.id})</span></span>
-                  <button onClick={() => saveSettings({ framer_blog_collection_id: c.id }, 'Collectie gekoppeld.')} disabled={busy === 'save'} className="btn-secondary text-xs"><Save className="h-3.5 w-3.5" />Koppelen</button>
+                  <span>{c.name}</span>
+                  <button onClick={() => chooseCollection(c.id)} disabled={busy === 'save' || busy === 'fields'} className="btn-secondary text-xs"><Save className="h-3.5 w-3.5" />Kiezen</button>
                 </label>
               ))}
             </div>
@@ -136,21 +177,35 @@ function ClientCard({ row, onChanged }: { row: Row; onChanged: () => void }) {
 
           {fields && (
             <div className="rounded-xl border border-gray-100 p-3 space-y-2">
-              <div className="text-xs font-medium text-gray-600">Field map (suggesties automatisch ingevuld)</div>
+              <div className="text-xs font-medium text-gray-600">Framer velden (automatisch voorgesteld — aanpasbaar)</div>
               {FIELD_KEYS.map((k) => (
                 <div key={k} className="flex items-center gap-2">
-                  <span className="w-24 text-xs text-gray-500">{k}</span>
+                  <span className="w-24 text-xs text-gray-500 capitalize">{k === 'excerpt' ? 'samenvatting' : k}</span>
                   <select value={map[k] ?? ''} onChange={(e) => setMap((m) => ({ ...m, [k]: e.target.value }))} className="flex-1 rounded-lg border border-gray-200 px-2 py-1 text-xs">
                     <option value="">— geen —</option>
-                    {fields.map((f) => <option key={f.id} value={f.id}>{f.name || f.id} ({f.type})</option>)}
+                    {fields.map((f) => <option key={f.id} value={f.id}>{f.name || f.id}</option>)}
                   </select>
                 </div>
               ))}
-              <button onClick={() => saveSettings({ framer_field_map: Object.fromEntries(Object.entries(map).filter(([, v]) => v)) }, 'Field map opgeslagen.')} disabled={busy === 'save'} className="btn-primary text-xs"><Save className="h-3.5 w-3.5" />Field map opslaan</button>
+              <button onClick={() => saveSettings({ framer_field_map: Object.fromEntries(Object.entries(map).filter(([, v]) => v)) }, 'Velden gekoppeld.')} disabled={busy === 'save'} className="btn-primary text-xs"><Save className="h-3.5 w-3.5" />Velden opslaan</button>
             </div>
           )}
 
-          <p className="text-[11px] text-gray-400">Per klant: eigen project URL, API key, collectie en field map. API key beheer je in de klantdetailpagina → Blogs. Publicatie staat achter FRAMER_ENABLED tot je het op één klant test.</p>
+          {logs && (
+            <div className="rounded-xl border border-gray-100 p-3">
+              <div className="text-xs font-medium text-gray-600 mb-2">Logboek</div>
+              {logs.length === 0 ? <p className="text-xs text-gray-400">Nog geen acties gelogd.</p> : (
+                <div className="space-y-1 max-h-60 overflow-y-auto">
+                  {logs.map((l) => (
+                    <div key={l.id} className="flex items-center justify-between gap-2 text-xs">
+                      <span className="text-gray-500">{formatDate(l.created_at)} · <span className="font-medium text-gray-700">{l.actie}</span></span>
+                      <span className={l.status === 'ok' ? 'text-green-600' : 'text-red-600'} title={l.foutmelding ?? undefined}>{l.status === 'ok' ? 'ok' : 'fout'}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
