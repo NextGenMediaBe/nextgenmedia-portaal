@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Loader2, Plug, AlertTriangle, RefreshCcw, Database } from 'lucide-react'
+import { Loader2, Plug, AlertTriangle, RefreshCcw, Database, Sparkles } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 
 type Account = {
@@ -12,18 +12,23 @@ type Account = {
   website_changed: boolean
 }
 type Cron = { lastRun: string | null; ok: boolean }
+type AiStatus = { hasKey: boolean; keyHint: string | null; model: string; framerEnabled: boolean }
 
 const DOT: Record<string, string> = { groen: 'bg-green-500', oranje: 'bg-amber-500', rood: 'bg-red-500' }
 
 export function CmsManager() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [cron, setCron] = useState<Cron | null>(null)
+  const [ai, setAi] = useState<AiStatus | null>(null)
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
     setLoading(true)
-    try { const res = await fetch('/api/admin/blog-accounts'); const j = await res.json(); if (res.ok) { setAccounts(j.accounts ?? []); setCron(j.cron ?? null) } }
-    catch { /* stil */ } finally { setLoading(false) }
+    try {
+      const [accRes, aiRes] = await Promise.all([fetch('/api/admin/blog-accounts'), fetch('/api/admin/ai-status')])
+      const j = await accRes.json(); if (accRes.ok) { setAccounts(j.accounts ?? []); setCron(j.cron ?? null) }
+      const a = await aiRes.json(); if (aiRes.ok) setAi(a)
+    } catch { /* stil */ } finally { setLoading(false) }
   }, [])
   useEffect(() => { load() }, [load])
 
@@ -45,6 +50,17 @@ export function CmsManager() {
 
   return (
     <div className="space-y-5">
+      {ai && (
+        ai.hasKey ? (
+          <div className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+            <Sparkles className="h-4 w-4 shrink-0" />AI actief — sleutel ingesteld ({ai.keyHint}), model <b>{ai.model}</b>. Blogs en analyses worden door AI gegenereerd.
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            <AlertTriangle className="h-4 w-4 shrink-0" />AI niet geconfigureerd — geen <code>ANTHROPIC_API_KEY</code> in deze omgeving. Blogs vallen terug op eenvoudige sjablonen. Stel de sleutel in (en laad tegoed op je Anthropic-account) en redeploy.
+          </div>
+        )
+      )}
       {cron && !cron.ok && (
         <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           <AlertTriangle className="h-4 w-4 shrink-0" />Automatische generatie (cron) lijkt niet recent gelopen{cron.lastRun ? ` (laatste: ${formatDate(cron.lastRun)})` : ''}.
