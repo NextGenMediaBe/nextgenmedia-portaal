@@ -942,5 +942,56 @@ CREATE POLICY "framer logs admin all" ON public.framer_logs
   USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
   WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
 
+-- ── recurring_invoices: terugkerende facturatie-definities (auto per maand) ───
+-- Verschijnen automatisch in elke maand tussen start- en eindmaand. Er worden
+-- GEEN per-maand records aangemaakt; enkel de verstuur-status per maand wordt
+-- bewaard in recurring_invoice_months.
+CREATE TABLE IF NOT EXISTS public.recurring_invoices (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id     uuid REFERENCES public.clients(id) ON DELETE SET NULL,
+  service_slug  text,
+  start_month   text NOT NULL,                 -- 'YYYY-MM'
+  end_month     text,                          -- 'YYYY-MM' of NULL (open einde)
+  description   text,
+  amount_excl   numeric NOT NULL DEFAULT 0,
+  vat_pct       numeric NOT NULL DEFAULT 21,
+  amount_incl   numeric NOT NULL DEFAULT 0,
+  active        boolean NOT NULL DEFAULT true,
+  revenue_id    uuid REFERENCES public.revenue_entries(id) ON DELETE SET NULL,
+  created_by    uuid,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_at    timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.recurring_invoices ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "recurring invoices admin all" ON public.recurring_invoices;
+CREATE POLICY "recurring invoices admin all" ON public.recurring_invoices
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
+CREATE TABLE IF NOT EXISTS public.recurring_invoice_months (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  recurring_id  uuid NOT NULL REFERENCES public.recurring_invoices(id) ON DELETE CASCADE,
+  month         text NOT NULL,                 -- 'YYYY-MM'
+  status        text NOT NULL DEFAULT 'verstuurd', -- te_versturen | verstuurd | geannuleerd
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_at    timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_recurring_invoice_months_uniq ON public.recurring_invoice_months (recurring_id, month);
+ALTER TABLE public.recurring_invoice_months ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "recurring invoice months admin all" ON public.recurring_invoice_months;
+CREATE POLICY "recurring invoice months admin all" ON public.recurring_invoice_months
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
+DO $$
+BEGIN
+  DROP TRIGGER IF EXISTS trg_recurring_invoices_updated ON public.recurring_invoices;
+  CREATE TRIGGER trg_recurring_invoices_updated BEFORE UPDATE ON public.recurring_invoices FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+  DROP TRIGGER IF EXISTS trg_recurring_invoice_months_updated ON public.recurring_invoice_months;
+  CREATE TRIGGER trg_recurring_invoice_months_updated BEFORE UPDATE ON public.recurring_invoice_months FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+EXCEPTION WHEN others THEN NULL; END $$;
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.

@@ -1,19 +1,27 @@
 // Pure helpers voor het facturenpaneel (client-safe).
 
-export const INVOICE_STATUSES = ['te_factureren', 'gefactureerd', 'betaald', 'geannuleerd'] as const
+// Betaald/onbetaald bestaat niet meer in deze module — enkel verstuur-opvolging.
+export const INVOICE_STATUSES = ['te_versturen', 'verstuurd', 'geannuleerd'] as const
 export type InvoiceStatus = (typeof INVOICE_STATUSES)[number]
 
 export const INVOICE_STATUS_LABEL: Record<string, string> = {
-  te_factureren: 'Te factureren',
-  gefactureerd: 'Gefactureerd',
-  betaald: 'Betaald',
+  te_versturen: 'Te versturen',
+  verstuurd: 'Verstuurd',
   geannuleerd: 'Geannuleerd',
 }
 export const INVOICE_STATUS_CLS: Record<string, string> = {
-  te_factureren: 'bg-amber-100 text-amber-700',
-  gefactureerd: 'bg-blue-100 text-blue-700',
-  betaald: 'bg-green-100 text-green-700',
+  te_versturen: 'bg-amber-100 text-amber-700',
+  verstuurd: 'bg-green-100 text-green-700',
   geannuleerd: 'bg-gray-100 text-gray-500',
+}
+
+/** Zet oude statuswaarden om naar het nieuwe model (backward-compatible). */
+export function normalizeInvoiceStatus(s: string | null | undefined): InvoiceStatus {
+  switch (s) {
+    case 'verstuurd': case 'gefactureerd': case 'betaald': return 'verstuurd'
+    case 'geannuleerd': return 'geannuleerd'
+    default: return 'te_versturen' // te_factureren / onbekend / null
+  }
 }
 
 export const DEFAULT_VAT = 21
@@ -69,6 +77,23 @@ export type ExpandedRevenue = {
   amount_excl: number
   type: string
   title: string | null
+}
+
+// ── Recurring facturen → maand ───────────────────────────────────────────────
+export type RecurringInvoice = {
+  id: string; client_id: string | null; service_slug: string | null
+  start_month: string; end_month: string | null
+  description: string | null; amount_excl: number; vat_pct: number; amount_incl: number
+  active: boolean; revenue_id: string | null
+}
+
+/** Is een recurring factuur actief in maand 'YYYY-MM'? */
+export function recurringActiveInMonth(r: RecurringInvoice, month: string): boolean {
+  if (!r.active) return false
+  const start = (r.start_month ?? '').slice(0, 7)
+  const end = r.end_month ? r.end_month.slice(0, 7) : null
+  if (!start) return false
+  return start <= month && (!end || month <= end)
 }
 
 const ym = (date: string | null) => (date ? date.slice(0, 7) : null)
