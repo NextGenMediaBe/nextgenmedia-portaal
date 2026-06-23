@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Plus, X, Loader2, Pencil, Trash2, Sparkles, Newspaper, CheckCircle2, AlertTriangle, Link2, CalendarDays, BookOpen } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatDate } from '@/lib/utils'
+import { postJson } from '@/lib/api-client'
 
 export type Knowledge = {
   bedrijfsinformatie?: string; doelgroep?: string; tone_of_voice?: string
@@ -57,7 +58,7 @@ export function BlogAccountsManager() {
   }
   const connectFramer = async (id: string) => {
     setBusy(id + ':framer')
-    try { const res = await fetch('/api/admin/blog-accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'connect_framer', id }) }); const j = await res.json(); if (!res.ok) throw new Error(j.error); toast.success(`Framer gekoppeld (${j.collection}).`); await load() }
+    try { const j = await postJson('/api/admin/blog-accounts', { action: 'connect_framer', id }); toast.success(`Framer gekoppeld (${String(j.collection)}).`); await load() }
     catch (e) { toast.error(e instanceof Error ? e.message : 'Fout') } finally { setBusy(null) }
   }
 
@@ -124,18 +125,28 @@ function GenerateDialog({ account, onClose, onDone }: { account: Account; onClos
   const [topic, setTopic] = useState('')
   const [date, setDate] = useState('')
   const [loading, setLoading] = useState(false)
+  const [progress, setProgress] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   const submit = async () => {
-    setLoading(true); setError(null)
+    const total = Math.max(1, count)
+    setLoading(true); setError(null); setProgress('')
+    // Eén blog per verzoek → elk verzoek blijft kort (geen time-out bij meerdere).
+    let created = 0
     try {
-      const body: Record<string, unknown> = { action: 'generate', account_id: account.id, count: Math.max(1, count) }
-      if (topic.trim()) body.topic = topic.trim()
-      if (date) body.publish_at = new Date(date).toISOString()
-      const res = await fetch('/api/admin/blogs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      const j = await res.json(); if (!res.ok) throw new Error(j.error)
-      toast.success(`${j.created} blog(s) gegenereerd — staan in de kalender.`); onDone()
-    } catch (e) { setError(e instanceof Error ? e.message : 'Genereren mislukt') } finally { setLoading(false) }
+      for (let i = 0; i < total; i++) {
+        setProgress(`Blog ${i + 1} van ${total} genereren…`)
+        const body: Record<string, unknown> = { action: 'generate', account_id: account.id, count: 1 }
+        if (topic.trim()) body.topic = topic.trim()
+        if (date) body.publish_at = new Date(date).toISOString()
+        const j = await postJson('/api/admin/blogs', body)
+        created += Number(j.created) || 0
+      }
+      toast.success(`${created} blog(s) gegenereerd — staan in de kalender.`); onDone()
+    } catch (e) {
+      if (created > 0) toast.success(`${created} blog(s) gegenereerd.`)
+      setError((e instanceof Error ? e.message : 'Genereren mislukt') + (created > 0 ? ` (${created} gelukt voordat het stopte)` : ''))
+    } finally { setLoading(false); setProgress('') }
   }
 
   const inp = 'w-full px-3 py-2 text-sm border border-gray-200 rounded-lg'
@@ -150,10 +161,11 @@ function GenerateDialog({ account, onClose, onDone }: { account: Account; onClos
           <div><label className="block text-xs text-gray-600 mb-1">Aantal blogs</label><input type="number" min="1" max="10" className={inp} value={count} onChange={(e) => setCount(Number(e.target.value))} /></div>
           <div><label className="block text-xs text-gray-600 mb-1">Onderwerp (optioneel)</label><input className={inp} value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="Laat leeg om de AI te laten kiezen" /></div>
           <div><label className="block text-xs text-gray-600 mb-1">Publicatiedatum (optioneel)</label><input type="date" className={inp} value={date} onChange={(e) => setDate(e.target.value)} /><p className="text-[11px] text-gray-400 mt-1">Met een datum wordt de blog na goedkeuring automatisch op die dag gepubliceerd.</p></div>
+          {loading && progress && <div className="text-xs text-gray-500 flex items-center gap-2"><Loader2 className="h-3.5 w-3.5 animate-spin" />{progress}</div>}
           {error && <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</div>}
           <div className="flex gap-2 pt-1">
             <button onClick={submit} disabled={loading} className="btn-primary flex-1 justify-center">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}Genereren</button>
-            <button onClick={onClose} className="btn-secondary">Annuleer</button>
+            <button onClick={onClose} disabled={loading} className="btn-secondary">Annuleer</button>
           </div>
         </div>
       </div>

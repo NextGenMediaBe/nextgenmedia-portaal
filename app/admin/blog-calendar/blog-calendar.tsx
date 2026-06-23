@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ChevronLeft, ChevronRight, CalendarDays, Sparkles, Eye, Clock, CheckCircle2, X, Loader2, Save, RefreshCw, Trash2, UploadCloud, FileText, ImageIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatDate } from '@/lib/utils'
+import { postJson, patchJson } from '@/lib/api-client'
 
 export type CalBlog = {
   id: string; titel: string; slug: string; content: string | null
@@ -184,8 +185,8 @@ function BlogEditorModal({ blog, onClose }: { blog: CalBlog; onClose: () => void
   const call = async (key: string, body: object, okMsg?: string) => {
     setBusy(key)
     try {
-      const res = await fetch('/api/admin/blogs', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: blog.id, ...body }) })
-      const j = await res.json(); if (!res.ok) throw new Error(j.error)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const j = await patchJson('/api/admin/blogs', { id: blog.id, ...body }) as any
       if ((body as { action?: string }).action === 'approve') {
         if (j.scheduled) toast.success('Ingepland — wordt automatisch gepubliceerd op de datum.')
         else if (j.concept) toast.success('Als concept bewaard.')
@@ -206,9 +207,8 @@ function BlogEditorModal({ blog, onClose }: { blog: CalBlog; onClose: () => void
   const otherImage = async () => {
     setBusy('image')
     try {
-      const res = await fetch('/api/admin/blogs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'image', id: blog.id }) })
-      const j = await res.json(); if (!res.ok) throw new Error(j.error)
-      setF((x) => ({ ...x, thumbnail_url: j.url }))
+      const j = await postJson('/api/admin/blogs', { action: 'image', id: blog.id })
+      setF((x) => ({ ...x, thumbnail_url: String(j.url) }))
       toast.success('Nieuwe foto gekozen — klik Opslaan om te bewaren.')
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Fout') } finally { setBusy(null) }
   }
