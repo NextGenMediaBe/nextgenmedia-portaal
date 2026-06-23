@@ -74,7 +74,8 @@
       "mcp__dfd71a09-67ae-41ed-9a8d-a9464fd9d4be__getCMSCollections",
       "WebFetch(domain:www.framer.com)",
       "WebFetch(domain:github.com)",
-      "Bash(node -e \"try{const p=require\\('framer-api/package.json'\\);console.log\\('version',p.version,'types:',p.types||p.typings||'\\(none\\)','type:',p.type||'commonjs'\\);}catch\\(e\\){console.log\\('resolve fail',e.message\\)}\")"
+      "Bash(node -e \"try{const p=require\\('framer-api/package.json'\\);console.log\\('version',p.version,'types:',p.types||p.typings||'\\(none\\)','type:',p.type||'commonjs'\\);}catch\\(e\\){console.log\\('resolve fail',e.message\\)}\")",
+      "Bash(cd \"/c/Users/12401776/Downloads/NextGenMedia Content-Portal \\(1\\)\" && cat node_modules/framer-api/package.json 2>/dev/null | head -40; echo \"---FILES---\"; ls node_modules/framer-api/dist 2>/dev/null || ls node_modules/framer-api 2>/dev/null)"
     ]
   }
 }

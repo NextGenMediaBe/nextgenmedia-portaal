@@ -124,14 +124,15 @@ export async function publishBlogToFramer(config: FramerClientConfig, blog: Blog
     if (fm.datum) fd[fm.datum] = { type: 'date', value: new Date().toISOString() }
     if (fm.excerpt && blog.meta_description) fd[fm.excerpt] = { type: 'string', value: blog.meta_description }
 
-    // Idempotent: bestaand item zoeken (op framer_item_id, anders op slug).
-    let itemId: string | null = blog.framer_item_id
-    if (!itemId) {
-      const items = await collection.getItems()
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const match = (items as any[]).find((it) => it.slug === blog.slug)
-      if (match) itemId = match.id
-    }
+    // Idempotent: bestaand item ALTIJD opzoeken in de collectie zelf (op echte
+    // Framer-id of op slug). We vertrouwen NIET blind op blog.framer_item_id,
+    // want een verkeerd opgeslagen waarde (bv. de slug i.p.v. de echte id) zou
+    // anders een "No item found with ID …"-fout geven. addItems met een
+    // bestaande id = update; zonder id = nieuw item.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const existingItems = (await collection.getItems()) as any[]
+    const match = existingItems.find((it) => (blog.framer_item_id && it.id === blog.framer_item_id) || it.slug === blog.slug)
+    const itemId: string | null = match?.id ?? null
 
     // Veiligheidscheck vóór publish: onverwachte openstaande wijzigingen.
     try {
@@ -147,13 +148,24 @@ export async function publishBlogToFramer(config: FramerClientConfig, blog: Blog
     // Item toevoegen of updaten (addItems met bestaande id = merge/update → geen duplicaat).
     await collection.addItems([itemId ? { id: itemId, slug: blog.slug, fieldData: fd } : { slug: blog.slug, fieldData: fd }])
 
+    // Echte Framer-id ophalen (na een create heeft het nieuwe item een gegenereerde id).
+    let realId: string | null = itemId
+    if (!realId) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const after = (await collection.getItems()) as any[]
+        realId = after.find((it) => it.slug === blog.slug)?.id ?? null
+      } catch { /* best-effort */ }
+    }
+
     // Publiceren + naar productie deployen.
     const pub = await framer.publish()
     await logFramerAction(cid, blog.id, 'publish', 'ok')
     const deploymentId = pub?.deployment?.id ?? pub?.deployment ?? pub?.deploymentId
     if (deploymentId) { try { await framer.deploy(deploymentId); await logFramerAction(cid, blog.id, 'deploy', 'ok') } catch (e) { await logFramerAction(cid, blog.id, 'deploy', 'gefaald', e instanceof Error ? e.message : null) } }
 
-    return { ok: true, framerItemId: itemId ?? blog.slug }
+    // Enkel een ECHTE Framer-id teruggeven (nooit de slug) zodat updates blijven werken.
+    return { ok: true, framerItemId: realId ?? undefined }
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Framer-publicatie mislukt'
     await logFramerAction(cid, blog.id, 'publish', 'gefaald', msg)
