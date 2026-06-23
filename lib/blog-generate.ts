@@ -108,7 +108,7 @@ export async function sendBlogReviewMail(account: BlogAccount, blogs: { id: stri
 }
 
 /** Dagelijkse scheduler over blogaccounts. */
-export async function runBlogScheduler(now = new Date()): Promise<{ accounts: number; blogs: number }> {
+export async function runBlogScheduler(now = new Date()): Promise<{ accounts: number; blogs: number; failed: number }> {
   const admin = createAdminSupabaseClient()
   const today = todayISO(now)
   const { data: due } = await admin.from('blog_accounts')
@@ -119,13 +119,22 @@ export async function runBlogScheduler(now = new Date()): Promise<{ accounts: nu
 
   let totalBlogs = 0
   let accountCount = 0
+  let failed = 0
   for (const a of (due ?? []) as BlogAccount[]) {
     const count = Math.max(1, a.aantal_per_cyclus ?? 1)
-    const created = await generateBlogsForAccount(a, count)
-    if (created.length > 0) { totalBlogs += created.length; accountCount++; await sendBlogReviewMail(a, created) }
-    const base = a.volgende_generatie_datum ?? today
-    const next = nextGenerationDate(base, a.frequentie_maanden ?? 1)
-    await admin.from('blog_accounts').update({ volgende_generatie_datum: next }).eq('id', a.id)
+    try {
+      const created = await generateBlogsForAccount(a, count)
+      if (created.length > 0) { totalBlogs += created.length; accountCount++; await sendBlogReviewMail(a, created) }
+      // Volgende generatiedatum enkel opschuiven bij succes, zodat een mislukte
+      // account de volgende dag opnieuw geprobeerd wordt (en niet stilletjes overslaat).
+      const base = a.volgende_generatie_datum ?? today
+      const next = nextGenerationDate(base, a.frequentie_maanden ?? 1)
+      await admin.from('blog_accounts').update({ volgende_generatie_datum: next }).eq('id', a.id)
+    } catch {
+      // Eén falende account mag de hele cron niet stoppen; volgende datum NIET
+      // opschuiven zodat er morgen opnieuw geprobeerd wordt.
+      failed++
+    }
   }
-  return { accounts: accountCount, blogs: totalBlogs }
+  return { accounts: accountCount, blogs: totalBlogs, failed }
 }

@@ -77,7 +77,7 @@ const MODEL = () => process.env.BLOG_AI_MODEL || 'claude-sonnet-4-6'
 
 export async function generateBlog(input: BlogInput): Promise<GeneratedBlog> {
   const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) return templateDraft(input)
+  if (!apiKey) throw new Error('AI niet geconfigureerd: ANTHROPIC_API_KEY ontbreekt in deze omgeving (Vercel env vars).')
 
   const avoid = (input.recentTitles ?? []).slice(0, 15).map((t) => `- ${t}`).join('\n')
   const mem = input.memory
@@ -126,57 +126,50 @@ Geef UITSLUITEND geldige JSON terug met deze velden:
   "tags": ["1 tot 4 thematische tags, bv. SEO, Branding, HR, Vastgoed, Burn-out, Social Media"]
 }`
 
+  let res: Response
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({ model: MODEL(), max_tokens: 6000, messages: [{ role: 'user', content: prompt }] }),
     })
-    const json = await res.json()
-    if (!res.ok) throw new Error(json?.error?.message || `AI-fout (${res.status})`)
-    const text: string = (json?.content ?? []).map((b: { text?: string }) => b.text ?? '').join('')
-    const parsed = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1))
-    const titel = String(parsed.titel || 'Nieuwe blog').trim()
-    const content = String(parsed.content || '')
-    const arr = (v: unknown): string[] => Array.isArray(v) ? v.map((x) => String(x)).filter(Boolean).slice(0, 20) : []
-    return {
-      titel,
-      slug: slugify(titel),
-      content,
-      meta_title: String(parsed.meta_title || titel).slice(0, 70),
-      meta_description: String(parsed.meta_description || '').slice(0, 170),
-      thumbnail_url: null,
-      topic: String(parsed.topic || titel).slice(0, 200),
-      keywords: arr(parsed.keywords),
-      angle: String(parsed.angle || '').slice(0, 200),
-      cta: String(parsed.cta || '').slice(0, 300),
-      internal_link_suggestions: arr(parsed.internal_link_suggestions),
-      tags: arr(parsed.tags).slice(0, 6),
-      word_count: content.trim().split(/\s+/).filter(Boolean).length,
-    }
-  } catch {
-    // AI faalde → bruikbare sjabloon-draft zodat de cyclus niet vastloopt.
-    return templateDraft(input)
+  } catch (e) {
+    throw new Error(`Kan de AI-dienst niet bereiken: ${e instanceof Error ? e.message : 'netwerkfout'}`)
   }
-}
 
-function templateDraft(input: BlogInput): GeneratedBlog {
-  const niche = input.niche || 'onze sector'
-  const titel = `Inzichten over ${niche} — ${input.clientName}`
-  const content = `# ${titel}\n\n_Concept — nog af te werken in review._\n\nDit is een automatisch voorbereide blogdraft voor **${input.clientName}**.\n\n## Inleiding\nSchrijf hier een sterke opening over ${niche}.\n\n## Kern\n${input.brandContext || 'Voeg hier de kernboodschap en merkcontext toe.'}\n\n## Conclusie\nSluit af met een duidelijke call-to-action.`
+  const json = await res.json().catch(() => null)
+  if (!res.ok) {
+    const detail = json?.error?.message || `HTTP ${res.status}`
+    throw new Error(`AI-fout (model ${MODEL()}): ${detail}`)
+  }
+
+  const text: string = (json?.content ?? []).map((b: { text?: string }) => b.text ?? '').join('')
+  const start = text.indexOf('{'), end = text.lastIndexOf('}')
+  if (start === -1 || end === -1) throw new Error('AI gaf geen bruikbaar (JSON-)antwoord terug.')
+  let parsed: Record<string, unknown>
+  try {
+    parsed = JSON.parse(text.slice(start, end + 1))
+  } catch {
+    throw new Error('AI-antwoord kon niet als JSON gelezen worden.')
+  }
+
+  const titel = String(parsed.titel || '').trim()
+  const content = String(parsed.content || '')
+  if (!titel || content.trim().length < 100) throw new Error('AI gaf een onvolledige blog terug (geen titel of te weinig inhoud).')
+  const arr = (v: unknown): string[] => Array.isArray(v) ? v.map((x) => String(x)).filter(Boolean).slice(0, 20) : []
   return {
     titel,
-    slug: slugify(titel) + '-' + Date.now().toString(36).slice(-4),
+    slug: slugify(titel),
     content,
-    meta_title: titel.slice(0, 70),
-    meta_description: `Blog van ${input.clientName} over ${niche}.`.slice(0, 170),
+    meta_title: String(parsed.meta_title || titel).slice(0, 70),
+    meta_description: String(parsed.meta_description || '').slice(0, 170),
     thumbnail_url: null,
-    topic: niche,
-    keywords: [],
-    angle: '',
-    cta: '',
-    internal_link_suggestions: [],
-    tags: [],
+    topic: String(parsed.topic || titel).slice(0, 200),
+    keywords: arr(parsed.keywords),
+    angle: String(parsed.angle || '').slice(0, 200),
+    cta: String(parsed.cta || '').slice(0, 300),
+    internal_link_suggestions: arr(parsed.internal_link_suggestions),
+    tags: arr(parsed.tags).slice(0, 6),
     word_count: content.trim().split(/\s+/).filter(Boolean).length,
   }
 }
