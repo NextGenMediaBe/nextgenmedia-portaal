@@ -91,6 +91,8 @@ export type ExpandedRevenue = {
   amount_excl: number
   type: string
   title: string | null
+  start_month?: string | null   // enkel bij recurring (YYYY-MM)
+  end_month?: string | null     // enkel bij recurring (YYYY-MM)
 }
 
 // ── Recurring facturen → maand ───────────────────────────────────────────────
@@ -121,7 +123,7 @@ export function expandRevenueForMonth(entries: RevenueEntry[], month: string): E
       const end = ym(e.end_month)
       if (!start) continue
       if (start <= month && (!end || month <= end)) {
-        out.push({ revenue_id: e.id, client_id: e.client_id, service_slug: e.service_slug, amount_excl: Number(e.amount_per_month) || 0, type: 'recurring', title: e.title })
+        out.push({ revenue_id: e.id, client_id: e.client_id, service_slug: e.service_slug, amount_excl: Number(e.amount_per_month) || 0, type: 'recurring', title: e.title, start_month: start, end_month: end })
       }
     } else {
       if (ym(e.transaction_month) === month) {

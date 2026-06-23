@@ -240,7 +240,7 @@ export function InvoicesPanel() {
         </div>
       )}
 
-      {creating && <CreateDialog month={month} clients={clients} omzet={omzet} onClose={() => setCreating(false)} onSaved={(warning) => { setCreating(false); if (warning) toast.warning(warning); load() }} />}
+      {creating && <CreateDialog month={month} clients={clients} omzet={omzet} linkedRevenueIds={linkedRevenueIds} onClose={() => setCreating(false)} onSaved={(warning) => { setCreating(false); if (warning) toast.warning(warning); load() }} />}
     </div>
   )
 }
@@ -249,7 +249,7 @@ function Kpi({ label, value, sub }: { label: string; value: string | number; sub
   return <div className="rounded-xl border border-gray-100 p-3"><div className="text-[11px] text-gray-500">{label}</div><div className="mt-0.5 text-lg font-bold">{value}</div>{sub && <div className="text-[10px] text-gray-400">{sub}</div>}</div>
 }
 
-function CreateDialog({ month, clients, omzet, onClose, onSaved }: { month: string; clients: ClientOpt[]; omzet: ExpandedRevenue[]; onClose: () => void; onSaved: (warning?: string | null) => void }) {
+function CreateDialog({ month, clients, omzet, linkedRevenueIds, onClose, onSaved }: { month: string; clients: ClientOpt[]; omzet: ExpandedRevenue[]; linkedRevenueIds: Set<string | null>; onClose: () => void; onSaved: (warning?: string | null) => void }) {
   const [type, setType] = useState<'eenmalig' | 'recurring'>('eenmalig')
   const [form, setForm] = useState({ client_id: '', service_slug: '', description: '', amount_excl: '', vat_pct: String(DEFAULT_VAT), status: 'te_versturen', revenue_id: '', start_month: month, end_month: '', active: true, invoice_day: 'last' })
   const [loading, setLoading] = useState(false)
@@ -257,6 +257,29 @@ function CreateDialog({ month, clients, omzet, onClose, onSaved }: { month: stri
   const excl = parseFloat(form.amount_excl) || 0
   const vat = parseFloat(form.vat_pct) || 0
   const incl = inclFromExcl(excl, vat)
+
+  // Slimme matching: enkel prognoses van DEZELFDE klant in deze maand (omzet is
+  // al maand-gefilterd), die qua bedrag matchen of binnen een recurring reeks vallen.
+  const matches = useMemo(() => {
+    if (!form.client_id) return []
+    const cands = omzet.filter((o) => o.client_id === form.client_id && !linkedRevenueIds.has(o.revenue_id))
+    const scored = cands.map((o) => {
+      let score = 50 // klant (verplicht, al gefilterd)
+      if ((o.service_slug ?? null) === (form.service_slug || null)) score += 25
+      const close = excl > 0 && Math.abs(o.amount_excl - excl) < 0.01
+      const near = excl > 0 && Math.abs(o.amount_excl - excl) / excl <= 0.1
+      if (close) score += 25; else if (near) score += 12
+      return { o, score, valid: close || near || o.type === 'recurring' }
+    })
+    return scored.filter((s) => s.valid).sort((a, b) => b.score - a.score)
+  }, [omzet, form.client_id, form.service_slug, excl, linkedRevenueIds])
+
+  // Eén match → automatisch koppelen. Meerdere → keuze. Geen → leeg (backend maakt aan).
+  useEffect(() => {
+    const ids = matches.map((m) => m.o.revenue_id)
+    if (matches.length === 1) setForm((f) => (f.revenue_id === ids[0] ? f : { ...f, revenue_id: ids[0] }))
+    else setForm((f) => (f.revenue_id && ids.includes(f.revenue_id) ? f : { ...f, revenue_id: '' }))
+  }, [matches])
 
   const submit = async () => {
     if (excl <= 0) { setError('Bedrag excl. btw is verplicht'); return }
@@ -332,11 +355,29 @@ function CreateDialog({ month, clients, omzet, onClose, onSaved }: { month: stri
           )}
 
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Koppel aan prognose (optioneel — anders automatisch)</label>
-            <select className={inp} value={form.revenue_id} onChange={(e) => setForm((f) => ({ ...f, revenue_id: e.target.value }))}>
-              <option value="">— Automatisch koppelen / aanmaken —</option>
-              {omzet.map((r) => <option key={r.revenue_id} value={r.revenue_id}>{(r.title || 'Prognose')} · {svcLabel(r.service_slug)} · {formatEuro(r.amount_excl)}</option>)}
-            </select>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Prognosekoppeling</label>
+            {!form.client_id ? (
+              <p className="text-xs text-gray-400">Kies eerst een klant.</p>
+            ) : matches.length === 1 ? (
+              <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-800">
+                🟢 Automatisch gekoppeld: <b>{matches[0].o.title || 'Prognose'}</b> · {svcLabel(matches[0].o.service_slug)} · {formatEuro(matches[0].o.amount_excl)} · {matches[0].o.type === 'recurring' ? `recurring ${matches[0].o.start_month ? monthLabel(matches[0].o.start_month) : ''}${matches[0].o.end_month ? ' → ' + monthLabel(matches[0].o.end_month) : ' → doorlopend'}` : 'eenmalig'}
+              </div>
+            ) : matches.length > 1 ? (
+              <div className="space-y-1.5">
+                <div className="text-xs text-amber-700">🟠 Keuze vereist — kies de juiste prognose:</div>
+                {matches.map((m) => (
+                  <button key={m.o.revenue_id} type="button" onClick={() => setForm((f) => ({ ...f, revenue_id: m.o.revenue_id }))}
+                    className={`w-full text-left rounded-lg border px-3 py-2 text-xs transition-colors ${form.revenue_id === m.o.revenue_id ? 'border-[#fff848] bg-[#fff848]/10 ring-1 ring-[#fff848]' : 'border-gray-200 hover:border-gray-300'}`}>
+                    <b>{m.o.title || 'Prognose'}</b> · {svcLabel(m.o.service_slug)} · {formatEuro(m.o.amount_excl)}
+                    <span className="text-gray-400"> · {m.o.type === 'recurring' ? `recurring ${m.o.start_month ? monthLabel(m.o.start_month) : ''}${m.o.end_month ? ' → ' + monthLabel(m.o.end_month) : ' → doorlopend'}` : 'eenmalig'}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                🔴 Geen prognose gevonden. Bij <b>Aanmaken</b> wordt automatisch een prognose aangemaakt (zelfde klant, maand, dienst en bedrag) en gekoppeld.
+              </div>
+            )}
           </div>
           {error && <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2 flex items-center gap-1.5"><AlertTriangle className="h-4 w-4 shrink-0" />{error}</div>}
           <div className="flex gap-2 pt-1">
