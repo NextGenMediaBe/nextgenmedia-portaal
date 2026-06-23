@@ -54,7 +54,9 @@ export async function loadCore(year: number): Promise<FinanceCore> {
   const admin = createAdminSupabaseClient()
   const [{ data: entries }, { data: clients }, { data: costs }, { data: fiscalRow }] = await Promise.all([
     admin.from('revenue_entries').select('*').order('created_at', { ascending: false }),
-    admin.from('clients').select('id, company_name').is('archived_at', null),
+    // ALLE klanten (ook gearchiveerde) zodat de klantnaam bij een prognose altijd
+    // getoond wordt — anders lijkt een correct gekoppelde prognose "ontkoppeld".
+    admin.from('clients').select('id, company_name'),
     admin.from('cost_entries').select('*').order('created_at', { ascending: false }),
     admin.from('fiscal_settings').select('*').eq('year', year).maybeSingle(),
   ])
