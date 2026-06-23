@@ -51,6 +51,31 @@ async function linkOrCreateForecast(admin: Admin, p: {
   } catch { return null }
 }
 
+// Veerkrachtig insert/upsert: als een (nog niet gemigreerde) kolom ontbreekt
+// ("Could not find the 'X' column"), laat die kolom vallen en probeer opnieuw.
+// Zo blijven facturen werken ook al is de migratie nog niet gedraaid.
+async function safeInsertId(admin: Admin, table: string, row: Record<string, unknown>): Promise<string> {
+  const r: Record<string, unknown> = { ...row }
+  for (let i = 0; i < 6; i++) {
+    const { data, error } = await admin.from(table).insert(r).select('id').single()
+    if (!error) return data.id as string
+    const col = String(error.message || '').match(/Could not find the '([^']+)' column/)?.[1]
+    if (col && col in r) { delete r[col]; continue }
+    throw new Error(error.message)
+  }
+  throw new Error('Insert mislukt')
+}
+async function safeUpsert(admin: Admin, table: string, row: Record<string, unknown>, onConflict: string): Promise<void> {
+  const r: Record<string, unknown> = { ...row }
+  for (let i = 0; i < 6; i++) {
+    const { error } = await admin.from(table).upsert(r, { onConflict })
+    if (!error) return
+    const col = String(error.message || '').match(/Could not find the '([^']+)' column/)?.[1]
+    if (col && col in r) { delete r[col]; continue }
+    throw new Error(error.message)
+  }
+}
+
 async function clientNameFor(admin: Admin, clientId: string | null): Promise<string> {
   if (!clientId) return 'Onbekende klant'
   try { const { data } = await admin.from('clients').select('company_name').eq('id', clientId).maybeSingle(); return data?.company_name ?? 'Onbekende klant' } catch { return 'Onbekende klant' }
@@ -75,7 +100,7 @@ export async function GET(req: NextRequest) {
     const [{ data: invoices }, { data: recurring }, { data: recMonths }, { data: revenue }, { data: clients }] = await Promise.all([
       admin.from('invoices').select('*').eq('invoice_month', month),
       admin.from('recurring_invoices').select('*'),
-      admin.from('recurring_invoice_months').select('recurring_id, month, status, clickup_task_id').eq('month', month),
+      admin.from('recurring_invoice_months').select('*').eq('month', month),
       admin.from('revenue_entries').select('*'),
       admin.from('clients').select('id, company_name').is('archived_at', null).order('company_name'),
     ])
@@ -142,17 +167,16 @@ export async function POST(req: NextRequest) {
       // ClickUp-taak "Factuur versturen — [klant]" (best-effort).
       const clientName = await clientNameFor(admin, b.client_id || null)
       const task = await createInvoiceTask({ clientName, amountIncl: incl, invoiceDate, type: 'Eenmalig' })
-      const { data, error } = await admin.from('invoices').insert({
+      const id = await safeInsertId(admin, 'invoices', {
         client_id: b.client_id || null, service_slug: b.service_slug || null, invoice_month: month,
         invoice_date: invoiceDate, description: b.description || null,
         amount_excl: excl, vat_pct: vat, amount_incl: incl,
         status, revenue_id: revenueId, created_by: actor.id, clickup_task_id: task.taskId,
-      }).select('id').single()
-      if (error) throw new Error(error.message)
+      })
       // Meteen verstuurd aangemaakt? → taak ook afronden.
       if (status === 'verstuurd' && task.taskId) await completeInvoiceTask(task.taskId)
       try { revalidatePath('/admin/invoices') } catch { }
-      return NextResponse.json({ id: data.id, warning: task.assigneeFound ? null : `ClickUp-gebruiker "${INVOICE_ASSIGNEE_NAME}" niet gevonden — taak zonder verantwoordelijke aangemaakt.` })
+      return NextResponse.json({ id, warning: task.assigneeFound ? null : `ClickUp-gebruiker "${INVOICE_ASSIGNEE_NAME}" niet gevonden — taak zonder verantwoordelijke aangemaakt.` })
     }
 
     // Recurring factuur-definitie
@@ -162,15 +186,14 @@ export async function POST(req: NextRequest) {
       const end = b.end_month ? String(b.end_month).slice(0, 7) : null
       const invoiceDay = INVOICE_DAYS.includes(b.invoice_day) ? b.invoice_day : 'last'
       const revenueId = b.revenue_id || await linkOrCreateForecast(admin, { client_id: b.client_id || null, service_slug: b.service_slug || null, month: start, amount_excl: excl, description: b.description || null, recurring: true, start_month: start, end_month: end })
-      const { data, error } = await admin.from('recurring_invoices').insert({
+      const id = await safeInsertId(admin, 'recurring_invoices', {
         client_id: b.client_id || null, service_slug: b.service_slug || null,
         start_month: start, end_month: end, description: b.description || null,
         amount_excl: excl, vat_pct: vat, amount_incl: inclFromExcl(excl, vat),
         active: b.active !== false, revenue_id: revenueId, invoice_day: invoiceDay, created_by: actor.id,
-      }).select('id').single()
-      if (error) throw new Error(error.message)
+      })
       try { revalidatePath('/admin/invoices') } catch { }
-      return NextResponse.json({ id: data.id })
+      return NextResponse.json({ id })
     }
 
     // Status zetten (werkt voor beide types; recurring per maand)
@@ -179,10 +202,10 @@ export async function POST(req: NextRequest) {
       if (b.kind === 'recurring') {
         if (!b.source_id || !b.month) return NextResponse.json({ error: 'source_id en month vereist' }, { status: 400 })
         const month = String(b.month).slice(0, 7)
-        const { data: existing } = await admin.from('recurring_invoice_months').select('clickup_task_id').eq('recurring_id', b.source_id).eq('month', month).maybeSingle()
+        const { data: existing } = await admin.from('recurring_invoice_months').select('*').eq('recurring_id', b.source_id).eq('month', month).maybeSingle()
         let taskId: string | null = existing?.clickup_task_id ?? null
         // ClickUp-taak aanmaken zodra deze maand opgevolgd wordt; afronden bij 'verstuurd'.
-        const { data: rec } = await admin.from('recurring_invoices').select('client_id, amount_incl, invoice_day').eq('id', b.source_id).maybeSingle()
+        const { data: rec } = await admin.from('recurring_invoices').select('*').eq('id', b.source_id).maybeSingle()
         let assigneeWarning: string | null = null
         if (!taskId && rec) {
           const clientName = await clientNameFor(admin, rec.client_id ?? null)
@@ -190,14 +213,13 @@ export async function POST(req: NextRequest) {
           taskId = task.taskId
           if (!task.assigneeFound) assigneeWarning = `ClickUp-gebruiker "${INVOICE_ASSIGNEE_NAME}" niet gevonden — taak zonder verantwoordelijke aangemaakt.`
         }
-        const { error } = await admin.from('recurring_invoice_months').upsert({ recurring_id: b.source_id, month, status, clickup_task_id: taskId }, { onConflict: 'recurring_id,month' })
-        if (error) throw new Error(error.message)
+        await safeUpsert(admin, 'recurring_invoice_months', { recurring_id: b.source_id, month, status, clickup_task_id: taskId }, 'recurring_id,month')
         if (status === 'verstuurd' && taskId) await completeInvoiceTask(taskId)
         try { revalidatePath('/admin/invoices') } catch { }
         return NextResponse.json({ ok: true, warning: assigneeWarning })
       } else {
         if (!b.source_id) return NextResponse.json({ error: 'source_id vereist' }, { status: 400 })
-        const { data: inv } = await admin.from('invoices').select('clickup_task_id').eq('id', b.source_id).maybeSingle()
+        const { data: inv } = await admin.from('invoices').select('*').eq('id', b.source_id).maybeSingle()
         const { error } = await admin.from('invoices').update({ status }).eq('id', b.source_id)
         if (error) throw new Error(error.message)
         if (status === 'verstuurd' && inv?.clickup_task_id) await completeInvoiceTask(inv.clickup_task_id)
