@@ -20,12 +20,16 @@ export function SignatureZoneEditor({
   pdfUrl,
   initialZone,
   initialFields = [],
+  apiBase,
 }: {
   contractId: string
   pdfUrl: string | null
   initialZone: Zone
   initialFields?: Field[]
+  /** Basis-API-pad; default contracten. Templates geven hier hun eigen pad mee. */
+  apiBase?: string
 }) {
+  const base = apiBase ?? `/api/admin/contracts/${contractId}`
   const [zone, setZone] = useState<Zone>(initialZone)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -37,7 +41,7 @@ export function SignatureZoneEditor({
   const analyze = async () => {
     setAnalyzing(true)
     try {
-      const res = await fetch(`/api/admin/contracts/${contractId}/analyze`, { method: 'POST' })
+      const res = await fetch(`${base}/analyze`, { method: 'POST' })
       const j = await res.json(); if (!res.ok) throw new Error(j.error)
       setFields(j.fields ?? [])
       if (j.signature) setZone((z) => ({ ...z, sig_page: j.signature.page, sig_x_pct: j.signature.x, sig_y_pct: j.signature.y, sig_width: j.signature.width, sig_height: j.signature.height }))
@@ -50,7 +54,7 @@ export function SignatureZoneEditor({
   const saveFields = async () => {
     setSavingFields(true)
     try {
-      const res = await fetch(`/api/admin/contracts/${contractId}/field-values`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ detected_fields: fields }) })
+      const res = await fetch(`${base}/field-values`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ detected_fields: fields }) })
       const j = await res.json(); if (!res.ok) throw new Error(j.error)
       toast.success('Velden opgeslagen.')
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Opslaan mislukt') } finally { setSavingFields(false) }
@@ -66,7 +70,7 @@ export function SignatureZoneEditor({
     setSaving(true)
     setError(null)
     try {
-      const res = await fetch(`/api/admin/contracts/${contractId}/signature-zone`, {
+      const res = await fetch(`${base}/signature-zone`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(zone),

@@ -7,7 +7,10 @@ import Link from 'next/link'
 import { ChevronLeft, FileText, CheckCircle2, ExternalLink, Settings2, Download } from 'lucide-react'
 import { ContractActions } from './contract-actions'
 import { ContractPrintButton } from './contract-print-button'
-import { SendMailButton } from '@/components/admin/send-mail-button'
+import { ContractMailButton } from '@/components/admin/contract-mail-button'
+import { ContractLinkManager } from './contract-link-manager'
+import { statusInfo, canonicalStatus } from '@/lib/contract-status'
+import { baseUrl } from '@/lib/email'
 
 async function getContract(id: string) {
   try {
@@ -26,7 +29,7 @@ async function getContract(id: string) {
     // Parallelize the remaining I/O: client lookup + both signed URLs.
     // For signed PDFs we speculatively request both the stored path AND the
     // conventional `signed/{id}.pdf` fallback — whichever resolves wins.
-    const isSigned = contract.status === 'signed'
+    const isSigned = canonicalStatus(contract.status) === 'getekend'
     const [clientRowResult, pdfUrl, signedPdfStored, signedPdfFallback] = await Promise.all([
       contract.client_id
         ? admin.from('clients').select('id, company_name').eq('id', contract.client_id).maybeSingle()
@@ -50,24 +53,25 @@ async function getContract(id: string) {
   }
 }
 
-const STATUS_MAP: Record<string, { cls: string; label: string }> = {
-  draft:            { cls: 'bg-gray-100 text-gray-600',   label: 'Concept' },
-  sent:             { cls: 'bg-blue-100 text-blue-700',   label: 'Verstuurd' },
-  viewed:           { cls: 'bg-amber-100 text-amber-700', label: 'Bekeken' },
-  signed:           { cls: 'bg-green-100 text-green-700', label: 'Getekend' },
-  expired:          { cls: 'bg-red-100 text-red-700',     label: 'Verlopen' },
-  cancelled:        { cls: 'bg-gray-100 text-gray-500',   label: 'Geannuleerd' },
-  vervangen:        { cls: 'bg-orange-100 text-orange-700', label: 'Vervangen' },
-}
-
 const EVENT_LABELS: Record<string, string> = {
-  created:   'Aangemaakt',
-  sent:      'Verstuurd',
-  viewed:    'Bekeken',
-  signed:    'Ondertekend',
-  cancelled: 'Geannuleerd',
-  expired:   'Verlopen',
-  replaced:  'Vervangen',
+  created:             'Aangemaakt',
+  uploaded:            'Geüpload',
+  ai_analyzed:         'AI-analyse',
+  fields_edited:       'Velden aangepast',
+  created_from_template: 'Aangemaakt uit template',
+  sent:                'Verzonden',
+  opened:              'Geopend',
+  viewed:              'Geopend',
+  filled:              'Ingevuld',
+  signed:              'Ondertekend',
+  pdf_generated:       'PDF gegenereerd',
+  downloaded:          'Gedownload',
+  downloaded_original: 'Origineel gedownload',
+  downloaded_signed:   'Getekend exemplaar gedownload',
+  token_regenerated:   'Nieuwe tekenlink',
+  cancelled:           'Geannuleerd',
+  expired:             'Verlopen',
+  replaced:            'Vervangen',
 }
 
 export default async function ContractDetailPage({ params }: { params: { id: string } }) {
@@ -75,8 +79,10 @@ export default async function ContractDetailPage({ params }: { params: { id: str
   if (!data) notFound()
 
   const { contract: c, clientName, clientId, signatures, events, pdfUrl, signedPdfUrl } = data
-  const style = STATUS_MAP[c.status] ?? STATUS_MAP.draft
-  const isSigned = c.status === 'signed'
+  const style = statusInfo(c.status)
+  const statusKey = canonicalStatus(c.status)
+  const isSigned = statusKey === 'getekend'
+  const signLink = `${baseUrl()}/sign/${c.access_token}`
   // Prefer the signed PDF for preview when available, fall back to the original.
   const displayPdfUrl = signedPdfUrl ?? pdfUrl
 
@@ -98,8 +104,17 @@ export default async function ContractDetailPage({ params }: { params: { id: str
           )}
         </div>
         <div className="flex items-center gap-2 flex-wrap shrink-0">
-          {clientId && (
-            <SendMailButton clientId={clientId} kind="contract" contractId={c.id} label="Verstuur contractmail" />
+          {!isSigned && statusKey !== 'geannuleerd' && (
+            <ContractMailButton
+              contractId={c.id}
+              contractTitle={c.title}
+              signLink={signLink}
+              defaultEmail={c.signer_email ?? null}
+              signerName={c.signer_name ?? null}
+              clientName={clientName}
+              expiresAt={c.expires_at ?? null}
+              label="Verstuur contractmail"
+            />
           )}
           {!isSigned && (
             <Link
@@ -107,15 +122,13 @@ export default async function ContractDetailPage({ params }: { params: { id: str
               className="btn-secondary flex items-center gap-2 text-sm"
             >
               <Settings2 className="h-4 w-4" />
-              <span className="hidden sm:inline">Handtekeningzone</span>
-              <span className="sm:hidden">Zone</span>
+              <span className="hidden sm:inline">AI-velden & zone</span>
+              <span className="sm:hidden">Velden</span>
             </Link>
           )}
-          {isSigned && signedPdfUrl && (
+          {isSigned && (
             <a
-              href={signedPdfUrl}
-              target="_blank"
-              rel="noreferrer"
+              href={`/api/admin/contracts/${c.id}/download?type=signed`}
               className="btn-primary flex items-center gap-2 text-sm"
             >
               <Download className="h-4 w-4" />
@@ -212,18 +225,26 @@ export default async function ContractDetailPage({ params }: { params: { id: str
           </div>
 
           {/* Sign link — only for unsigned contracts */}
-          {['draft', 'sent', 'viewed'].includes(c.status) && (
-            <div className="card-base space-y-3">
-              <h2 className="font-semibold text-sm">Ondertekeningslink</h2>
-              <div className="flex gap-2">
-                <code className="flex-1 text-xs bg-gray-50 border border-gray-200 rounded px-2 py-1.5 truncate">
-                  /sign/{c.access_token?.slice(0, 16)}...
-                </code>
-                <a href={`/sign/${c.access_token}`} target="_blank" rel="noreferrer" className="btn-secondary text-xs px-2">
-                  <ExternalLink className="h-3.5 w-3.5" />
-                </a>
+          {!isSigned && statusKey !== 'geannuleerd' && (
+            <>
+              <div className="card-base space-y-3">
+                <h2 className="font-semibold text-sm">Ondertekeningslink</h2>
+                {c.expires_at && (
+                  <p className="text-xs text-gray-500">
+                    Verloopt op {formatDate(c.expires_at)}{statusKey === 'verlopen' ? ' — verlopen' : ''}
+                  </p>
+                )}
+                <div className="flex gap-2">
+                  <code className="flex-1 text-xs bg-gray-50 border border-gray-200 rounded px-2 py-1.5 truncate">
+                    /sign/{c.access_token?.slice(0, 16)}...
+                  </code>
+                  <a href={`/sign/${c.access_token}`} target="_blank" rel="noreferrer" className="btn-secondary text-xs px-2">
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                </div>
               </div>
-            </div>
+              <ContractLinkManager contractId={c.id} initialExpiresAt={c.expires_at ?? null} />
+            </>
           )}
 
           {/* Signed PDF — only when signed */}
@@ -236,9 +257,7 @@ export default async function ContractDetailPage({ params }: { params: { id: str
               {signedPdfUrl ? (
                 <div className="space-y-2">
                   <a
-                    href={signedPdfUrl}
-                    target="_blank"
-                    rel="noreferrer"
+                    href={`/api/admin/contracts/${c.id}/download?type=signed`}
                     className="btn-primary w-full justify-center text-sm"
                   >
                     <Download className="h-3.5 w-3.5" />
@@ -252,9 +271,7 @@ export default async function ContractDetailPage({ params }: { params: { id: str
                 <div className="space-y-2">
                   {pdfUrl && (
                     <a
-                      href={pdfUrl}
-                      target="_blank"
-                      rel="noreferrer"
+                      href={`/api/admin/contracts/${c.id}/download?type=original`}
                       className="btn-secondary w-full justify-center text-sm"
                     >
                       <Download className="h-3.5 w-3.5" />
@@ -326,16 +343,19 @@ export default async function ContractDetailPage({ params }: { params: { id: str
             <div className="card-base space-y-2">
               <h2 className="font-semibold text-sm">Activiteiten</h2>
               <div className="space-y-2">
-                {events.slice(0, 8).map((e: { id: string; event_type: string; created_at: string; actor_email?: string }) => (
-                  <div key={e.id} className="flex items-start gap-2 text-xs">
-                    <span className="h-1.5 w-1.5 rounded-full bg-gray-300 mt-1.5 shrink-0" />
-                    <div>
-                      <span className="font-medium">{EVENT_LABELS[e.event_type] ?? e.event_type}</span>
-                      {e.actor_email && <span className="text-gray-400"> · {e.actor_email}</span>}
-                      <div className="text-gray-400">{formatDate(e.created_at)}</div>
+                {events.slice(0, 12).map((e: { id: string; event_type: string; created_at: string; actor?: string; actor_email?: string }) => {
+                  const who = e.actor ?? e.actor_email
+                  return (
+                    <div key={e.id} className="flex items-start gap-2 text-xs">
+                      <span className="h-1.5 w-1.5 rounded-full bg-gray-300 mt-1.5 shrink-0" />
+                      <div>
+                        <span className="font-medium">{EVENT_LABELS[e.event_type] ?? e.event_type}</span>
+                        {who && <span className="text-gray-400"> · {who}</span>}
+                        <div className="text-gray-400">{formatDate(e.created_at)}</div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}

@@ -2,8 +2,10 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Plus, FileText, CheckCircle2, Clock, Eye, Filter as FilterIcon, X } from 'lucide-react'
+import { Plus, FileText, Filter as FilterIcon, X } from 'lucide-react'
 import { formatDate, SERVICE_LABELS } from '@/lib/utils'
+import { statusInfo, canonicalStatus, STATUS_FILTER_OPTIONS } from '@/lib/contract-status'
+import { ContractTabs } from './contract-tabs'
 
 type Contract = {
   id: string
@@ -15,60 +17,59 @@ type Contract = {
   created_at: string
   access_token: string
   client_id: string | null
+  template_id: string | null
   client: { id: string; company_name: string } | null
 }
 
 type Client = { id: string; company_name: string }
-
-const STATUS_STYLE: Record<string, { cls: string; label: string; icon: React.ComponentType<{ className?: string }> }> = {
-  draft:      { cls: 'bg-gray-100 text-gray-600',    label: 'Concept',      icon: FileText },
-  sent:       { cls: 'bg-blue-100 text-blue-700',    label: 'Verstuurd',    icon: Clock },
-  viewed:     { cls: 'bg-amber-100 text-amber-700',  label: 'Bekeken',      icon: Eye },
-  signed:     { cls: 'bg-green-100 text-green-700',  label: 'Getekend',     icon: CheckCircle2 },
-  expired:    { cls: 'bg-red-100 text-red-700',      label: 'Verlopen',     icon: FileText },
-  cancelled:  { cls: 'bg-gray-100 text-gray-500',    label: 'Geannuleerd',  icon: FileText },
-  vervangen:  { cls: 'bg-orange-100 text-orange-700', label: 'Vervangen',   icon: FileText },
-}
+type Template = { id: string; name: string }
 
 const ALL_SERVICES = ['social-media', 'webdesign', 'foto-video', 'grafisch-ontwerp', 'marketing-consultancy', 'ads']
 
 export function ContractsClient({
-  initialContracts, clients,
+  initialContracts, clients, templates = [],
 }: {
   initialContracts: Contract[]
   clients: Client[]
+  templates?: Template[]
 }) {
   const [filterClient, setFilterClient] = useState<string>('all')
   const [filterService, setFilterService] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<string>('all')
+  const [filterTemplate, setFilterTemplate] = useState<string>('all')
 
   const filtered = useMemo(() => {
     return initialContracts.filter((c) => {
       if (filterClient !== 'all' && c.client_id !== filterClient) return false
       if (filterService !== 'all' && (c.service_slug ?? '') !== filterService) return false
-      if (filterStatus !== 'all' && c.status !== filterStatus) return false
+      if (filterStatus !== 'all' && canonicalStatus(c.status) !== filterStatus) return false
+      if (filterTemplate !== 'all') {
+        if (filterTemplate === 'none' ? !!c.template_id : c.template_id !== filterTemplate) return false
+      }
       return true
     })
-  }, [initialContracts, filterClient, filterService, filterStatus])
+  }, [initialContracts, filterClient, filterService, filterStatus, filterTemplate])
 
   const byStatus = useMemo(() => ({
-    pending: filtered.filter((c) => ['sent', 'viewed'].includes(c.status)).length,
-    signed:  filtered.filter((c) => c.status === 'signed').length,
-    other:   filtered.filter((c) => ['draft', 'expired', 'cancelled', 'vervangen'].includes(c.status)).length,
+    pending: filtered.filter((c) => ['verzonden', 'geopend', 'ingevuld'].includes(canonicalStatus(c.status))).length,
+    signed:  filtered.filter((c) => canonicalStatus(c.status) === 'getekend').length,
+    other:   filtered.filter((c) => ['klaar_voor_verzenden', 'verlopen', 'geannuleerd', 'vervangen', 'template'].includes(canonicalStatus(c.status))).length,
   }), [filtered])
 
-  const hasActiveFilters = filterClient !== 'all' || filterService !== 'all' || filterStatus !== 'all'
+  const hasActiveFilters = filterClient !== 'all' || filterService !== 'all' || filterStatus !== 'all' || filterTemplate !== 'all'
 
   const clearFilters = () => {
     setFilterClient('all')
     setFilterService('all')
     setFilterStatus('all')
+    setFilterTemplate('all')
   }
 
   const sel = 'px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#fff848]/50 focus:border-[#fff848]'
 
   return (
     <div className="space-y-6 animate-fade-in">
+      <ContractTabs />
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold">Contracten</h1>
@@ -92,7 +93,7 @@ export function ContractsClient({
             </button>
           )}
         </div>
-        <div className="grid sm:grid-cols-3 gap-3">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div>
             <label className="block text-xs text-gray-500 mb-1">Klant</label>
             <select className={`${sel} w-full`} value={filterClient} onChange={(e) => setFilterClient(e.target.value)}>
@@ -115,8 +116,18 @@ export function ContractsClient({
             <label className="block text-xs text-gray-500 mb-1">Status</label>
             <select className={`${sel} w-full`} value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
               <option value="all">Alle statussen</option>
-              {Object.entries(STATUS_STYLE).map(([k, v]) => (
-                <option key={k} value={k}>{v.label}</option>
+              {STATUS_FILTER_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Template</label>
+            <select className={`${sel} w-full`} value={filterTemplate} onChange={(e) => setFilterTemplate(e.target.value)}>
+              <option value="all">Alle types</option>
+              <option value="none">Zonder template</option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
               ))}
             </select>
           </div>
@@ -169,8 +180,7 @@ export function ContractsClient({
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filtered.map((c) => {
-                const style = STATUS_STYLE[c.status] ?? STATUS_STYLE.draft
-                const Icon = style.icon
+                const style = statusInfo(c.status)
                 return (
                   <tr key={c.id} className="hover:bg-gray-50 transition-colors">
                     <td className="table-td">
@@ -195,8 +205,7 @@ export function ContractsClient({
                       )}
                     </td>
                     <td className="table-td">
-                      <span className={`status-badge ${style.cls} gap-1`}>
-                        <Icon className="h-3 w-3" />
+                      <span className={`status-badge ${style.cls}`}>
                         {style.label}
                       </span>
                     </td>
@@ -212,7 +221,7 @@ export function ContractsClient({
                         <Link href={`/admin/contracts/${c.id}`} className="text-xs text-gray-500 hover:text-black underline">
                           Bekijken
                         </Link>
-                        {['sent', 'viewed'].includes(c.status) && (
+                        {['verzonden', 'geopend'].includes(canonicalStatus(c.status)) && (
                           <a
                             href={`/sign/${c.access_token}`}
                             target="_blank"

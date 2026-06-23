@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { randomUUID } from 'crypto'
+import { logContractEvent } from '@/lib/contract-audit'
 
 async function requireAdmin() {
   const supabase = await createClient()
@@ -18,9 +20,38 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!user) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
 
     const admin = createAdminSupabaseClient()
-    const { action } = await req.json()
+    const body = await req.json()
+    const { action } = body
 
-    if (action === 'send') {
+    if (action === 'regenerate_token') {
+      const newToken = randomUUID()
+      const { error } = await admin
+        .from('contracts')
+        .update({ status: 'draft', access_token: newToken })
+        .eq('id', id)
+      if (error) throw new Error(error.message)
+      await logContractEvent(admin, id, 'token_regenerated', { actor: user.email ?? user.id })
+      try {
+        revalidatePath('/admin/contracts'); revalidatePath(`/admin/contracts/${id}`)
+      } catch { }
+      return NextResponse.json({ ok: true, access_token: newToken })
+    } else if (action === 'set_expiry') {
+      // expires_at: 'YYYY-MM-DD' of null om te wissen.
+      const expires_at = body.expires_at ? String(body.expires_at).slice(0, 10) : null
+      // Veerkrachtig: kolom kan ontbreken vóór migratie.
+      let err: { message: string } | null = null
+      {
+        const { error } = await admin.from('contracts').update({ expires_at }).eq('id', id)
+        err = error
+      }
+      if (err) {
+        const col = String(err.message || '').match(/Could not find the '([^']+)' column/)?.[1]
+        if (col !== 'expires_at') throw new Error(err.message)
+        return NextResponse.json({ error: 'Vervaldatum vereist een database-migratie (expires_at).' }, { status: 400 })
+      }
+      try { revalidatePath(`/admin/contracts/${id}`) } catch { }
+      return NextResponse.json({ ok: true, expires_at })
+    } else if (action === 'send') {
       const { error } = await admin
         .from('contracts')
         .update({ status: 'sent', sent_at: new Date().toISOString() })

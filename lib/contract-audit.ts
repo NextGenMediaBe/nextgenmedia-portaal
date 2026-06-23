@@ -8,7 +8,9 @@ type Admin = { from: (t: string) => any }
 
 export type ContractEvent =
   | 'uploaded' | 'ai_analyzed' | 'fields_edited' | 'sent' | 'opened'
-  | 'filled' | 'signed' | 'pdf_generated' | 'downloaded' | 'template_created'
+  | 'filled' | 'signed' | 'pdf_generated' | 'downloaded'
+  | 'downloaded_original' | 'downloaded_signed'
+  | 'template_created' | 'created_from_template' | 'token_regenerated' | 'expired'
 
 export async function logContractEvent(
   admin: Admin,

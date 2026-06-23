@@ -6,27 +6,37 @@ import { ContractsClient } from './contracts-client'
 async function getContracts() {
   const admin = createAdminSupabaseClient()
 
-  // Two separate queries — no FK join (avoids PostgREST constraint requirement)
-  const [{ data: contracts }, { data: clients }] = await Promise.all([
+  // select('*') zodat ontbrekende kolommen (template_id vóór migratie) nooit breken.
+  const [{ data: contracts }, { data: clients }, { data: templates }] = await Promise.all([
     admin
       .from('contracts')
-      .select('id, title, status, service_slug, signed_at, sent_at, created_at, access_token, client_id')
+      .select('*')
       .order('created_at', { ascending: false }),
     admin.from('clients').select('id, company_name').order('company_name'),
+    admin.from('contract_templates').select('id, name').order('name'),
   ])
 
   const clientMap = new Map((clients ?? []).map((c) => [c.id, c]))
 
   const enriched = (contracts ?? []).map((c) => ({
-    ...c,
+    id: c.id,
+    title: c.title,
+    status: c.status,
+    service_slug: c.service_slug ?? null,
+    signed_at: c.signed_at ?? null,
+    sent_at: c.sent_at ?? null,
+    created_at: c.created_at,
+    access_token: c.access_token,
+    client_id: c.client_id ?? null,
+    template_id: c.template_id ?? null,
     client: clientMap.get(c.client_id) ?? null,
   }))
 
-  return { contracts: enriched, clients: clients ?? [] }
+  return { contracts: enriched, clients: clients ?? [], templates: templates ?? [] }
 }
 
 export default async function ContractsPage() {
-  const { contracts, clients } = await getContracts()
+  const { contracts, clients, templates } = await getContracts()
 
   return (
     <ContractsClient
@@ -40,9 +50,11 @@ export default async function ContractsPage() {
         created_at: string
         access_token: string
         client_id: string | null
+        template_id: string | null
         client: { id: string; company_name: string } | null
       }>}
       clients={clients as Array<{ id: string; company_name: string }>}
+      templates={templates as Array<{ id: string; name: string }>}
     />
   )
 }

@@ -1,8 +1,9 @@
 import { createAdminSupabaseClient, trySignedUrl } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
-import { FileText, CheckCircle2 } from 'lucide-react'
+import { FileText, CheckCircle2, Clock } from 'lucide-react'
 import { SignatureForm } from './signature-form'
 import { Logo } from '@/components/logo'
+import { logContractEvent } from '@/lib/contract-audit'
 
 export default async function SignContractPage({ params }: { params: { token: string } }) {
   const admin = createAdminSupabaseClient()
@@ -15,6 +16,49 @@ export default async function SignContractPage({ params }: { params: { token: st
 
   if (error) console.error('[sign page] error:', error.message)
   if (!contract) notFound()
+
+  // ── Vervaldatum: verlopen tekenlink blokkeert toegang ──────────────────────
+  const alreadySignedStatus = contract.status === 'signed' || contract.status === 'getekend'
+  let isExpired = false
+  if (!alreadySignedStatus && contract.expires_at) {
+    const today = new Date().toISOString().slice(0, 10)
+    if (String(contract.expires_at).slice(0, 10) < today) {
+      isExpired = true
+      // Best-effort: markeer verlopen + log (één keer).
+      if (contract.status !== 'expired') {
+        try { await admin.from('contracts').update({ status: 'expired' }).eq('id', contract.id) } catch { }
+        try { await logContractEvent(admin, contract.id, 'expired', { meta: { via: 'sign-page' } }) } catch { }
+      }
+    }
+  }
+
+  if (isExpired) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <header className="bg-white border-b border-gray-200 px-4 py-4 flex items-center gap-3">
+          <Logo className="h-8 w-8" />
+          <span className="font-bold text-sm">NextGenMedia</span>
+        </header>
+        <div className="flex-1 flex items-center justify-center p-4">
+          <div className="bg-white border border-gray-200 rounded-2xl p-8 text-center max-w-md">
+            <div className="h-12 w-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+              <Clock className="h-6 w-6 text-red-600" />
+            </div>
+            <h1 className="font-semibold text-lg mb-1">Deze tekenlink is verlopen.</h1>
+            <p className="text-sm text-gray-500">Neem contact op met NextGenMedia voor een nieuwe ondertekeningslink.</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Audit: geopend (best-effort) + status naar 'bekeken' indien nog verzonden ─
+  if (!alreadySignedStatus) {
+    try { await logContractEvent(admin, contract.id, 'opened', { meta: { via: 'sign-page' } }) } catch { }
+    if (contract.status === 'sent') {
+      try { await admin.from('contracts').update({ status: 'viewed' }).eq('id', contract.id) } catch { }
+    }
+  }
 
   // Fetch client details for pre-filled name/email/company
   let companyName: string | null = null
@@ -36,7 +80,7 @@ export default async function SignContractPage({ params }: { params: { token: st
   const signerName = contract.signer_name || contactName || companyName || ''
   const signerEmail = contract.signer_email || contactEmail || ''
 
-  const alreadySigned = contract.status === 'signed'
+  const alreadySigned = alreadySignedStatus
 
   const pdfUrl = await trySignedUrl(admin, 'contracts', contract.pdf_path, 3600)
 

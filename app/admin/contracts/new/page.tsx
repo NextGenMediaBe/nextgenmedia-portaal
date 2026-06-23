@@ -80,11 +80,12 @@ export default function NewContractPage() {
 
       <form onSubmit={handleSubmit} className="card-base space-y-4">
         <div>
-          <label className={lbl}>Klant *</label>
-          <select required className={inp} value={form.client_id} onChange={(e) => setForm((p) => ({ ...p, client_id: e.target.value }))}>
-            <option value="">— Selecteer klant —</option>
+          <label className={lbl}>Klant (optioneel)</label>
+          <select className={inp} value={form.client_id} onChange={(e) => setForm((p) => ({ ...p, client_id: e.target.value }))}>
+            <option value="">— Geen klant (los/intern contract) —</option>
             {clients.map((c) => <option key={c.id} value={c.id}>{c.company_name}</option>)}
           </select>
+          <p className="text-xs text-gray-400 mt-1">Zonder klant verschijnt het contract niet in een klantportaal — enkel intern + via de publieke tekenlink.</p>
         </div>
         <div>
           <label className={lbl}>Contracttitel *</label>

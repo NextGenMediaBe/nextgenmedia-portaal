@@ -36,7 +36,12 @@ export async function POST(req: NextRequest) {
       .maybeSingle()
 
     if (!contract) return NextResponse.json({ error: 'Contract niet gevonden' }, { status: 404 })
-    if (contract.status === 'signed') return NextResponse.json({ error: 'Contract is al ondertekend' }, { status: 400 })
+    if (contract.status === 'signed' || contract.status === 'getekend') return NextResponse.json({ error: 'Contract is al ondertekend' }, { status: 400 })
+    // Vervaldatum: verlopen tekenlink mag niet meer ondertekend worden.
+    if (contract.expires_at && String(contract.expires_at).slice(0, 10) < new Date().toISOString().slice(0, 10)) {
+      try { await admin.from('contracts').update({ status: 'expired' }).eq('id', contract_id) } catch { }
+      return NextResponse.json({ error: 'Deze tekenlink is verlopen.' }, { status: 410 })
+    }
 
     const signedAt = new Date().toISOString()
     const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()

@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { formatDate } from '@/lib/utils'
 import Link from 'next/link'
 import { FileText, CheckCircle2, Download, Eye, Clock } from 'lucide-react'
+import { canonicalStatus, statusInfo } from '@/lib/contract-status'
 
 export const dynamic = 'force-dynamic'
 
@@ -45,20 +46,10 @@ export default async function PortalContractsPage() {
     })
   )
 
-  // Contracts waiting for signature — include 'sent' and 'viewed'; exclude draft (not yet sent to client)
-  const pendingContracts = contracts.filter((c) => ['sent', 'viewed'].includes(c.status))
-  const signedContracts = contracts.filter((c) => c.status === 'signed')
-  const otherContracts = contracts.filter((c) => !['sent', 'viewed', 'signed'].includes(c.status))
-
-  const STATUS_MAP: Record<string, { cls: string; label: string }> = {
-    draft:      { cls: 'bg-gray-100 text-gray-500',    label: 'Concept' },
-    sent:       { cls: 'bg-amber-100 text-amber-700',  label: 'Wacht op handtekening' },
-    viewed:     { cls: 'bg-amber-100 text-amber-700',  label: 'Bekeken' },
-    signed:     { cls: 'bg-green-100 text-green-700',  label: 'Getekend' },
-    expired:    { cls: 'bg-red-100 text-red-700',      label: 'Verlopen' },
-    cancelled:  { cls: 'bg-gray-100 text-gray-400',    label: 'Geannuleerd' },
-    vervangen:  { cls: 'bg-orange-100 text-orange-700', label: 'Vervangen' },
-  }
+  // Contracts waiting for signature — include verzonden/geopend; exclude klaar_voor_verzenden (not yet sent to client)
+  const pendingContracts = contracts.filter((c) => ['verzonden', 'geopend', 'ingevuld'].includes(canonicalStatus(c.status)))
+  const signedContracts = contracts.filter((c) => canonicalStatus(c.status) === 'getekend')
+  const otherContracts = contracts.filter((c) => !['verzonden', 'geopend', 'ingevuld', 'getekend'].includes(canonicalStatus(c.status)))
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -187,7 +178,7 @@ export default async function PortalContractsPage() {
               <h2 className="text-sm font-semibold text-gray-500 mb-2">Overige</h2>
               <div className="space-y-2">
                 {otherContracts.map((c) => {
-                  const style = STATUS_MAP[c.status] ?? STATUS_MAP.draft
+                  const style = statusInfo(c.status)
                   return (
                     <div
                       key={c.id}
