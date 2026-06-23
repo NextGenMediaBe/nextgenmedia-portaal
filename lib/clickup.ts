@@ -329,3 +329,73 @@ export async function updateTask(taskId: string, f: TaskFields): Promise<TaskRes
   })
   return { id: taskId, fieldsBlocked: 0 }
 }
+
+// ── Facturen → ClickUp (best-effort, breekt nooit de facturatie-flow) ─────────
+// Bij het aanmaken van een factuur wordt een taak "Factuur versturen — [Klant]"
+// gemaakt en toegewezen aan Bram Rekken; bij status 'verstuurd' → Completed.
+
+const INVOICE_LIST_NAME = 'Facturen'
+const INVOICE_ASSIGNEE = 'Bram Rekken'
+
+type CuMemberUser = { id: number; username?: string | null; email?: string | null }
+
+/** Zoekt het ClickUp-gebruikers-id op naam (of e-mail), workspace-breed. */
+export async function findMemberId(name: string): Promise<number | null> {
+  try {
+    const { teams } = await clickupJson<{ teams: Array<{ members: Array<{ user: CuMemberUser }> }> }>(`/team`)
+    const want = name.trim().toLowerCase()
+    const first = want.split(/\s+/)[0]
+    for (const t of teams ?? []) {
+      for (const m of t.members ?? []) {
+        const u = m.user
+        const uname = (u.username ?? '').trim().toLowerCase()
+        const email = (u.email ?? '').trim().toLowerCase()
+        if (uname === want || (uname && want && (uname.includes(want) || want.includes(uname))) || (first && email.startsWith(first))) return u.id
+      }
+    }
+  } catch { /* best-effort */ }
+  return null
+}
+
+/** Vindt (of maakt) de folderloze lijst "Facturen" in de NextGenMedia-space. */
+async function findOrCreateInvoiceList(): Promise<string | null> {
+  try {
+    const { lists } = await clickupJson<{ lists: CuList[] }>(`/space/${CLICKUP_SPACE_ID}/list`)
+    const existing = (lists ?? []).find((l) => l.name.trim().toLowerCase() === INVOICE_LIST_NAME.toLowerCase())
+    if (existing) return existing.id
+    const created = await clickupJson<CuList>(`/space/${CLICKUP_SPACE_ID}/list`, { method: 'POST', body: JSON.stringify({ name: INVOICE_LIST_NAME }) })
+    return created.id
+  } catch { return null }
+}
+
+export type InvoiceTaskInput = {
+  clientName: string; amountIncl: number; invoiceDate: string; dueDate?: string | null; type: string
+}
+
+/** Maakt de "Factuur versturen"-taak. Retourneert het taak-id of null (best-effort). */
+export async function createInvoiceTask(input: InvoiceTaskInput): Promise<string | null> {
+  if (!clickupConfigured()) return null
+  try {
+    const listId = await findOrCreateInvoiceList()
+    if (!listId) return null
+    const assignee = await findMemberId(INVOICE_ASSIGNEE)
+    const desc = [
+      `Klant: ${input.clientName}`,
+      `Bedrag: € ${input.amountIncl.toFixed(2)} incl. btw`,
+      `Factuurdatum: ${input.invoiceDate}`,
+      input.dueDate ? `Vervaldatum: ${input.dueDate}` : null,
+      `Type: ${input.type}`,
+    ].filter(Boolean).join('\n')
+    const body: Record<string, unknown> = { name: `Factuur versturen — ${input.clientName}`, description: desc, status: STATUS_NEW }
+    if (assignee) body.assignees = [assignee]
+    const due = Date.parse(`${input.invoiceDate}T12:00:00Z`)
+    if (!Number.isNaN(due)) body.due_date = due
+    const task = await clickupJson<{ id: string }>(`/list/${listId}/task`, { method: 'POST', body: JSON.stringify(body) })
+    return task.id
+  } catch { return null }
+}
+
+/** Zet de factuurtaak op Completed (status 'verstuurd' in de app). */
+export async function completeInvoiceTask(taskId: string): Promise<void> {
+  try { await clickupJson(`/task/${taskId}`, { method: 'PUT', body: JSON.stringify({ status: STATUS_DONE }) }) } catch { /* best-effort */ }
+}

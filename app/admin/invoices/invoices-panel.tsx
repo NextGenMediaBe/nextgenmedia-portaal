@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight, Plus, X, Loader2, Trash2, Link2, CalendarClo
 import { toast } from 'sonner'
 import { formatEuro, SERVICE_LABELS } from '@/lib/utils'
 import {
-  INVOICE_STATUSES, INVOICE_STATUS_LABEL, INVOICE_STATUS_CLS, DEFAULT_VAT,
+  INVOICE_STATUSES, INVOICE_STATUS_LABEL, DEFAULT_VAT, INVOICE_DAYS, INVOICE_DAY_LABEL,
   inclFromExcl, monthLabel, thisMonthYM, shiftYM, type ExpandedRevenue,
 } from '@/lib/invoices'
 
@@ -104,12 +104,12 @@ export function InvoicesPanel() {
       {/* Omzetkoppeling */}
       <div className="card-base">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
-          <Kpi label="Omzet geregistreerd" value={formatEuro(summary.omzetExcl)} sub="excl. btw" />
-          <Kpi label="Gefactureerd (gekoppeld)" value={formatEuro(summary.linkedExcl)} sub="excl. btw" />
-          <Kpi label="Nog niet gekoppeld" value={formatEuro(summary.verschil)} sub="excl. btw" />
-          <Kpi label="Koppelingspercentage" value={`${summary.pct}%`} />
+          <Kpi label="Prognose" value={formatEuro(summary.omzetExcl)} sub="excl. btw" />
+          <Kpi label="Gefactureerd" value={formatEuro(summary.linkedExcl)} sub="excl. btw" />
+          <Kpi label="Nog te factureren" value={formatEuro(summary.verschil)} sub="excl. btw" />
+          <Kpi label="Facturatie voltooid" value={`${summary.pct}%`} />
         </div>
-        <div className="text-[11px] text-gray-500 mb-1">Omzet gekoppeld aan facturen</div>
+        <div className="text-[11px] text-gray-500 mb-1">Facturatie voltooid (prognose gekoppeld aan facturen)</div>
         <div className="h-3 w-full rounded-full bg-gray-100 overflow-hidden"><div className={`h-full ${pctColor} transition-all`} style={{ width: `${summary.pct}%` }} /></div>
       </div>
 
@@ -195,7 +195,7 @@ function Kpi({ label, value, sub }: { label: string; value: string | number; sub
 
 function CreateDialog({ month, clients, omzet, onClose, onSaved }: { month: string; clients: ClientOpt[]; omzet: ExpandedRevenue[]; onClose: () => void; onSaved: () => void }) {
   const [type, setType] = useState<'eenmalig' | 'recurring'>('eenmalig')
-  const [form, setForm] = useState({ client_id: '', service_slug: '', description: '', amount_excl: '', vat_pct: String(DEFAULT_VAT), status: 'te_versturen', revenue_id: '', start_month: month, end_month: '', active: true })
+  const [form, setForm] = useState({ client_id: '', service_slug: '', description: '', amount_excl: '', vat_pct: String(DEFAULT_VAT), status: 'te_versturen', revenue_id: '', start_month: month, end_month: '', active: true, invoice_day: 'last' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const excl = parseFloat(form.amount_excl) || 0
@@ -207,7 +207,7 @@ function CreateDialog({ month, clients, omzet, onClose, onSaved }: { month: stri
     setLoading(true); setError(null)
     try {
       const body = type === 'recurring'
-        ? { action: 'recurring', client_id: form.client_id, service_slug: form.service_slug, description: form.description, amount_excl: excl, vat_pct: vat, start_month: form.start_month, end_month: form.end_month || null, active: form.active, revenue_id: form.revenue_id }
+        ? { action: 'recurring', client_id: form.client_id, service_slug: form.service_slug, description: form.description, amount_excl: excl, vat_pct: vat, start_month: form.start_month, end_month: form.end_month || null, active: form.active, revenue_id: form.revenue_id, invoice_day: form.invoice_day }
         : { action: 'one_time', client_id: form.client_id, service_slug: form.service_slug, description: form.description, amount_excl: excl, vat_pct: vat, status: form.status, revenue_id: form.revenue_id, invoice_month: month }
       const res = await fetch('/api/admin/invoices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const j = await res.json(); if (!res.ok) throw new Error(j.error)
@@ -243,10 +243,15 @@ function CreateDialog({ month, clients, omzet, onClose, onSaved }: { month: stri
           </div>
 
           {type === 'recurring' ? (
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="block text-xs font-medium text-gray-600 mb-1">Startmaand</label><input type="month" className={inp} value={form.start_month} onChange={(e) => setForm((f) => ({ ...f, start_month: e.target.value }))} /></div>
-              <div><label className="block text-xs font-medium text-gray-600 mb-1">Eindmaand (optioneel)</label><input type="month" className={inp} value={form.end_month} onChange={(e) => setForm((f) => ({ ...f, end_month: e.target.value }))} /></div>
-            </div>
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-xs font-medium text-gray-600 mb-1">Startmaand</label><input type="month" className={inp} value={form.start_month} onChange={(e) => setForm((f) => ({ ...f, start_month: e.target.value }))} /></div>
+                <div><label className="block text-xs font-medium text-gray-600 mb-1">Eindmaand (optioneel)</label><input type="month" className={inp} value={form.end_month} onChange={(e) => setForm((f) => ({ ...f, end_month: e.target.value }))} /></div>
+              </div>
+              <div><label className="block text-xs font-medium text-gray-600 mb-1">Factuurdag</label>
+                <select className={inp} value={form.invoice_day} onChange={(e) => setForm((f) => ({ ...f, invoice_day: e.target.value }))}>{INVOICE_DAYS.map((d) => <option key={d} value={d}>{INVOICE_DAY_LABEL[d]}</option>)}</select>
+              </div>
+            </>
           ) : null}
 
           <div>
@@ -271,10 +276,10 @@ function CreateDialog({ month, clients, omzet, onClose, onSaved }: { month: stri
           )}
 
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Koppel aan omzetrecord (optioneel)</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Koppel aan prognose (optioneel — anders automatisch)</label>
             <select className={inp} value={form.revenue_id} onChange={(e) => setForm((f) => ({ ...f, revenue_id: e.target.value }))}>
-              <option value="">— Geen koppeling —</option>
-              {omzet.map((r) => <option key={r.revenue_id} value={r.revenue_id}>{(r.title || 'Omzet')} · {svcLabel(r.service_slug)} · {formatEuro(r.amount_excl)}</option>)}
+              <option value="">— Automatisch koppelen / aanmaken —</option>
+              {omzet.map((r) => <option key={r.revenue_id} value={r.revenue_id}>{(r.title || 'Prognose')} · {svcLabel(r.service_slug)} · {formatEuro(r.amount_excl)}</option>)}
             </select>
           </div>
           {error && <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</div>}

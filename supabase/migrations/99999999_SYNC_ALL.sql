@@ -1137,5 +1137,13 @@ CREATE POLICY "app state admin all" ON public.app_state
   USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
   WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
 
+-- ── Facturatie: factuurdag recurring + ClickUp-koppeling ──────────────────────
+-- invoice_day: op welke dag de recurring factuur valt — 'first' (dag 1),
+--   'mid' (dag 15) of 'last' (laatste dag van de maand, standaard).
+ALTER TABLE public.recurring_invoices ADD COLUMN IF NOT EXISTS invoice_day text NOT NULL DEFAULT 'last';
+-- ClickUp-taak-id's zodat we de "Factuur versturen"-taak op Completed kunnen zetten.
+ALTER TABLE public.invoices ADD COLUMN IF NOT EXISTS clickup_task_id text;
+ALTER TABLE public.recurring_invoice_months ADD COLUMN IF NOT EXISTS clickup_task_id text;
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.

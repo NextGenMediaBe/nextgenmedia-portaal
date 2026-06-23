@@ -56,6 +56,20 @@ export function lastDayOfMonth(ym: string): string {
   return `${y}-${String(m).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+// Factuurdag voor recurring facturen: dag 1, dag 15 of laatste dag van de maand.
+export const INVOICE_DAYS = ['first', 'mid', 'last'] as const
+export type InvoiceDay = (typeof INVOICE_DAYS)[number]
+export const INVOICE_DAY_LABEL: Record<string, string> = {
+  first: 'Dag 1', mid: 'Dag 15', last: 'Laatste dag van de maand',
+}
+
+/** Facturatiedatum 'YYYY-MM-DD' voor een maand op basis van de gekozen factuurdag. */
+export function billingDateFor(ym: string, day: string | null | undefined): string {
+  if (day === 'first') return `${ym}-01`
+  if (day === 'mid') return `${ym}-15`
+  return lastDayOfMonth(ym)
+}
+
 // ── Omzet → maandbedragen ────────────────────────────────────────────────────
 export type RevenueEntry = {
   id: string
@@ -84,7 +98,7 @@ export type RecurringInvoice = {
   id: string; client_id: string | null; service_slug: string | null
   start_month: string; end_month: string | null
   description: string | null; amount_excl: number; vat_pct: number; amount_incl: number
-  active: boolean; revenue_id: string | null
+  active: boolean; revenue_id: string | null; invoice_day?: string | null
 }
 
 /** Is een recurring factuur actief in maand 'YYYY-MM'? */

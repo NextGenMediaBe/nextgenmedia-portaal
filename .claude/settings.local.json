@@ -81,7 +81,11 @@
       "Bash(sed -i 's#href=\"/admin/framer\"#href=\"/admin/blogaccounts\"#g' app/admin/framer-status-widget.tsx)",
       "Bash(sed -i 's#Framer Manager <ArrowRight#Framer <ArrowRight#g' app/admin/framer-status-widget.tsx)",
       "Skill(claude-api)",
-      "Skill(claude-api:*)"
+      "Skill(claude-api:*)",
+      "Bash(cd \"/c/Users/12401776/Downloads/NextGenMedia Content-Portal \\(1\\)\" && echo \"=== admin pages ===\" && ls app/admin && echo \"\" && echo \"=== revenue/invoices/vesting dirs ===\" && ls app/admin/revenue app/admin/invoices app/admin/vesting 2>/dev/null && echo \"\" && echo \"=== api admin ===\" && ls app/admin/../api/admin 2>/dev/null | grep -iE \"revenue|invoice|vesting|finan|clickup\")",
+      "Read(//c/c/Users/12401776/Downloads/NextGenMedia Content-Portal \\(1\\)/app/api/admin/**)",
+      "Read(//c/c/Users/12401776/Downloads/NextGenMedia Content-Portal \\(1\\)/app/api/admin/invoices/**)",
+      "Read(//c/c/Users/12401776/Downloads/NextGenMedia Content-Portal \\(1\\)/**)"
     ]
   }
 }

@@ -44,17 +44,19 @@ export default async function OmzetPage({ searchParams }: { searchParams: Promis
     <div className="space-y-6">
       <div className="flex items-center justify-end"><RevenueForm /></div>
 
+      <p className="text-xs text-gray-500 -mt-2">Prognose = verwachte omzet. Dit is geen effectieve facturatie — facturen beheer je onder <b>Facturen</b>.</p>
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Kpi label={`Totale omzet ${year}`} value={formatEuro(c.omzetFY)} color="text-green-600" Icon={TrendingUp} />
-        <Kpi label="Recurring omzet" value={formatEuro(c.omzetRecFY)} sub={`MRR nu: ${formatEuro(c.mrr)}`} color="text-green-600" Icon={Repeat2} />
-        <Kpi label="Eenmalige omzet" value={formatEuro(c.omzetOneFY)} color="text-blue-600" Icon={ArrowUpRight} />
-        <Kpi label="Omzetgroei" value={`${growth >= 0 ? '+' : ''}${growth.toFixed(1)}%`} sub={`t.o.v. ${year - 1}`} color={growth >= 0 ? 'text-green-600' : 'text-red-600'} Icon={Activity} />
+        <Kpi label={`Totale prognose ${year}`} value={formatEuro(c.omzetFY)} color="text-green-600" Icon={TrendingUp} />
+        <Kpi label="Recurring prognose" value={formatEuro(c.omzetRecFY)} sub={`Per maand nu: ${formatEuro(c.mrr)}`} color="text-green-600" Icon={Repeat2} />
+        <Kpi label="Eenmalige prognose" value={formatEuro(c.omzetOneFY)} color="text-blue-600" Icon={ArrowUpRight} />
+        <Kpi label="Groei" value={`${growth >= 0 ? '+' : ''}${growth.toFixed(1)}%`} sub={`t.o.v. ${year - 1}`} color={growth >= 0 ? 'text-green-600' : 'text-red-600'} Icon={Activity} />
       </div>
 
       <OmzetCharts monthly={monthlyChart} quarters={quarters} year={year} />
 
       <div className="card-base">
-        <h2 className="font-semibold mb-1">Omzet per dienst</h2>
+        <h2 className="font-semibold mb-1">Prognose per dienst</h2>
         <div className="text-xs text-gray-400 mb-4">Boekjaar {year}</div>
         {orderedServices.length === 0 ? (
           <p className="text-sm text-gray-400 text-center py-8">Geen omzet in dit boekjaar</p>

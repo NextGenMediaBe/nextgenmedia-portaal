@@ -2,9 +2,59 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import {
-  inclFromExcl, lastDayOfMonth, expandRevenueForMonth, normalizeInvoiceStatus,
-  recurringActiveInMonth, INVOICE_STATUSES, DEFAULT_VAT, type RevenueEntry, type RecurringInvoice,
+  inclFromExcl, lastDayOfMonth, billingDateFor, expandRevenueForMonth, normalizeInvoiceStatus,
+  recurringActiveInMonth, INVOICE_STATUSES, INVOICE_DAYS, DEFAULT_VAT, type RevenueEntry, type RecurringInvoice,
 } from '@/lib/invoices'
+import { createInvoiceTask, completeInvoiceTask } from '@/lib/clickup'
+
+export const maxDuration = 60
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Admin = { from: (t: string) => any }
+
+/**
+ * Koppelt een factuur automatisch aan de bijhorende prognose (revenue_entry).
+ * Match op klant + dienst + maand + bedrag excl. Bestaat er geen → maak er een aan.
+ * Best-effort: faalt dit, dan blijft de factuur gewoon ongekoppeld.
+ */
+async function linkOrCreateForecast(admin: Admin, p: {
+  client_id: string | null; service_slug: string | null; month: string; amount_excl: number
+  description: string | null; recurring: boolean; start_month?: string; end_month?: string | null
+}): Promise<string | null> {
+  try {
+    const { data: entries } = await admin.from('revenue_entries').select('*')
+    const match = ((entries ?? []) as RevenueEntry[]).find((e) => {
+      if ((e.client_id ?? null) !== (p.client_id ?? null)) return false
+      if ((e.service_slug ?? null) !== (p.service_slug ?? null)) return false
+      const amt = e.type === 'recurring' ? Number(e.amount_per_month) || 0 : Number(e.amount) || 0
+      if (Math.abs(amt - p.amount_excl) > 0.01) return false
+      if (e.type === 'recurring') {
+        const s = (e.start_month ?? '').slice(0, 7), en = e.end_month ? e.end_month.slice(0, 7) : null
+        return !!s && s <= p.month && (!en || p.month <= en)
+      }
+      return (e.transaction_month ?? '').slice(0, 7) === p.month
+    })
+    if (match) return match.id
+
+    const insert: Record<string, unknown> = {
+      client_id: p.client_id, service_slug: p.service_slug, title: p.description || 'Automatische prognose',
+      notes: 'Automatisch aangemaakt vanuit een factuur',
+    }
+    if (p.recurring) {
+      insert.type = 'recurring'; insert.amount_per_month = p.amount_excl
+      insert.start_month = `${(p.start_month ?? p.month)}-01`; insert.end_month = p.end_month ? `${p.end_month}-01` : null
+    } else {
+      insert.type = 'one_time'; insert.amount = p.amount_excl; insert.transaction_month = `${p.month}-01`
+    }
+    const { data, error } = await admin.from('revenue_entries').insert(insert).select('id').single()
+    return error ? null : (data.id as string)
+  } catch { return null }
+}
+
+async function clientNameFor(admin: Admin, clientId: string | null): Promise<string> {
+  if (!clientId) return 'Onbekende klant'
+  try { const { data } = await admin.from('clients').select('company_name').eq('id', clientId).maybeSingle(); return data?.company_name ?? 'Onbekende klant' } catch { return 'Onbekende klant' }
+}
 
 type Row = {
   rowId: string; kind: 'eenmalig' | 'recurring'; sourceId: string; month: string
@@ -76,14 +126,23 @@ export async function POST(req: NextRequest) {
     if (b.action === 'one_time') {
       const month = String(b.invoice_month || '').slice(0, 7)
       if (!/^\d{4}-\d{2}$/.test(month)) return NextResponse.json({ error: 'Factuurmaand vereist' }, { status: 400 })
+      const invoiceDate = b.invoice_date || lastDayOfMonth(month)
+      // Automatische prognose-koppeling (link bestaande of maak nieuwe aan).
+      const revenueId = b.revenue_id || await linkOrCreateForecast(admin, { client_id: b.client_id || null, service_slug: b.service_slug || null, month, amount_excl: excl, description: b.description || null, recurring: false })
+      const incl = inclFromExcl(excl, vat)
+      const status = INVOICE_STATUSES.includes(b.status) ? b.status : 'te_versturen'
+      // ClickUp-taak "Factuur versturen — [klant]" (best-effort).
+      const clientName = await clientNameFor(admin, b.client_id || null)
+      const taskId = await createInvoiceTask({ clientName, amountIncl: incl, invoiceDate, type: 'Eenmalig' })
       const { data, error } = await admin.from('invoices').insert({
         client_id: b.client_id || null, service_slug: b.service_slug || null, invoice_month: month,
-        invoice_date: b.invoice_date || lastDayOfMonth(month), description: b.description || null,
-        amount_excl: excl, vat_pct: vat, amount_incl: inclFromExcl(excl, vat),
-        status: INVOICE_STATUSES.includes(b.status) ? b.status : 'te_versturen',
-        revenue_id: b.revenue_id || null, created_by: actor.id,
+        invoice_date: invoiceDate, description: b.description || null,
+        amount_excl: excl, vat_pct: vat, amount_incl: incl,
+        status, revenue_id: revenueId, created_by: actor.id, clickup_task_id: taskId,
       }).select('id').single()
       if (error) throw new Error(error.message)
+      // Meteen verstuurd aangemaakt? → taak ook afronden.
+      if (status === 'verstuurd' && taskId) await completeInvoiceTask(taskId)
       try { revalidatePath('/admin/invoices') } catch { }
       return NextResponse.json({ id: data.id })
     }
@@ -93,11 +152,13 @@ export async function POST(req: NextRequest) {
       const start = String(b.start_month || '').slice(0, 7)
       if (!/^\d{4}-\d{2}$/.test(start)) return NextResponse.json({ error: 'Startmaand vereist' }, { status: 400 })
       const end = b.end_month ? String(b.end_month).slice(0, 7) : null
+      const invoiceDay = INVOICE_DAYS.includes(b.invoice_day) ? b.invoice_day : 'last'
+      const revenueId = b.revenue_id || await linkOrCreateForecast(admin, { client_id: b.client_id || null, service_slug: b.service_slug || null, month: start, amount_excl: excl, description: b.description || null, recurring: true, start_month: start, end_month: end })
       const { data, error } = await admin.from('recurring_invoices').insert({
         client_id: b.client_id || null, service_slug: b.service_slug || null,
         start_month: start, end_month: end, description: b.description || null,
         amount_excl: excl, vat_pct: vat, amount_incl: inclFromExcl(excl, vat),
-        active: b.active !== false, revenue_id: b.revenue_id || null, created_by: actor.id,
+        active: b.active !== false, revenue_id: revenueId, invoice_day: invoiceDay, created_by: actor.id,
       }).select('id').single()
       if (error) throw new Error(error.message)
       try { revalidatePath('/admin/invoices') } catch { }
@@ -109,12 +170,24 @@ export async function POST(req: NextRequest) {
       const status = INVOICE_STATUSES.includes(b.status) ? b.status : 'te_versturen'
       if (b.kind === 'recurring') {
         if (!b.source_id || !b.month) return NextResponse.json({ error: 'source_id en month vereist' }, { status: 400 })
-        const { error } = await admin.from('recurring_invoice_months').upsert({ recurring_id: b.source_id, month: String(b.month).slice(0, 7), status }, { onConflict: 'recurring_id,month' })
+        const month = String(b.month).slice(0, 7)
+        const { data: existing } = await admin.from('recurring_invoice_months').select('clickup_task_id').eq('recurring_id', b.source_id).eq('month', month).maybeSingle()
+        let taskId: string | null = existing?.clickup_task_id ?? null
+        // ClickUp-taak aanmaken zodra deze maand opgevolgd wordt; afronden bij 'verstuurd'.
+        const { data: rec } = await admin.from('recurring_invoices').select('client_id, amount_incl, invoice_day').eq('id', b.source_id).maybeSingle()
+        if (!taskId && rec) {
+          const clientName = await clientNameFor(admin, rec.client_id ?? null)
+          taskId = await createInvoiceTask({ clientName, amountIncl: Number(rec.amount_incl) || 0, invoiceDate: billingDateFor(month, rec.invoice_day), type: 'Recurring' })
+        }
+        const { error } = await admin.from('recurring_invoice_months').upsert({ recurring_id: b.source_id, month, status, clickup_task_id: taskId }, { onConflict: 'recurring_id,month' })
         if (error) throw new Error(error.message)
+        if (status === 'verstuurd' && taskId) await completeInvoiceTask(taskId)
       } else {
         if (!b.source_id) return NextResponse.json({ error: 'source_id vereist' }, { status: 400 })
+        const { data: inv } = await admin.from('invoices').select('clickup_task_id').eq('id', b.source_id).maybeSingle()
         const { error } = await admin.from('invoices').update({ status }).eq('id', b.source_id)
         if (error) throw new Error(error.message)
+        if (status === 'verstuurd' && inv?.clickup_task_id) await completeInvoiceTask(inv.clickup_task_id)
       }
       try { revalidatePath('/admin/invoices') } catch { }
       return NextResponse.json({ ok: true })
@@ -144,6 +217,7 @@ export async function PATCH(req: NextRequest) {
       if (b.start_month !== undefined) patch.start_month = String(b.start_month).slice(0, 7)
       if (b.end_month !== undefined) patch.end_month = b.end_month ? String(b.end_month).slice(0, 7) : null
       if (b.active !== undefined) patch.active = !!b.active
+      if (b.invoice_day !== undefined) patch.invoice_day = INVOICE_DAYS.includes(b.invoice_day) ? b.invoice_day : 'last'
     } else {
       if (b.invoice_date !== undefined) patch.invoice_date = b.invoice_date || null
     }

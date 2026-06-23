@@ -34,9 +34,9 @@ const NAV = [
   { label: 'Partners',    href: '/admin/partners',     icon: UserSquare2 },
   { label: 'Opdrachten',  href: '/admin/assignments',  icon: Briefcase },
   { label: 'Settlements', href: '/admin/settlements',  icon: ArrowLeftRight },
-  { label: 'Financiën',   href: '/admin/revenue',      icon: TrendingUp },
+  { label: 'Prognose',    href: '/admin/revenue/omzet', icon: TrendingUp },
   { label: 'Facturen',    href: '/admin/invoices',     icon: Receipt },
-  { label: 'Vestiging',   href: '/admin/vesting',      icon: PieChart },
+  { label: 'Financiën',   href: '/admin/revenue',      icon: PieChart, exact: true },
   { label: 'Aankopen',    href: '/admin/purchases',    icon: ShoppingCart },
   { label: 'E-mailcenter', href: '/admin/email', icon: Mail },
   {

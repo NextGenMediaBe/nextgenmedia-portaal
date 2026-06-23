@@ -5,6 +5,7 @@ import { LifecycleWidgets } from './lifecycle-widgets'
 import { ClientTasksWidget } from './client-tasks-widget'
 import { FramerStatusWidget } from './framer-status-widget'
 import { BlogStatusWidget } from './blog-status-widget'
+import { FinanceWidget } from './finance-widget'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { formatDate, SERVICE_LABELS } from '@/lib/utils'
@@ -271,6 +272,11 @@ export default async function CommandCenter() {
           <div className="text-xs text-gray-400 mt-1">Actievereist</div>
         </div>
       </div>
+
+      {/* Financiën deze maand: prognose / gefactureerd / kosten / winst */}
+      <Suspense fallback={<div className="card-base text-sm text-gray-400">Financiën laden…</div>}>
+        <FinanceWidget />
+      </Suspense>
 
       {/* Klant-lifecycle widgets (batch, reviews, contractverlengingen) */}
       <Suspense fallback={<div className="card-base text-sm text-gray-400">Lifecycle laden…</div>}>

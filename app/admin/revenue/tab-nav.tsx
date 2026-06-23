@@ -3,15 +3,13 @@
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 
+// Vereenvoudigd: enkel Overzicht (omzet/kosten/winst), Prognose en Kosten.
+// De overige pagina's (cashflow, contracten, agency, aandeelhouders, instellingen)
+// blijven bestaan maar zijn niet meer gelinkt.
 const TABS = [
-  { href: '/admin/revenue', label: 'CEO Overview', exact: true },
-  { href: '/admin/revenue/omzet', label: 'Omzet' },
+  { href: '/admin/revenue', label: 'Overzicht', exact: true },
+  { href: '/admin/revenue/omzet', label: 'Prognose' },
   { href: '/admin/revenue/kosten', label: 'Kosten' },
-  { href: '/admin/revenue/cashflow', label: 'Cashflow' },
-  { href: '/admin/revenue/contracten', label: 'Contractwaarde' },
-  { href: '/admin/revenue/agency', label: 'Agency' },
-  { href: '/admin/revenue/aandeelhouders', label: 'Aandeelhouders' },
-  { href: '/admin/revenue/instellingen', label: 'Instellingen' },
 ]
 
 export function TabNav() {
