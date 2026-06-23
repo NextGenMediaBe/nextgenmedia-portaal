@@ -5,7 +5,7 @@ import {
   inclFromExcl, lastDayOfMonth, billingDateFor, expandRevenueForMonth, normalizeInvoiceStatus,
   recurringActiveInMonth, INVOICE_STATUSES, INVOICE_DAYS, DEFAULT_VAT, type RevenueEntry, type RecurringInvoice,
 } from '@/lib/invoices'
-import { createInvoiceTask, completeInvoiceTask, INVOICE_ASSIGNEE_NAME } from '@/lib/clickup'
+import { createInvoiceTask, completeInvoiceTask, clickupConfigured, INVOICE_ASSIGNEE_NAME } from '@/lib/clickup'
 
 export const maxDuration = 60
 
@@ -114,6 +114,7 @@ export async function GET(req: NextRequest) {
       rows, omzet, clients: clients ?? [],
       summary: { omzetExcl, linkedExcl, verschil: Math.max(0, omzetExcl - linkedExcl), pct },
       billingDate: lastDayOfMonth(month),
+      clickup_enabled: clickupConfigured(),
     })
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })

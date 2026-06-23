@@ -51,6 +51,7 @@ export function InvoicesPanel() {
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  const [clickupEnabled, setClickupEnabled] = useState(false)
   const [fClient, setFClient] = useState(''); const [fService, setFService] = useState(''); const [fStatus, setFStatus] = useState(''); const [fType, setFType] = useState(''); const [fLinked, setFLinked] = useState('')
 
   // Performance: enkel de geopende maand laden; bij maandwissel opnieuw.
@@ -59,7 +60,7 @@ export function InvoicesPanel() {
     try {
       const res = await fetch(`/api/admin/invoices?month=${month}`)
       const j = await res.json()
-      if (res.ok) { setRows(j.rows ?? []); setOmzet(j.omzet ?? []); setClients(j.clients ?? []); setSummary(j.summary) }
+      if (res.ok) { setRows(j.rows ?? []); setOmzet(j.omzet ?? []); setClients(j.clients ?? []); setSummary(j.summary); setClickupEnabled(!!j.clickup_enabled) }
     } catch { /* stil */ } finally { setLoading(false) }
   }, [month])
   useEffect(() => { load() }, [load])
@@ -102,7 +103,7 @@ export function InvoicesPanel() {
     const w: { icon: string; text: string; tone: string }[] = []
     if (!r.revenue_id) w.push({ icon: '🔴', text: 'Geen prognose gekoppeld', tone: 'text-red-600' })
     if (r.status === 'te_versturen' && r.billing_date && r.billing_date < todayStr()) w.push({ icon: '🔴', text: 'Factuurdatum voorbij — nog niet verstuurd', tone: 'text-red-600' })
-    if (!r.clickup_task_id && r.status !== 'geannuleerd') w.push({ icon: '🟠', text: 'Geen ClickUp-taak', tone: 'text-amber-600' })
+    if (clickupEnabled && !r.clickup_task_id && r.status !== 'geannuleerd') w.push({ icon: '🟠', text: 'Geen ClickUp-taak', tone: 'text-amber-600' })
     if (r.revenue_id) { const o = omzetById.get(r.revenue_id); if (o && Math.abs(o.amount_excl - r.amount_excl) > 0.01) w.push({ icon: '🟠', text: 'Bedrag wijkt af van prognose', tone: 'text-amber-600' }) }
     if (w.length === 0) w.push({ icon: '🟢', text: 'In orde', tone: 'text-green-600' })
     return w
@@ -137,6 +138,12 @@ export function InvoicesPanel() {
           <Link href="/admin/invoices/planner" className="btn-secondary text-sm"><CalendarDays className="h-4 w-4" />Planner</Link>
           <button onClick={() => setCreating(true)} className="btn-primary text-sm"><Plus className="h-4 w-4" />Nieuwe factuur</button>
         </div>
+      </div>
+
+      {/* ClickUp sync-status */}
+      <div className="inline-flex items-center gap-1.5 text-xs rounded-lg border px-2.5 py-1.5 w-fit" style={{ borderColor: clickupEnabled ? '#bbf7d0' : '#e5e7eb', background: clickupEnabled ? '#f0fdf4' : '#f9fafb' }}>
+        <span className={`h-2 w-2 rounded-full ${clickupEnabled ? 'bg-green-500' : 'bg-gray-300'}`} />
+        ClickUp sync: <b className={clickupEnabled ? 'text-green-700' : 'text-gray-500'}>{clickupEnabled ? 'Actief' : 'Niet geconfigureerd'}</b>
       </div>
 
       {/* 4 kaarten */}
