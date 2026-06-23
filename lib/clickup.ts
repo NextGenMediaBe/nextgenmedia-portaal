@@ -335,7 +335,7 @@ export async function updateTask(taskId: string, f: TaskFields): Promise<TaskRes
 // gemaakt en toegewezen aan Bram Rekken; bij status 'verstuurd' → Completed.
 
 const INVOICE_LIST_NAME = 'Facturen'
-const INVOICE_ASSIGNEE = 'Bram Rekken'
+const INVOICE_ASSIGNEE = 'Bram Reinquin'
 
 type CuMemberUser = { id: number; username?: string | null; email?: string | null }
 
@@ -372,12 +372,15 @@ export type InvoiceTaskInput = {
   clientName: string; amountIncl: number; invoiceDate: string; dueDate?: string | null; type: string
 }
 
-/** Maakt de "Factuur versturen"-taak. Retourneert het taak-id of null (best-effort). */
-export async function createInvoiceTask(input: InvoiceTaskInput): Promise<string | null> {
-  if (!clickupConfigured()) return null
+export type InvoiceTaskResult = { taskId: string | null; assigneeFound: boolean }
+
+/** Maakt de "Factuur versturen"-taak (best-effort). Geeft taak-id + of de
+ *  assignee (Bram Reinquin) gevonden is, zodat de app kan waarschuwen. */
+export async function createInvoiceTask(input: InvoiceTaskInput): Promise<InvoiceTaskResult> {
+  if (!clickupConfigured()) return { taskId: null, assigneeFound: true } // geen ClickUp = geen waarschuwing
   try {
     const listId = await findOrCreateInvoiceList()
-    if (!listId) return null
+    if (!listId) return { taskId: null, assigneeFound: true }
     const assignee = await findMemberId(INVOICE_ASSIGNEE)
     const desc = [
       `Klant: ${input.clientName}`,
@@ -391,9 +394,12 @@ export async function createInvoiceTask(input: InvoiceTaskInput): Promise<string
     const due = Date.parse(`${input.invoiceDate}T12:00:00Z`)
     if (!Number.isNaN(due)) body.due_date = due
     const task = await clickupJson<{ id: string }>(`/list/${listId}/task`, { method: 'POST', body: JSON.stringify(body) })
-    return task.id
-  } catch { return null }
+    return { taskId: task.id, assigneeFound: assignee != null }
+  } catch { return { taskId: null, assigneeFound: true } }
 }
+
+/** Naam van de factuur-assignee, voor waarschuwingen in de UI. */
+export const INVOICE_ASSIGNEE_NAME = INVOICE_ASSIGNEE
 
 /** Zet de factuurtaak op Completed (status 'verstuurd' in de app). */
 export async function completeInvoiceTask(taskId: string): Promise<void> {

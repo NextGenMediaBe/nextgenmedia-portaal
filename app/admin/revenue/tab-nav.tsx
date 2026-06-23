@@ -3,11 +3,10 @@
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 
-// Vereenvoudigd: enkel Overzicht (omzet/kosten/winst), Prognose en Kosten.
-// De overige pagina's (cashflow, contracten, agency, aandeelhouders, instellingen)
-// blijven bestaan maar zijn niet meer gelinkt.
+// Eén financieel dashboard: Prognose (centraal) + Kosten. De overige pagina's
+// (overzicht/cashflow/contracten/agency/aandeelhouders/instellingen) blijven
+// bestaan maar zijn niet meer gelinkt.
 const TABS = [
-  { href: '/admin/revenue', label: 'Overzicht', exact: true },
   { href: '/admin/revenue/omzet', label: 'Prognose' },
   { href: '/admin/revenue/kosten', label: 'Kosten' },
 ]
@@ -21,7 +20,7 @@ export function TabNav() {
     <div className="border-b border-gray-200 -mb-px overflow-x-auto">
       <div className="flex gap-1 min-w-max">
         {TABS.map((t) => {
-          const active = t.exact ? pathname === t.href : pathname.startsWith(t.href)
+          const active = pathname.startsWith(t.href)
           return (
             <Link
               key={t.href}

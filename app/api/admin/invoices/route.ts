@@ -5,7 +5,7 @@ import {
   inclFromExcl, lastDayOfMonth, billingDateFor, expandRevenueForMonth, normalizeInvoiceStatus,
   recurringActiveInMonth, INVOICE_STATUSES, INVOICE_DAYS, DEFAULT_VAT, type RevenueEntry, type RecurringInvoice,
 } from '@/lib/invoices'
-import { createInvoiceTask, completeInvoiceTask } from '@/lib/clickup'
+import { createInvoiceTask, completeInvoiceTask, INVOICE_ASSIGNEE_NAME } from '@/lib/clickup'
 
 export const maxDuration = 60
 
@@ -60,6 +60,8 @@ type Row = {
   rowId: string; kind: 'eenmalig' | 'recurring'; sourceId: string; month: string
   client_id: string | null; service_slug: string | null; description: string | null
   amount_excl: number; vat_pct: number; amount_incl: number; status: string; revenue_id: string | null
+  billing_date: string; clickup_task_id: string | null
+  recurring_start: string | null; recurring_end: string | null; invoice_day: string | null
 }
 
 // GET ?month=YYYY-MM → samengevoegde facturen (eenmalig + recurring) + omzet + klanten
@@ -73,7 +75,7 @@ export async function GET(req: NextRequest) {
     const [{ data: invoices }, { data: recurring }, { data: recMonths }, { data: revenue }, { data: clients }] = await Promise.all([
       admin.from('invoices').select('*').eq('invoice_month', month),
       admin.from('recurring_invoices').select('*'),
-      admin.from('recurring_invoice_months').select('recurring_id, month, status').eq('month', month),
+      admin.from('recurring_invoice_months').select('recurring_id, month, status, clickup_task_id').eq('month', month),
       admin.from('revenue_entries').select('*'),
       admin.from('clients').select('id, company_name').is('archived_at', null).order('company_name'),
     ])
@@ -85,16 +87,21 @@ export async function GET(req: NextRequest) {
         client_id: (i.client_id ?? null) as string | null, service_slug: (i.service_slug ?? null) as string | null,
         description: (i.description ?? null) as string | null, amount_excl: Number(i.amount_excl), vat_pct: Number(i.vat_pct),
         amount_incl: Number(i.amount_incl), status: normalizeInvoiceStatus(i.status as string), revenue_id: (i.revenue_id ?? null) as string | null,
+        billing_date: (i.invoice_date as string | null) ?? lastDayOfMonth(month), clickup_task_id: (i.clickup_task_id ?? null) as string | null,
+        recurring_start: null, recurring_end: null, invoice_day: null,
       })
     }
-    const statusByRec = new Map((recMonths ?? []).map((m: { recurring_id: string; status: string }) => [m.recurring_id, m.status]))
+    const recRow = new Map((recMonths ?? []).map((m: { recurring_id: string; status: string; clickup_task_id: string | null }) => [m.recurring_id, m]))
     for (const r of (recurring ?? []) as RecurringInvoice[]) {
       if (!recurringActiveInMonth(r, month)) continue
+      const mr = recRow.get(r.id)
       rows.push({
         rowId: `rec:${r.id}:${month}`, kind: 'recurring', sourceId: r.id, month,
         client_id: r.client_id, service_slug: r.service_slug, description: r.description,
         amount_excl: Number(r.amount_excl), vat_pct: Number(r.vat_pct), amount_incl: Number(r.amount_incl),
-        status: normalizeInvoiceStatus(statusByRec.get(r.id) ?? 'te_versturen'), revenue_id: r.revenue_id,
+        status: normalizeInvoiceStatus(mr?.status ?? 'te_versturen'), revenue_id: r.revenue_id,
+        billing_date: billingDateFor(month, r.invoice_day), clickup_task_id: mr?.clickup_task_id ?? null,
+        recurring_start: (r.start_month ?? '').slice(0, 7) || null, recurring_end: r.end_month ? r.end_month.slice(0, 7) : null, invoice_day: r.invoice_day ?? 'last',
       })
     }
 
@@ -133,18 +140,18 @@ export async function POST(req: NextRequest) {
       const status = INVOICE_STATUSES.includes(b.status) ? b.status : 'te_versturen'
       // ClickUp-taak "Factuur versturen — [klant]" (best-effort).
       const clientName = await clientNameFor(admin, b.client_id || null)
-      const taskId = await createInvoiceTask({ clientName, amountIncl: incl, invoiceDate, type: 'Eenmalig' })
+      const task = await createInvoiceTask({ clientName, amountIncl: incl, invoiceDate, type: 'Eenmalig' })
       const { data, error } = await admin.from('invoices').insert({
         client_id: b.client_id || null, service_slug: b.service_slug || null, invoice_month: month,
         invoice_date: invoiceDate, description: b.description || null,
         amount_excl: excl, vat_pct: vat, amount_incl: incl,
-        status, revenue_id: revenueId, created_by: actor.id, clickup_task_id: taskId,
+        status, revenue_id: revenueId, created_by: actor.id, clickup_task_id: task.taskId,
       }).select('id').single()
       if (error) throw new Error(error.message)
       // Meteen verstuurd aangemaakt? → taak ook afronden.
-      if (status === 'verstuurd' && taskId) await completeInvoiceTask(taskId)
+      if (status === 'verstuurd' && task.taskId) await completeInvoiceTask(task.taskId)
       try { revalidatePath('/admin/invoices') } catch { }
-      return NextResponse.json({ id: data.id })
+      return NextResponse.json({ id: data.id, warning: task.assigneeFound ? null : `ClickUp-gebruiker "${INVOICE_ASSIGNEE_NAME}" niet gevonden — taak zonder verantwoordelijke aangemaakt.` })
     }
 
     // Recurring factuur-definitie
@@ -175,13 +182,18 @@ export async function POST(req: NextRequest) {
         let taskId: string | null = existing?.clickup_task_id ?? null
         // ClickUp-taak aanmaken zodra deze maand opgevolgd wordt; afronden bij 'verstuurd'.
         const { data: rec } = await admin.from('recurring_invoices').select('client_id, amount_incl, invoice_day').eq('id', b.source_id).maybeSingle()
+        let assigneeWarning: string | null = null
         if (!taskId && rec) {
           const clientName = await clientNameFor(admin, rec.client_id ?? null)
-          taskId = await createInvoiceTask({ clientName, amountIncl: Number(rec.amount_incl) || 0, invoiceDate: billingDateFor(month, rec.invoice_day), type: 'Recurring' })
+          const task = await createInvoiceTask({ clientName, amountIncl: Number(rec.amount_incl) || 0, invoiceDate: billingDateFor(month, rec.invoice_day), type: 'Recurring' })
+          taskId = task.taskId
+          if (!task.assigneeFound) assigneeWarning = `ClickUp-gebruiker "${INVOICE_ASSIGNEE_NAME}" niet gevonden — taak zonder verantwoordelijke aangemaakt.`
         }
         const { error } = await admin.from('recurring_invoice_months').upsert({ recurring_id: b.source_id, month, status, clickup_task_id: taskId }, { onConflict: 'recurring_id,month' })
         if (error) throw new Error(error.message)
         if (status === 'verstuurd' && taskId) await completeInvoiceTask(taskId)
+        try { revalidatePath('/admin/invoices') } catch { }
+        return NextResponse.json({ ok: true, warning: assigneeWarning })
       } else {
         if (!b.source_id) return NextResponse.json({ error: 'source_id vereist' }, { status: 400 })
         const { data: inv } = await admin.from('invoices').select('clickup_task_id').eq('id', b.source_id).maybeSingle()

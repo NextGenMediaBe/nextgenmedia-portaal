@@ -8,6 +8,7 @@ import { Kpi } from '../kpi'
 import { OmzetCharts } from '../omzet-charts'
 import { RevenueForm } from '../revenue-form'
 import { RevenueTable } from '../revenue-table'
+import { FinanceWidget } from '../../finance-widget'
 
 function entryYearValue(e: RevenueEntry, year: number): number {
   if (e.type === 'recurring') {
@@ -42,6 +43,9 @@ export default async function OmzetPage({ searchParams }: { searchParams: Promis
 
   return (
     <div className="space-y-6">
+      {/* Deze maand: verwachte omzet · gefactureerd · kosten · winst + facturatiegraad */}
+      <FinanceWidget />
+
       <div className="flex items-center justify-end"><RevenueForm /></div>
 
       <p className="text-xs text-gray-500 -mt-2">Prognose = verwachte omzet. Dit is geen effectieve facturatie — facturen beheer je onder <b>Facturen</b>.</p>

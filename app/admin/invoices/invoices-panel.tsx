@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, Plus, X, Loader2, Trash2, Link2, CalendarClock, Send, Repeat, FileText } from 'lucide-react'
+import Link from 'next/link'
+import { ChevronLeft, ChevronRight, Plus, X, Loader2, Trash2, Link2, Send, Repeat, FileText, Ban, User, TrendingUp, CalendarDays, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatEuro, SERVICE_LABELS } from '@/lib/utils'
 import {
@@ -13,12 +14,33 @@ type Row = {
   rowId: string; kind: 'eenmalig' | 'recurring'; sourceId: string; month: string
   client_id: string | null; service_slug: string | null; description: string | null
   amount_excl: number; vat_pct: number; amount_incl: number; status: string; revenue_id: string | null
+  billing_date: string; clickup_task_id: string | null
+  recurring_start: string | null; recurring_end: string | null; invoice_day: string | null
 }
 type ClientOpt = { id: string; company_name: string }
 type Summary = { omzetExcl: number; linkedExcl: number; verschil: number; pct: number }
 
 const SERVICE_OPTS = ['', 'social-media', 'webdesign', 'foto-video', 'grafisch-ontwerp', 'marketing-consultancy', 'ads']
 const svcLabel = (s: string | null) => (s ? (SERVICE_LABELS[s] ?? s) : '—')
+const todayStr = () => new Date().toISOString().slice(0, 10)
+
+// Vertrouwensscore koppeling: klant > dienst > bedrag (maand is impliciet, want
+// de prognoselijst is al maand-gefilterd).
+function matchScore(r: Pick<Row, 'client_id' | 'service_slug' | 'amount_excl'>, o: ExpandedRevenue): number {
+  if (o.client_id !== r.client_id) return 0
+  let s = 50
+  if ((o.service_slug ?? null) === (r.service_slug ?? null)) s += 25
+  if (Math.abs(o.amount_excl - r.amount_excl) < 0.01) s += 25
+  else if (r.amount_excl > 0 && Math.abs(o.amount_excl - r.amount_excl) / r.amount_excl <= 0.1) s += 12
+  return s
+}
+function scoreDot(pct: number) { return pct >= 90 ? 'bg-green-500' : pct >= 60 ? 'bg-amber-500' : 'bg-red-500' }
+
+const MONTHS_NL = ['januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli', 'augustus', 'september', 'oktober', 'november', 'december']
+function monthsBetween(fromYM: string, toYM: string): number {
+  const [fy, fm] = fromYM.split('-').map(Number); const [ty, tm] = toYM.split('-').map(Number)
+  return (ty - fy) * 12 + (tm - fm)
+}
 
 export function InvoicesPanel() {
   const [month, setMonth] = useState(thisMonthYM)
@@ -26,24 +48,25 @@ export function InvoicesPanel() {
   const [omzet, setOmzet] = useState<ExpandedRevenue[]>([])
   const [clients, setClients] = useState<ClientOpt[]>([])
   const [summary, setSummary] = useState<Summary>({ omzetExcl: 0, linkedExcl: 0, verschil: 0, pct: 0 })
-  const [billingDate, setBillingDate] = useState<string>('')
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [fClient, setFClient] = useState(''); const [fService, setFService] = useState(''); const [fStatus, setFStatus] = useState(''); const [fType, setFType] = useState(''); const [fLinked, setFLinked] = useState('')
 
+  // Performance: enkel de geopende maand laden; bij maandwissel opnieuw.
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const res = await fetch(`/api/admin/invoices?month=${month}`)
       const j = await res.json()
-      if (res.ok) { setRows(j.rows ?? []); setOmzet(j.omzet ?? []); setClients(j.clients ?? []); setSummary(j.summary); setBillingDate(j.billingDate) }
+      if (res.ok) { setRows(j.rows ?? []); setOmzet(j.omzet ?? []); setClients(j.clients ?? []); setSummary(j.summary) }
     } catch { /* stil */ } finally { setLoading(false) }
   }, [month])
   useEffect(() => { load() }, [load])
 
   const clientName = useMemo(() => new Map(clients.map((c) => [c.id, c.company_name])), [clients])
   const linkedRevenueIds = useMemo(() => new Set(rows.filter((r) => r.revenue_id).map((r) => r.revenue_id)), [rows])
+  const omzetById = useMemo(() => new Map(omzet.map((o) => [o.revenue_id, o])), [omzet])
 
   const filtered = rows.filter((r) =>
     (!fClient || r.client_id === fClient) &&
@@ -53,16 +76,41 @@ export function InvoicesPanel() {
     (!fLinked || (fLinked === 'linked' ? !!r.revenue_id : !r.revenue_id))
   )
 
-  const totals = useMemo(() => {
-    const live = filtered.filter((r) => r.status !== 'geannuleerd')
-    const excl = live.reduce((s, r) => s + r.amount_excl, 0)
-    const incl = live.reduce((s, r) => s + r.amount_incl, 0)
-    return { excl, incl, btw: incl - excl, teVersturen: filtered.filter((r) => r.status === 'te_versturen').length, verstuurd: filtered.filter((r) => r.status === 'verstuurd').length }
-  }, [filtered])
+  // Maandtotalen over ALLE rijen (niet de filter) — voor de bovenste kaarten + balk.
+  const live = rows.filter((r) => r.status !== 'geannuleerd')
+  const teVersturen = live.filter((r) => r.status === 'te_versturen').length
+  const verstuurd = live.filter((r) => r.status === 'verstuurd').length
+  const totaalLive = live.length
+  const sentPct = totaalLive > 0 ? Math.round((verstuurd / totaalLive) * 100) : 0
+  const monthDone = totaalLive > 0 && verstuurd === totaalLive && summary.pct >= 100
+  const sentColor = sentPct >= 100 ? 'bg-green-500' : sentPct > 0 ? 'bg-amber-500' : 'bg-red-500'
+
+  const suggestionFor = (r: Row): ExpandedRevenue | null => {
+    if (r.revenue_id) return null
+    const cands = omzet.filter((o) => !linkedRevenueIds.has(o.revenue_id) && o.client_id === r.client_id)
+    let best: ExpandedRevenue | null = null, bestScore = 0
+    for (const o of cands) { const sc = matchScore(r, o); if (sc > bestScore) { best = o; bestScore = sc } }
+    return bestScore >= 50 ? best : null
+  }
+  // Vertrouwensscore voor weergave (gekoppeld → t.o.v. gekoppelde prognose; anders → beste kandidaat).
+  const confidence = (r: Row): number | null => {
+    if (r.revenue_id) { const o = omzetById.get(r.revenue_id); return o ? matchScore(r, o) : 100 }
+    const sug = suggestionFor(r); return sug ? matchScore(r, sug) : null
+  }
+  const warnings = (r: Row): { icon: string; text: string; tone: string }[] => {
+    if (r.status === 'geannuleerd') return [{ icon: '⚪', text: 'Geannuleerd', tone: 'text-gray-400' }]
+    const w: { icon: string; text: string; tone: string }[] = []
+    if (!r.revenue_id) w.push({ icon: '🔴', text: 'Geen prognose gekoppeld', tone: 'text-red-600' })
+    if (r.status === 'te_versturen' && r.billing_date && r.billing_date < todayStr()) w.push({ icon: '🔴', text: 'Factuurdatum voorbij — nog niet verstuurd', tone: 'text-red-600' })
+    if (!r.clickup_task_id && r.status !== 'geannuleerd') w.push({ icon: '🟠', text: 'Geen ClickUp-taak', tone: 'text-amber-600' })
+    if (r.revenue_id) { const o = omzetById.get(r.revenue_id); if (o && Math.abs(o.amount_excl - r.amount_excl) > 0.01) w.push({ icon: '🟠', text: 'Bedrag wijkt af van prognose', tone: 'text-amber-600' }) }
+    if (w.length === 0) w.push({ icon: '🟢', text: 'In orde', tone: 'text-green-600' })
+    return w
+  }
 
   const setStatus = async (r: Row, status: string) => {
     setBusy(r.rowId)
-    try { const res = await fetch('/api/admin/invoices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'status', kind: r.kind, source_id: r.sourceId, month: r.month, status }) }); const j = await res.json(); if (!res.ok) throw new Error(j.error); await load() }
+    try { const res = await fetch('/api/admin/invoices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'status', kind: r.kind, source_id: r.sourceId, month: r.month, status }) }); const j = await res.json(); if (!res.ok) throw new Error(j.error); if (j.warning) toast.warning(j.warning); await load() }
     catch (e) { toast.error(e instanceof Error ? e.message : 'Fout') } finally { setBusy(null) }
   }
   const link = async (r: Row, revenue_id: string) => {
@@ -76,13 +124,6 @@ export function InvoicesPanel() {
     try { await fetch(`/api/admin/invoices?kind=${r.kind}&id=${r.sourceId}`, { method: 'DELETE' }); await load() } finally { setBusy(null) }
   }
 
-  const suggestionFor = (r: Row): ExpandedRevenue | null => {
-    if (r.revenue_id) return null
-    return omzet.find((o) => !linkedRevenueIds.has(o.revenue_id) && o.client_id === r.client_id && o.service_slug === r.service_slug && Math.abs(o.amount_excl - r.amount_excl) < 0.01) ?? null
-  }
-
-  const pctColor = summary.pct >= 100 ? 'bg-green-500' : summary.pct > 0 ? 'bg-amber-500' : 'bg-red-500'
-
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -92,34 +133,34 @@ export function InvoicesPanel() {
           <button onClick={() => setMonth((m) => shiftYM(m, 1))} className="rounded-lg border border-gray-200 p-2 hover:bg-gray-50"><ChevronRight className="h-4 w-4" /></button>
           {month !== thisMonthYM() && <button onClick={() => setMonth(thisMonthYM())} className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50">Deze maand</button>}
         </div>
-        <button onClick={() => setCreating(true)} className="btn-primary text-sm"><Plus className="h-4 w-4" />Nieuwe factuur</button>
+        <div className="flex items-center gap-2">
+          <Link href="/admin/invoices/planner" className="btn-secondary text-sm"><CalendarDays className="h-4 w-4" />Planner</Link>
+          <button onClick={() => setCreating(true)} className="btn-primary text-sm"><Plus className="h-4 w-4" />Nieuwe factuur</button>
+        </div>
       </div>
 
-      {billingDate && (
-        <div className="inline-flex items-center gap-1.5 text-xs text-gray-500 bg-gray-50 border border-gray-100 rounded-lg px-2.5 py-1.5">
-          <CalendarClock className="h-3.5 w-3.5" />Facturatie einde maand: {new Date(billingDate + 'T00:00:00').toLocaleDateString('nl-BE', { day: 'numeric', month: 'long', year: 'numeric' })}
+      {/* 4 kaarten */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Kpi label="Te versturen" value={teVersturen} />
+        <Kpi label="Verstuurd" value={verstuurd} />
+        <Kpi label="Prognose gekoppeld" value={formatEuro(summary.linkedExcl)} sub="excl. btw" />
+        <Kpi label="Facturatie voltooid" value={`${summary.pct}%`} />
+      </div>
+
+      {/* Maandafsluiting */}
+      {monthDone && (
+        <div className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-medium text-green-800">
+          <CheckCircle2 className="h-5 w-5" />Maand volledig afgewerkt 🟢
         </div>
       )}
 
-      {/* Omzetkoppeling */}
+      {/* Grote voortgangsbalk */}
       <div className="card-base">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
-          <Kpi label="Prognose" value={formatEuro(summary.omzetExcl)} sub="excl. btw" />
-          <Kpi label="Gefactureerd" value={formatEuro(summary.linkedExcl)} sub="excl. btw" />
-          <Kpi label="Nog te factureren" value={formatEuro(summary.verschil)} sub="excl. btw" />
-          <Kpi label="Facturatie voltooid" value={`${summary.pct}%`} />
+        <div className="flex items-center justify-between text-sm mb-1.5">
+          <span className="font-semibold capitalize">{MONTHS_NL[Number(month.slice(5, 7)) - 1]}</span>
+          <span className="text-gray-500">{verstuurd} van {totaalLive} facturen verstuurd · <b className="text-gray-800">{sentPct}%</b></span>
         </div>
-        <div className="text-[11px] text-gray-500 mb-1">Facturatie voltooid (prognose gekoppeld aan facturen)</div>
-        <div className="h-3 w-full rounded-full bg-gray-100 overflow-hidden"><div className={`h-full ${pctColor} transition-all`} style={{ width: `${summary.pct}%` }} /></div>
-      </div>
-
-      {/* Maandtotalen */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        <Kpi label="Totaal excl." value={formatEuro(totals.excl)} />
-        <Kpi label="Totaal btw" value={formatEuro(totals.btw)} />
-        <Kpi label="Totaal incl." value={formatEuro(totals.incl)} />
-        <Kpi label="Te versturen" value={totals.teVersturen} />
-        <Kpi label="Verstuurd" value={totals.verstuurd} />
+        <div className="h-4 w-full rounded-full bg-gray-100 overflow-hidden"><div className={`h-full ${sentColor} transition-all`} style={{ width: `${sentPct}%` }} /></div>
       </div>
 
       {/* Filters */}
@@ -129,62 +170,70 @@ export function InvoicesPanel() {
         <select value={fType} onChange={(e) => setFType(e.target.value)} className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"><option value="">Alle types</option><option value="eenmalig">Eenmalig</option><option value="recurring">Recurring</option></select>
         <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"><option value="">Alle statussen</option>{INVOICE_STATUSES.map((s) => <option key={s} value={s}>{INVOICE_STATUS_LABEL[s]}</option>)}</select>
         <select value={fLinked} onChange={(e) => setFLinked(e.target.value)} className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"><option value="">Gekoppeld + niet</option><option value="linked">Gekoppeld</option><option value="unlinked">Niet gekoppeld</option></select>
+        <span className="text-xs text-gray-400">{filtered.length} factuur/facturen</span>
       </div>
 
-      {/* Tabel */}
-      <div className="card-base">
-        {loading ? (
-          <div className="py-10 text-center text-gray-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></div>
-        ) : filtered.length === 0 ? (
-          <p className="empty-state text-sm">Geen facturen voor deze selectie.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[900px]">
-              <thead><tr className="border-b border-gray-100">
-                <th className="table-th">Klant</th><th className="table-th">Type</th><th className="table-th">Dienst</th><th className="table-th">Omschrijving</th>
-                <th className="table-th text-right">Excl.</th><th className="table-th text-right">Btw</th><th className="table-th text-right">Incl.</th>
-                <th className="table-th">Koppeling</th><th className="table-th">Status</th><th className="table-th"></th>
-              </tr></thead>
-              <tbody className="divide-y divide-gray-50">
-                {filtered.map((r) => {
-                  const sug = suggestionFor(r)
-                  return (
-                    <tr key={r.rowId} className="hover:bg-gray-50/50">
-                      <td className="table-td font-medium">{r.client_id ? (clientName.get(r.client_id) ?? '—') : '—'}</td>
-                      <td className="table-td">
-                        <span className={`status-badge text-[10px] inline-flex items-center gap-1 ${r.kind === 'recurring' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'}`}>
-                          {r.kind === 'recurring' ? <><Repeat className="h-3 w-3" />Recurring</> : <><FileText className="h-3 w-3" />Eenmalig</>}
-                        </span>
-                      </td>
-                      <td className="table-td text-gray-500 text-xs">{svcLabel(r.service_slug)}</td>
-                      <td className="table-td text-gray-600 max-w-[180px] truncate">{r.description ?? '—'}</td>
-                      <td className="table-td text-right">{formatEuro(r.amount_excl)}</td>
-                      <td className="table-td text-right text-gray-500">{formatEuro(r.amount_incl - r.amount_excl)}</td>
-                      <td className="table-td text-right font-medium">{formatEuro(r.amount_incl)}</td>
-                      <td className="table-td">
-                        {r.revenue_id ? <span className="inline-flex items-center gap-1 text-xs text-green-700"><Link2 className="h-3 w-3" />Gekoppeld</span>
-                          : sug ? <button onClick={() => link(r, sug.revenue_id)} disabled={busy === r.rowId} className="text-xs inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"><Link2 className="h-3 w-3" />Koppelen</button>
-                          : <span className="text-xs text-gray-300">niet gekoppeld</span>}
-                      </td>
-                      <td className="table-td">
-                        <select value={r.status} onChange={(e) => setStatus(r, e.target.value)} disabled={busy === r.rowId} className="rounded-lg border border-gray-200 px-1.5 py-1 text-xs">
-                          {INVOICE_STATUSES.map((s) => <option key={s} value={s}>{INVOICE_STATUS_LABEL[s]}</option>)}
-                        </select>
-                      </td>
-                      <td className="table-td text-right whitespace-nowrap">
-                        {r.status === 'te_versturen' && <button onClick={() => setStatus(r, 'verstuurd')} disabled={busy === r.rowId} className="btn-secondary text-xs mr-1" title="Markeer als verstuurd"><Send className="h-3.5 w-3.5" />Verstuurd</button>}
-                        <button onClick={() => remove(r)} disabled={busy === r.rowId} className="text-gray-300 hover:text-red-500 align-middle" title="Verwijderen">{busy === r.rowId ? <Loader2 className="h-3.5 w-3.5 animate-spin inline" /> : <Trash2 className="h-3.5 w-3.5 inline" />}</button>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {/* Werklijst */}
+      {loading ? (
+        <div className="card-base py-10 text-center text-gray-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></div>
+      ) : filtered.length === 0 ? (
+        <div className="card-base"><p className="empty-state text-sm">Geen facturen voor deze selectie.</p></div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((r) => {
+            const sug = suggestionFor(r)
+            const conf = confidence(r)
+            const ws = warnings(r)
+            const cancelled = r.status === 'geannuleerd'
+            const remaining = r.recurring_end ? Math.max(0, monthsBetween(month, r.recurring_end) + 1) : null
+            return (
+              <div key={r.rowId} className={`card-base ${cancelled ? 'opacity-60' : ''}`}>
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="min-w-0">
+                    <div className="font-medium flex items-center gap-2 flex-wrap">
+                      {r.client_id ? (clientName.get(r.client_id) ?? '—') : '—'}
+                      <span className={`status-badge text-[10px] inline-flex items-center gap-1 ${r.kind === 'recurring' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'}`}>
+                        {r.kind === 'recurring' ? <><Repeat className="h-3 w-3" />Recurring</> : <><FileText className="h-3 w-3" />Eenmalig</>}
+                      </span>
+                      {conf != null && <span className="inline-flex items-center gap-1 text-[10px] text-gray-500" title="Vertrouwensscore koppeling"><span className={`h-2 w-2 rounded-full ${scoreDot(conf)}`} />{conf}%</span>}
+                    </div>
+                    <div className="text-xs text-gray-400 mt-0.5 flex flex-wrap gap-x-2">
+                      <span>{svcLabel(r.service_slug)}</span>
+                      <span>· {formatEuro(r.amount_excl)} excl · {formatEuro(r.amount_incl)} incl</span>
+                      {r.description && <span>· {r.description}</span>}
+                    </div>
+                    {/* Recurring-visualisatie */}
+                    {r.kind === 'recurring' && r.recurring_start && (
+                      <div className="text-[11px] text-purple-700 mt-1">
+                        Loopt: {monthLabel(r.recurring_start)} → {r.recurring_end ? monthLabel(r.recurring_end) : 'doorlopend'}
+                        {remaining != null && <> · nog {remaining} maand(en) actief</>}
+                        <> · volgende factuur: {new Date(r.billing_date + 'T00:00:00').toLocaleDateString('nl-BE', { day: 'numeric', month: 'long', year: 'numeric' })}</>
+                      </div>
+                    )}
+                    {/* Waarschuwingen */}
+                    <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                      {ws.map((w, i) => <span key={i} className={`text-[11px] ${w.tone}`}>{w.icon} {w.text}</span>)}
+                    </div>
+                  </div>
 
-      {creating && <CreateDialog month={month} clients={clients} omzet={omzet} onClose={() => setCreating(false)} onSaved={() => { setCreating(false); load() }} />}
+                  {/* Snelle acties (geen aparte schermen) */}
+                  <div className="flex items-center gap-1 shrink-0">
+                    {r.status === 'te_versturen' && <button onClick={() => setStatus(r, 'verstuurd')} disabled={busy === r.rowId} className="btn-primary text-xs" title="Markeer als verstuurd">{busy === r.rowId ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}Verstuurd</button>}
+                    {r.status === 'verstuurd' && <button onClick={() => setStatus(r, 'te_versturen')} disabled={busy === r.rowId} className="btn-secondary text-xs" title="Terug naar te versturen">Te versturen</button>}
+                    {!sug ? null : <button onClick={() => link(r, sug.revenue_id)} disabled={busy === r.rowId} className="btn-secondary text-xs" title="Koppel aan prognose"><Link2 className="h-3.5 w-3.5" />Koppelen</button>}
+                    {!cancelled && <button onClick={() => setStatus(r, 'geannuleerd')} disabled={busy === r.rowId} className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400" title="Annuleren"><Ban className="h-3.5 w-3.5" /></button>}
+                    {r.client_id && <Link href={`/admin/clients/${r.client_id}`} className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400" title="Open klant"><User className="h-3.5 w-3.5" /></Link>}
+                    <Link href="/admin/revenue/omzet" className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400" title="Open prognose"><TrendingUp className="h-3.5 w-3.5" /></Link>
+                    <button onClick={() => remove(r)} disabled={busy === r.rowId} className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-red-400" title="Verwijderen">{busy === r.rowId ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}</button>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {creating && <CreateDialog month={month} clients={clients} omzet={omzet} onClose={() => setCreating(false)} onSaved={(warning) => { setCreating(false); if (warning) toast.warning(warning); load() }} />}
     </div>
   )
 }
@@ -193,7 +242,7 @@ function Kpi({ label, value, sub }: { label: string; value: string | number; sub
   return <div className="rounded-xl border border-gray-100 p-3"><div className="text-[11px] text-gray-500">{label}</div><div className="mt-0.5 text-lg font-bold">{value}</div>{sub && <div className="text-[10px] text-gray-400">{sub}</div>}</div>
 }
 
-function CreateDialog({ month, clients, omzet, onClose, onSaved }: { month: string; clients: ClientOpt[]; omzet: ExpandedRevenue[]; onClose: () => void; onSaved: () => void }) {
+function CreateDialog({ month, clients, omzet, onClose, onSaved }: { month: string; clients: ClientOpt[]; omzet: ExpandedRevenue[]; onClose: () => void; onSaved: (warning?: string | null) => void }) {
   const [type, setType] = useState<'eenmalig' | 'recurring'>('eenmalig')
   const [form, setForm] = useState({ client_id: '', service_slug: '', description: '', amount_excl: '', vat_pct: String(DEFAULT_VAT), status: 'te_versturen', revenue_id: '', start_month: month, end_month: '', active: true, invoice_day: 'last' })
   const [loading, setLoading] = useState(false)
@@ -211,7 +260,7 @@ function CreateDialog({ month, clients, omzet, onClose, onSaved }: { month: stri
         : { action: 'one_time', client_id: form.client_id, service_slug: form.service_slug, description: form.description, amount_excl: excl, vat_pct: vat, status: form.status, revenue_id: form.revenue_id, invoice_month: month }
       const res = await fetch('/api/admin/invoices', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const j = await res.json(); if (!res.ok) throw new Error(j.error)
-      onSaved()
+      onSaved(j.warning)
     } catch (e) { setError(e instanceof Error ? e.message : 'Fout') } finally { setLoading(false) }
   }
 
@@ -282,7 +331,7 @@ function CreateDialog({ month, clients, omzet, onClose, onSaved }: { month: stri
               {omzet.map((r) => <option key={r.revenue_id} value={r.revenue_id}>{(r.title || 'Prognose')} · {svcLabel(r.service_slug)} · {formatEuro(r.amount_excl)}</option>)}
             </select>
           </div>
-          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</div>}
+          {error && <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2 flex items-center gap-1.5"><AlertTriangle className="h-4 w-4 shrink-0" />{error}</div>}
           <div className="flex gap-2 pt-1">
             <button onClick={submit} disabled={loading} className="btn-primary flex-1 justify-center">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}Aanmaken</button>
             <button onClick={onClose} className="btn-secondary">Annuleer</button>

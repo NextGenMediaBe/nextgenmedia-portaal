@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, Users, FileText, UserSquare2, ArrowLeftRight, TrendingUp,
   LogOut, ChevronDown, Globe, Calendar, Briefcase, RefreshCcw, Menu, X,
-  Info, ClipboardList, CalendarDays, PieChart, ShoppingCart, Mail, Receipt, Newspaper,
+  Info, ClipboardList, CalendarDays, ShoppingCart, Mail, Receipt, Newspaper,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useRefresh } from '@/lib/use-refresh'
@@ -36,7 +36,6 @@ const NAV = [
   { label: 'Settlements', href: '/admin/settlements',  icon: ArrowLeftRight },
   { label: 'Prognose',    href: '/admin/revenue/omzet', icon: TrendingUp },
   { label: 'Facturen',    href: '/admin/invoices',     icon: Receipt },
-  { label: 'Financiën',   href: '/admin/revenue',      icon: PieChart, exact: true },
   { label: 'Aankopen',    href: '/admin/purchases',    icon: ShoppingCart },
   { label: 'E-mailcenter', href: '/admin/email', icon: Mail },
   {
