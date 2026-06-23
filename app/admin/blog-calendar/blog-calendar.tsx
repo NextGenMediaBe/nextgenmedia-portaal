@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronLeft, ChevronRight, CalendarDays, Sparkles, Eye, Clock, CheckCircle2, X, Loader2, Save, RefreshCw, Trash2, UploadCloud, FileText } from 'lucide-react'
+import { ChevronLeft, ChevronRight, CalendarDays, Sparkles, Eye, Clock, CheckCircle2, X, Loader2, Save, RefreshCw, Trash2, UploadCloud, FileText, ImageIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatDate } from '@/lib/utils'
 
@@ -203,6 +203,15 @@ function BlogEditorModal({ blog, onClose }: { blog: CalBlog; onClose: () => void
   }
 
   const save = () => call('save', { ...f }, 'Opgeslagen.')
+  const otherImage = async () => {
+    setBusy('image')
+    try {
+      const res = await fetch('/api/admin/blogs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'image', id: blog.id }) })
+      const j = await res.json(); if (!res.ok) throw new Error(j.error)
+      setF((x) => ({ ...x, thumbnail_url: j.url }))
+      toast.success('Nieuwe foto gekozen — klik Opslaan om te bewaren.')
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Fout') } finally { setBusy(null) }
+  }
   const publishNow = () => call('approve', { action: 'approve', publish_mode: 'now' })
   const publishOnDate = () => { if (!date) { toast.error('Kies een publicatiedatum.'); return } call('approve', { action: 'approve', publish_mode: 'scheduled', publish_at: new Date(date).toISOString() }) }
   const keepConcept = () => call('approve', { action: 'approve', publish_mode: 'concept' })
@@ -240,7 +249,10 @@ function BlogEditorModal({ blog, onClose }: { blog: CalBlog; onClose: () => void
             <div><label className="block text-xs text-gray-600 mb-1">Meta beschrijving</label><input className={inp} value={f.meta_description} onChange={(e) => setF((x) => ({ ...x, meta_description: e.target.value }))} /></div>
           </div>
           <div>
-            <label className="block text-xs text-gray-600 mb-1">Afbeelding (URL)</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs text-gray-600">Afbeelding (URL)</label>
+              <button onClick={otherImage} disabled={!!busy} className="btn-secondary text-[11px]">{busy === 'image' ? <Loader2 className="h-3 w-3 animate-spin" /> : <ImageIcon className="h-3 w-3" />}Andere foto</button>
+            </div>
             <input className={inp} value={f.thumbnail_url} onChange={(e) => setF((x) => ({ ...x, thumbnail_url: e.target.value }))} placeholder="Automatisch ingevuld; plak hier een eigen foto-URL om te vervangen" />
             {f.thumbnail_url && (
               // eslint-disable-next-line @next/next/no-img-element

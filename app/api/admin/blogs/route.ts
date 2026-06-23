@@ -3,6 +3,7 @@ import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { generateBlogsForAccount, sendBlogReviewMail, BLOG_ACCOUNT_COLS, type BlogAccount } from '@/lib/blog-generate'
 import { generateBlog, slugify } from '@/lib/blog-ai'
+import { findStockImage } from '@/lib/blog-image'
 import { publishApprovedBlog, type AccountFramer, type BlogRow } from '@/lib/blog-publish'
 import { snapshotBlogVersion, describeChanges } from '@/lib/blog-versions'
 
@@ -43,6 +44,18 @@ export async function POST(req: NextRequest) {
     const admin = createAdminSupabaseClient()
 
     if (b.action === 'bulk') return bulk(admin, b, actor.email ?? actor.id)
+
+    // Andere (gratis Pexels-)foto ophalen voor een blog. Geeft enkel een URL terug;
+    // opslaan gebeurt apart via de editor.
+    if (b.action === 'image') {
+      if (!b.id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })
+      const { data: blog } = await admin.from('blogs').select('titel, tags').eq('id', b.id).maybeSingle()
+      if (!blog) return NextResponse.json({ error: 'Blog niet gevonden' }, { status: 404 })
+      const query = (b.query?.trim()) || (Array.isArray(blog.tags) && blog.tags.length ? blog.tags.join(' ') : '') || blog.titel
+      const url = await findStockImage(query, { random: true })
+      if (!url) return NextResponse.json({ error: 'Geen foto gevonden. Staat PEXELS_API_KEY ingesteld?' }, { status: 400 })
+      return NextResponse.json({ url })
+    }
 
     if (b.action !== 'generate' || !b.account_id) return NextResponse.json({ error: 'Ongeldige actie' }, { status: 400 })
     const { data: account } = await admin.from('blog_accounts').select(BLOG_ACCOUNT_COLS).eq('id', b.account_id).maybeSingle()
