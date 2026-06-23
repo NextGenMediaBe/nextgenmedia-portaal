@@ -114,26 +114,33 @@ KWALITEITSEISEN (verplicht):
 - Een duidelijke call-to-action op het einde, passend bij het bedrijf.
 - Schrijf specifiek en concreet op basis van bovenstaande info — VERMIJD generieke AI-vultekst, clichés en holle zinnen.
 
-Geef UITSLUITEND geldige JSON terug met deze velden:
-{
-  "titel": "pakkende, SEO-sterke titel",
-  "content": "volledige blog in Markdown met ## tussenkoppen, praktische voorbeelden en een afsluitende CTA (minimaal 1200 woorden)",
-  "meta_title": "max 60 tekens",
-  "meta_description": "max 155 tekens, wervend",
-  "topic": "korte omschrijving van het hoofdonderwerp",
-  "keywords": ["belangrijkste zoekwoord", "..."],
-  "angle": "de gekozen invalshoek in enkele woorden",
-  "cta": "de call-to-action die je gebruikt hebt",
-  "internal_link_suggestions": ["suggestie voor interne link (anchor of paginathema)", "..."],
-  "tags": ["1 tot 4 thematische tags, bv. SEO, Branding, HR, Vastgoed, Burn-out, Social Media"]
-}`
+Geef je antwoord EXACT in onderstaand sectie-formaat. Gebruik de markers letterlijk, elk op een eigen regel, en zet niets vóór de eerste marker. Gebruik GEEN JSON.
+
+===TITEL===
+pakkende, SEO-sterke titel
+===META_TITLE===
+max 60 tekens
+===META_DESCRIPTION===
+max 155 tekens, wervend
+===TAGS===
+1 tot 4 thematische tags, gescheiden door komma's (bv. SEO, Branding, HR, Vastgoed)
+===KEYWORDS===
+belangrijkste zoekwoorden, gescheiden door komma's
+===ANGLE===
+de gekozen invalshoek in enkele woorden
+===CTA===
+de call-to-action die je gebruikt hebt
+===INTERNAL_LINKS===
+suggesties voor interne links, één per regel
+===CONTENT===
+de volledige blog in Markdown met ## tussenkoppen, praktische voorbeelden en een afsluitende CTA (minimaal 1200 woorden). Schrijf hier vrijuit; dit is het laatste veld.`
 
   let res: Response
   try {
     res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({ model: MODEL(), max_tokens: 6000, messages: [{ role: 'user', content: prompt }] }),
+      body: JSON.stringify({ model: MODEL(), max_tokens: 8000, messages: [{ role: 'user', content: prompt }] }),
     })
   } catch (e) {
     throw new Error(`Kan de AI-dienst niet bereiken: ${e instanceof Error ? e.message : 'netwerkfout'}`)
@@ -146,32 +153,32 @@ Geef UITSLUITEND geldige JSON terug met deze velden:
   }
 
   const text: string = (json?.content ?? []).map((b: { text?: string }) => b.text ?? '').join('')
-  const start = text.indexOf('{'), end = text.lastIndexOf('}')
-  if (start === -1 || end === -1) throw new Error('AI gaf geen bruikbaar (JSON-)antwoord terug.')
-  let parsed: Record<string, unknown>
-  try {
-    parsed = JSON.parse(text.slice(start, end + 1))
-  } catch {
-    throw new Error('AI-antwoord kon niet als JSON gelezen worden.')
-  }
 
-  const titel = String(parsed.titel || '').trim()
-  const content = String(parsed.content || '')
+  // Sectie-parser: robuust tegen opmaak/aanhalingstekens en degradeert netjes bij
+  // een afgekapt antwoord (enkel het staartje van CONTENT gaat dan verloren).
+  const section = (name: string): string => {
+    const re = new RegExp(`===${name}===\\s*\\n?([\\s\\S]*?)(?=\\n===[A-Z_]+===|$)`)
+    return (text.match(re)?.[1] ?? '').trim()
+  }
+  const list = (s: string, sep: RegExp): string[] => s.split(sep).map((x) => x.trim().replace(/^[-*]\s*/, '')).filter(Boolean).slice(0, 20)
+
+  const titel = section('TITEL').replace(/^#+\s*/, '').trim()
+  const content = section('CONTENT')
   if (!titel || content.trim().length < 100) throw new Error('AI gaf een onvolledige blog terug (geen titel of te weinig inhoud).')
-  const arr = (v: unknown): string[] => Array.isArray(v) ? v.map((x) => String(x)).filter(Boolean).slice(0, 20) : []
+
   return {
     titel,
     slug: slugify(titel),
     content,
-    meta_title: String(parsed.meta_title || titel).slice(0, 70),
-    meta_description: String(parsed.meta_description || '').slice(0, 170),
+    meta_title: (section('META_TITLE') || titel).slice(0, 70),
+    meta_description: section('META_DESCRIPTION').slice(0, 170),
     thumbnail_url: null,
-    topic: String(parsed.topic || titel).slice(0, 200),
-    keywords: arr(parsed.keywords),
-    angle: String(parsed.angle || '').slice(0, 200),
-    cta: String(parsed.cta || '').slice(0, 300),
-    internal_link_suggestions: arr(parsed.internal_link_suggestions),
-    tags: arr(parsed.tags).slice(0, 6),
+    topic: (section('ANGLE') || titel).slice(0, 200),
+    keywords: list(section('KEYWORDS'), /[,\n]/),
+    angle: section('ANGLE').slice(0, 200),
+    cta: section('CTA').slice(0, 300),
+    internal_link_suggestions: list(section('INTERNAL_LINKS'), /\n/),
+    tags: list(section('TAGS'), /[,\n]/).slice(0, 6),
     word_count: content.trim().split(/\s+/).filter(Boolean).length,
   }
 }

@@ -79,7 +79,9 @@
       "Bash(cd \"/c/Users/12401776/Downloads/NextGenMedia Content-Portal \\(1\\)\" && grep -rn \"/admin/blogs\\\\b\\\\|/admin/framer\\\\b\\\\|/admin/cms\\\\b\" app/admin/blog-status-widget.tsx app/admin/framer-status-widget.tsx \"app/admin/clients/[id]/client-blogs.tsx\" 2>/dev/null)",
       "Bash(sed -i 's#href=\"/admin/blogs\"#href=\"/admin/blog-calendar\"#g' app/admin/blog-status-widget.tsx)",
       "Bash(sed -i 's#href=\"/admin/framer\"#href=\"/admin/blogaccounts\"#g' app/admin/framer-status-widget.tsx)",
-      "Bash(sed -i 's#Framer Manager <ArrowRight#Framer <ArrowRight#g' app/admin/framer-status-widget.tsx)"
+      "Bash(sed -i 's#Framer Manager <ArrowRight#Framer <ArrowRight#g' app/admin/framer-status-widget.tsx)",
+      "Skill(claude-api)",
+      "Skill(claude-api:*)"
     ]
   }
 }
