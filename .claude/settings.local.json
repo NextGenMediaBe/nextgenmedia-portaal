@@ -56,7 +56,25 @@
       "Bash(node -e \"console.log\\(require\\('sharp'\\)\\(\\).constructor.name\\)\")",
       "Bash(grep -rn \"addendum\" app/admin/contracts/[id]/page.tsx)",
       "Bash(rm -rf \"app/admin/contracts/[id]/addendum\")",
-      "Bash(grep -iv \"comment\\\\|//\")"
+      "Bash(grep -iv \"comment\\\\|//\")",
+      "Bash(sed -n '1,25p' supabase/migrations/20260518152923_442ed234-b49b-4ebd-b822-2fb2c9e12eeb.sql)",
+      "Bash(sed -n '1,15p' supabase/migrations/20260528000001_platforms_array_contract_slug.sql)",
+      "Bash(git check-ignore *)",
+      "Bash(git restore *)",
+      "Bash(node --experimental-strip-types scripts/clickup-selftest.ts)",
+      "Bash(echo \"=== TSC EXIT: $? ===\")",
+      "Bash(rm scripts/clickup-selftest.ts)",
+      "Bash(rmdir scripts *)",
+      "Bash(node scripts/diag.mjs)",
+      "Bash(rm -f scripts/diag.mjs)",
+      "Bash(git mv *)",
+      "Bash(ls app/admin/productie)",
+      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\('deps:', Object.keys\\(p.dependencies||{}\\).join\\(', '\\)\\); console.log\\('scripts:', JSON.stringify\\(p.scripts\\)\\)\")",
+      "mcp__dfd71a09-67ae-41ed-9a8d-a9464fd9d4be__getProjectWebsiteUrl",
+      "mcp__dfd71a09-67ae-41ed-9a8d-a9464fd9d4be__getCMSCollections",
+      "WebFetch(domain:www.framer.com)",
+      "WebFetch(domain:github.com)",
+      "Bash(node -e \"try{const p=require\\('framer-api/package.json'\\);console.log\\('version',p.version,'types:',p.types||p.typings||'\\(none\\)','type:',p.type||'commonjs'\\);}catch\\(e\\){console.log\\('resolve fail',e.message\\)}\")"
     ]
   }
 }

@@ -16,6 +16,7 @@ export default async function PortalLayout({ children }: { children: React.React
 
   // Fetch active services — separate query to avoid FK join failures
   let activeServices: string[] = []
+  let hasBlogs = false
   if (client?.id) {
     const { data: svcRows } = await supabase
       .from('client_services')
@@ -24,6 +25,13 @@ export default async function PortalLayout({ children }: { children: React.React
     activeServices = (svcRows ?? [])
       .filter((s: { active: boolean }) => s.active)
       .map((s: { service_slug: string }) => s.service_slug)
+
+    // Blogs-tab alleen tonen als er een blogaccount aan deze klant gekoppeld is
+    const { count: blogAccCount } = await supabase
+      .from('blog_accounts')
+      .select('id', { count: 'exact', head: true })
+      .eq('client_id', client.id)
+    hasBlogs = (blogAccCount ?? 0) > 0
   }
 
   return (
@@ -31,6 +39,7 @@ export default async function PortalLayout({ children }: { children: React.React
       <PortalSidebar
         companyName={client?.company_name ?? 'Klantenportaal'}
         activeServices={activeServices}
+        hasBlogs={hasBlogs}
       />
       <main className="flex-1 min-w-0 md:ml-[var(--sidebar-width)] min-h-screen">
         <div className="max-w-[1200px] mx-auto px-4 pt-20 pb-8 md:pt-6 md:px-6 lg:px-8">

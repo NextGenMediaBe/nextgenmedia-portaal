@@ -7,7 +7,7 @@ import { toast } from 'sonner'
 import { formatDate } from '@/lib/utils'
 
 export type ReviewBlog = {
-  id: string; client_id: string; client_name?: string; titel: string; slug: string
+  id: string; account_id: string | null; account_name?: string; titel: string; slug: string
   content: string | null; meta_title: string | null; meta_description: string | null; thumbnail_url: string | null
   status: string; foutmelding: string | null; gegenereerd_op: string
 }
@@ -16,15 +16,15 @@ const STATUS_LABEL: Record<string, string> = { klaar_voor_review: 'Klaar voor re
 const STATUS_CLS: Record<string, string> = { klaar_voor_review: 'bg-amber-100 text-amber-700', goedgekeurd: 'bg-blue-100 text-blue-700', gepubliceerd: 'bg-green-100 text-green-700', gefaald: 'bg-red-100 text-red-700' }
 const STATUSES = ['klaar_voor_review', 'goedgekeurd', 'gepubliceerd', 'gefaald']
 
-export function BlogReview({ initialBlogs, clients, initialClient }: { initialBlogs: ReviewBlog[]; clients: { id: string; company_name: string }[]; initialClient: string }) {
+export function BlogReview({ initialBlogs, accounts, initialAccount }: { initialBlogs: ReviewBlog[]; accounts: { id: string; name: string }[]; initialAccount: string }) {
   const router = useRouter()
   const [blogs, setBlogs] = useState(initialBlogs)
-  const [fClient, setFClient] = useState(initialClient)
+  const [fAccount, setFAccount] = useState(initialAccount)
   const [fStatus, setFStatus] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
 
-  const filtered = blogs.filter((b) => (!fClient || b.client_id === fClient) && (!fStatus || b.status === fStatus))
+  const filtered = blogs.filter((b) => (!fAccount || b.account_id === fAccount) && (!fStatus || b.status === fStatus))
 
   const refresh = () => router.refresh()
 
@@ -64,7 +64,7 @@ export function BlogReview({ initialBlogs, clients, initialClient }: { initialBl
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2 items-center">
-        <select value={fClient} onChange={(e) => setFClient(e.target.value)} className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"><option value="">Alle klanten</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.company_name}</option>)}</select>
+        <select value={fAccount} onChange={(e) => setFAccount(e.target.value)} className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"><option value="">Alle blogaccounts</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
         <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"><option value="">Alle statussen</option>{STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}</select>
         <span className="text-xs text-gray-400">{filtered.length} blog(s)</span>
       </div>
@@ -102,7 +102,7 @@ function BlogCard({ blog, editing, busy, onEdit, onSave, onApprove, onRegenerate
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="font-medium flex items-center gap-2 flex-wrap">{blog.titel}<span className={`status-badge text-[10px] ${STATUS_CLS[blog.status] ?? 'bg-gray-100 text-gray-500'}`}>{STATUS_LABEL[blog.status] ?? blog.status}</span></div>
-          <div className="text-xs text-gray-400 mt-0.5">{blog.client_name} · {formatDate(blog.gegenereerd_op)} · /{blog.slug}</div>
+          <div className="text-xs text-gray-400 mt-0.5">{blog.account_name} · {formatDate(blog.gegenereerd_op)} · /{blog.slug}</div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <button onClick={() => setPreview((p) => !p)} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400" title="Preview"><Eye className="h-3.5 w-3.5" /></button>

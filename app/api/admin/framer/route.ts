@@ -1,109 +1,93 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
 import {
-  validateFramerConfig, testFramerConnection, listFramerCollections, listFramerFields, suggestFieldMap,
-  analyzeFramerProject, testPublish, friendlyMissing, logFramerAction, type FramerClientConfig,
+  validateFramerConfig, listFramerCollections, listFramerFields, suggestFieldMap,
+  analyzeFramerProject, testPublish, friendlyMissing, testFramerConnection, logFramerAction, type FramerClientConfig,
 } from '@/lib/framer'
 
-type ClientRow = {
-  id: string; company_name: string; framer_project_url: string | null; framer_api_key: string | null
+type AccountRow = {
+  id: string; name: string; framer_project_url: string | null; framer_api_key: string | null
   framer_blog_collection_id: string | null; framer_field_map: unknown; framer_last_sync: string | null
-  blog_brand_context?: string | null
+  briefing?: string | null
 }
 
-function configOf(c: ClientRow): FramerClientConfig {
-  return {
-    projectUrl: c.framer_project_url, apiKeyEncrypted: c.framer_api_key,
-    collectionId: c.framer_blog_collection_id, fieldMap: (c.framer_field_map ?? null) as Record<string, string> | null,
-  }
-}
+const configOf = (a: AccountRow): FramerClientConfig => ({
+  projectUrl: a.framer_project_url, apiKeyEncrypted: a.framer_api_key,
+  collectionId: a.framer_blog_collection_id, fieldMap: (a.framer_field_map ?? null) as Record<string, string> | null,
+})
 
-// GET — overzicht per klant (blogs_inbegrepen) + dashboardstats, of ?logs=<client_id>
+// GET — overzicht per blogaccount + dashboardstats, of ?logs=<account_id>
 export async function GET(req: NextRequest) {
   try {
     if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const admin = createAdminSupabaseClient()
 
-    // Logs van één klant opvragen
     const logsFor = req.nextUrl.searchParams.get('logs')
     if (logsFor) {
-      const { data } = await admin.from('framer_logs').select('id, actie, status, foutmelding, created_at').eq('client_id', logsFor).order('created_at', { ascending: false }).limit(50)
+      const { data } = await admin.from('framer_logs').select('id, actie, status, foutmelding, created_at').eq('account_id', logsFor).order('created_at', { ascending: false }).limit(50)
       return NextResponse.json({ logs: data ?? [] })
     }
 
     const startToday = new Date(); startToday.setHours(0, 0, 0, 0)
-
-    const [{ data: clients }, { data: blogs }, { data: logs }] = await Promise.all([
-      admin.from('clients').select('id, company_name, framer_project_url, framer_api_key, framer_blog_collection_id, framer_field_map, framer_last_sync, blog_brand_context').eq('blogs_inbegrepen', true).is('archived_at', null).order('company_name'),
-      admin.from('blogs').select('client_id, status'),
-      admin.from('framer_logs').select('client_id, actie, status, created_at').gte('created_at', startToday.toISOString()),
+    const [{ data: accounts }, { data: blogs }, { data: logs }] = await Promise.all([
+      admin.from('blog_accounts').select('id, name, framer_project_url, framer_api_key, framer_blog_collection_id, framer_field_map, framer_last_sync, briefing').order('name'),
+      admin.from('blogs').select('account_id, status'),
+      admin.from('framer_logs').select('actie, status, created_at').gte('created_at', startToday.toISOString()),
     ])
+    const blogRows = (blogs ?? []) as { account_id: string | null; status: string }[]
+    const cnt = (id: string, st: string) => blogRows.filter((b) => b.account_id === id && b.status === st).length
 
-    const blogRows = (blogs ?? []) as { client_id: string; status: string }[]
-    const countBy = (cid: string, st: string) => blogRows.filter((b) => b.client_id === cid && b.status === st).length
-
-    const rows = ((clients ?? []) as ClientRow[]).map((c) => {
-      const cfg = configOf(c)
+    const rows = ((accounts ?? []) as AccountRow[]).map((a) => {
+      const cfg = configOf(a)
       const valid = validateFramerConfig(cfg).ok
-      const missing = friendlyMissing(cfg, { brandContext: !!c.blog_brand_context })
-      const failed = countBy(c.id, 'gefaald')
+      const missing = friendlyMissing(cfg, { brandContext: !!a.briefing })
+      const failed = cnt(a.id, 'gefaald')
       const state = failed > 0 ? 'rood' : (valid && missing.length === 0) ? 'groen' : 'oranje'
       return {
-        id: c.id, company_name: c.company_name,
-        connected: !!(c.framer_project_url && c.framer_api_key),
-        project_url: c.framer_project_url,
-        collection_linked: !!c.framer_blog_collection_id,
-        framer_valid: valid,
-        missing,
-        last_sync: c.framer_last_sync,
-        published: countBy(c.id, 'gepubliceerd'),
-        review: countBy(c.id, 'klaar_voor_review'),
-        approved: countBy(c.id, 'goedgekeurd'),
-        failed,
-        state,
+        id: a.id, company_name: a.name, connected: !!(a.framer_project_url && a.framer_api_key),
+        project_url: a.framer_project_url, collection_linked: !!a.framer_blog_collection_id, framer_valid: valid,
+        missing, last_sync: a.framer_last_sync,
+        published: cnt(a.id, 'gepubliceerd'), review: cnt(a.id, 'klaar_voor_review'), approved: cnt(a.id, 'goedgekeurd'), failed, state,
       }
     })
 
     const publishedToday = (logs ?? []).filter((l: { actie: string; status: string }) => l.actie === 'publish' && l.status === 'ok').length
-    const failedToday = (logs ?? []).filter((l: { actie: string; status: string }) => l.status === 'gefaald').length
+    const failedToday = (logs ?? []).filter((l: { status: string }) => l.status === 'gefaald').length
     const stats = {
       linkedProjects: rows.filter((r) => r.framer_valid).length,
       activeProjects: rows.filter((r) => r.connected).length,
-      publishedToday,
-      failedTotal: rows.reduce((s, r) => s + r.failed, 0),
-      failedToday,
+      publishedToday, failedTotal: rows.reduce((s, r) => s + r.failed, 0), failedToday,
       readyToPublish: rows.reduce((s, r) => s + r.review + r.approved, 0),
     }
-
     return NextResponse.json({ rows, stats })
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
   }
 }
 
-// POST { action, client_id, collection_id? }
+// POST { action, account_id, collection_id? }
 export async function POST(req: NextRequest) {
   try {
     if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const b = await req.json()
-    if (!b.client_id) return NextResponse.json({ error: 'client_id vereist' }, { status: 400 })
+    if (!b.account_id) return NextResponse.json({ error: 'account_id vereist' }, { status: 400 })
     const admin = createAdminSupabaseClient()
-    const { data: c } = await admin.from('clients').select('id, company_name, framer_project_url, framer_api_key, framer_blog_collection_id, framer_field_map, framer_last_sync').eq('id', b.client_id).maybeSingle()
-    if (!c) return NextResponse.json({ error: 'Klant niet gevonden' }, { status: 404 })
-    const config = configOf(c as ClientRow)
+    const { data: a } = await admin.from('blog_accounts').select('id, name, framer_project_url, framer_api_key, framer_blog_collection_id, framer_field_map, framer_last_sync, briefing').eq('id', b.account_id).maybeSingle()
+    if (!a) return NextResponse.json({ error: 'Blogaccount niet gevonden' }, { status: 404 })
+    const config = configOf(a as AccountRow)
 
     if (b.action === 'test') {
       const r = await testFramerConnection(config)
-      await logFramerAction(b.client_id, null, 'test', r.ok ? 'ok' : 'gefaald', r.ok ? null : r.error)
+      await logFramerAction(b.account_id, null, 'test', r.ok ? 'ok' : 'gefaald', r.ok ? null : r.error)
       return NextResponse.json(r)
     }
     if (b.action === 'collections') {
       const r = await listFramerCollections(config)
-      await logFramerAction(b.client_id, null, 'connect', r.ok ? 'ok' : 'gefaald', r.ok ? null : r.error)
+      await logFramerAction(b.account_id, null, 'connect', r.ok ? 'ok' : 'gefaald', r.ok ? null : r.error)
       return NextResponse.json(r)
     }
     if (b.action === 'fields') {
-      const collId = b.collection_id || c.framer_blog_collection_id
+      const collId = b.collection_id || a.framer_blog_collection_id
       if (!collId) return NextResponse.json({ error: 'Geen collectie geselecteerd' }, { status: 400 })
       const r = await listFramerFields(config, collId)
       if (r.ok && r.fields) return NextResponse.json({ ok: true, fields: r.fields, suggested: suggestFieldMap(r.fields) })
@@ -111,12 +95,12 @@ export async function POST(req: NextRequest) {
     }
     if (b.action === 'analyze') {
       const r = await analyzeFramerProject(config)
-      await logFramerAction(b.client_id, null, 'connect', r.ok ? 'ok' : 'gefaald', r.ok ? null : r.error)
+      await logFramerAction(b.account_id, null, 'connect', r.ok ? 'ok' : 'gefaald', r.ok ? null : r.error)
       return NextResponse.json(r)
     }
     if (b.action === 'test_publish') {
       const r = await testPublish(config)
-      await logFramerAction(b.client_id, null, 'publish', r.ok ? 'ok' : 'gefaald', r.ok ? `Testpublicatie: ${r.error}` : 'Testpublicatie ok')
+      await logFramerAction(b.account_id, null, 'publish', r.ok ? 'ok' : 'gefaald', r.ok ? 'Testpublicatie ok' : `Testpublicatie: ${r.error}`)
       return NextResponse.json(r)
     }
     return NextResponse.json({ error: 'Onbekende actie' }, { status: 400 })

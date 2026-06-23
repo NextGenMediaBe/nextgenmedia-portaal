@@ -1,0 +1,118 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
+import { revalidatePath } from 'next/cache'
+import { encryptSecret, isEncrypted } from '@/lib/crypto'
+import { firstGenerationDate } from '@/lib/blog-dates'
+import { validateFramerConfig } from '@/lib/framer'
+
+// GET — alle blogaccounts + tellingen + klanten voor koppeling
+export async function GET() {
+  try {
+    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    const admin = createAdminSupabaseClient()
+    const [{ data: accounts }, { data: blogs }, { data: clients }] = await Promise.all([
+      admin.from('blog_accounts').select('*').order('name'),
+      admin.from('blogs').select('account_id, status'),
+      admin.from('clients').select('id, company_name').is('archived_at', null).order('company_name'),
+    ])
+    const nameById = new Map((clients ?? []).map((c: { id: string; company_name: string }) => [c.id, c.company_name]))
+    const blogRows = (blogs ?? []) as { account_id: string | null; status: string }[]
+    const cnt = (id: string, st: string) => blogRows.filter((b) => b.account_id === id && b.status === st).length
+
+    const rows = ((accounts ?? []) as Record<string, unknown>[]).map((a) => {
+      const cfg = { projectUrl: a.framer_project_url as string | null, apiKeyEncrypted: a.framer_api_key as string | null, collectionId: a.framer_blog_collection_id as string | null, fieldMap: (a.framer_field_map ?? null) as Record<string, string> | null }
+      return {
+        id: a.id, name: a.name, website_url: a.website_url, client_id: a.client_id,
+        client_name: a.client_id ? (nameById.get(a.client_id as string) ?? null) : null,
+        active: a.active, frequentie_maanden: a.frequentie_maanden, aantal_per_cyclus: a.aantal_per_cyclus,
+        startdatum: a.startdatum, volgende_generatie_datum: a.volgende_generatie_datum, max_live_blogs: a.max_live_blogs,
+        briefing: a.briefing, framer_project_url: a.framer_project_url, framer_blog_collection_id: a.framer_blog_collection_id,
+        framer_field_map: a.framer_field_map, has_api_key: !!a.framer_api_key, api_key_encrypted: isEncrypted(a.framer_api_key as string),
+        framer_valid: validateFramerConfig(cfg).ok,
+        published: cnt(a.id as string, 'gepubliceerd'), review: cnt(a.id as string, 'klaar_voor_review'), failed: cnt(a.id as string, 'gefaald'),
+      }
+    })
+    return NextResponse.json({ accounts: rows, clients: clients ?? [] })
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const actor = await requireAdmin()
+    if (!actor) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    const b = await req.json()
+    if (!b.name?.trim()) return NextResponse.json({ error: 'Naam is verplicht' }, { status: 400 })
+    const admin = createAdminSupabaseClient()
+    const freq = Math.max(1, Number(b.frequentie_maanden) || 1)
+    const start = b.startdatum || null
+    const insert: Record<string, unknown> = {
+      name: String(b.name).slice(0, 160), website_url: b.website_url || null, briefing: b.briefing || null,
+      client_id: b.client_id || null, frequentie_maanden: freq, aantal_per_cyclus: Math.max(1, Number(b.aantal_per_cyclus) || 1),
+      startdatum: start, max_live_blogs: b.max_live_blogs ? Math.max(1, Number(b.max_live_blogs)) : null,
+      framer_project_url: b.framer_project_url || null, framer_blog_collection_id: b.framer_blog_collection_id || null,
+      framer_field_map: b.framer_field_map ?? null, active: b.active !== false, created_by: actor.id,
+      volgende_generatie_datum: b.volgende_generatie_datum || (start ? firstGenerationDate(start, freq) : null),
+    }
+    if (typeof b.framer_api_key === 'string' && b.framer_api_key.trim()) insert.framer_api_key = encryptSecret(b.framer_api_key.trim())
+    const { data, error } = await admin.from('blog_accounts').insert(insert).select('id').single()
+    if (error) throw new Error(error.message)
+    try { revalidatePath('/admin/blogaccounts') } catch { }
+    return NextResponse.json({ id: data.id })
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 400 })
+    const b = await req.json()
+    if (!b.id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })
+    const admin = createAdminSupabaseClient()
+    const patch: Record<string, unknown> = {}
+    const map: Record<string, string> = {
+      name: 'name', website_url: 'website_url', briefing: 'briefing', client_id: 'client_id',
+      framer_project_url: 'framer_project_url', framer_blog_collection_id: 'framer_blog_collection_id',
+      volgende_generatie_datum: 'volgende_generatie_datum', startdatum: 'startdatum',
+    }
+    for (const [k, col] of Object.entries(map)) if (b[k] !== undefined) patch[col] = b[k] || null
+    if (b.frequentie_maanden !== undefined) patch.frequentie_maanden = Math.max(1, Number(b.frequentie_maanden) || 1)
+    if (b.aantal_per_cyclus !== undefined) patch.aantal_per_cyclus = Math.max(1, Number(b.aantal_per_cyclus) || 1)
+    if (b.max_live_blogs !== undefined) patch.max_live_blogs = b.max_live_blogs ? Math.max(1, Number(b.max_live_blogs)) : null
+    if (b.active !== undefined) patch.active = !!b.active
+    if (b.framer_field_map !== undefined) {
+      let fm = b.framer_field_map
+      if (typeof fm === 'string') { try { fm = fm.trim() ? JSON.parse(fm) : null } catch { return NextResponse.json({ error: 'Field map is geen geldige JSON' }, { status: 400 }) } }
+      patch.framer_field_map = fm || null
+    }
+    if (typeof b.framer_api_key === 'string' && b.framer_api_key.trim()) patch.framer_api_key = encryptSecret(b.framer_api_key.trim())
+    else if (b.framer_api_key === null) patch.framer_api_key = null
+    if (Object.keys(patch).length === 0) return NextResponse.json({ error: 'Geen wijzigingen' }, { status: 400 })
+    const { error } = await admin.from('blog_accounts').update(patch).eq('id', b.id)
+    if (error) throw new Error(error.message)
+    try { revalidatePath('/admin/blogaccounts') } catch { }
+    return NextResponse.json({ ok: true })
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+  }
+}
+
+// DELETE ?id= — enkel als er geen blogs aan hangen (anders inactief zetten).
+export async function DELETE(req: NextRequest) {
+  try {
+    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    const id = req.nextUrl.searchParams.get('id')
+    if (!id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })
+    const admin = createAdminSupabaseClient()
+    const { count } = await admin.from('blogs').select('id', { count: 'exact', head: true }).eq('account_id', id)
+    if ((count ?? 0) > 0) return NextResponse.json({ error: 'Account heeft blogs — zet het inactief in plaats van verwijderen.' }, { status: 400 })
+    const { error } = await admin.from('blog_accounts').delete().eq('id', id)
+    if (error) throw new Error(error.message)
+    try { revalidatePath('/admin/blogaccounts') } catch { }
+    return NextResponse.json({ ok: true })
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+  }
+}

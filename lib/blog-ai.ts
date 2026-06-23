@@ -10,6 +10,7 @@ export type BlogInput = {
   website?: string | null
   niche?: string | null
   brandContext?: string | null
+  websiteContent?: string | null
   recentTitles?: string[]
 }
 
@@ -43,10 +44,13 @@ Schrijf één SEO-vriendelijke blogpost.
 Bedrijf: ${input.clientName}
 Website: ${input.website || '—'}
 Niche: ${input.niche || '—'}
-Merkcontext: ${input.brandContext || '—'}
+Blog briefing / merkcontext: ${input.brandContext || '—'}
 
+${input.websiteContent ? `Relevante info van de website (gebruik dit voor concrete, niet-generieke content):\n${input.websiteContent}\n` : ''}
 Vermijd herhaling van deze recente titels:
 ${avoid || '- (geen)'}
+
+Schrijf specifiek en concreet op basis van bovenstaande info — vermijd generieke vultekst.
 
 Geef UITSLUITEND geldige JSON terug met deze velden:
 {

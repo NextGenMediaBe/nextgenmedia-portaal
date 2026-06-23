@@ -993,5 +993,87 @@ BEGIN
   CREATE TRIGGER trg_recurring_invoice_months_updated BEFORE UPDATE ON public.recurring_invoice_months FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 EXCEPTION WHEN others THEN NULL; END $$;
 
+-- ── blog_accounts: zelfstandige blog/Framer-entiteit (optioneel klant-gekoppeld)
+-- Blogs zijn niet langer verplicht aan een klant gekoppeld. Alle blog/Framer-
+-- configuratie verhuist naar blog_accounts; client_id is optioneel.
+CREATE TABLE IF NOT EXISTS public.blog_accounts (
+  id                         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name                       text NOT NULL,
+  website_url                text,
+  framer_project_url         text,
+  framer_api_key             text,           -- AES-GCM encrypted
+  framer_blog_collection_id  text,
+  framer_field_map           jsonb,
+  frequentie_maanden         integer NOT NULL DEFAULT 1,
+  aantal_per_cyclus          integer NOT NULL DEFAULT 1,
+  startdatum                 date,
+  volgende_generatie_datum   date,
+  max_live_blogs             integer,
+  briefing                   text,
+  active                     boolean NOT NULL DEFAULT true,
+  client_id                  uuid REFERENCES public.clients(id) ON DELETE SET NULL,
+  framer_last_sync           timestamptz,
+  created_by                 uuid,
+  created_at                 timestamptz NOT NULL DEFAULT now(),
+  updated_at                 timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_blog_accounts_client ON public.blog_accounts (client_id);
+
+ALTER TABLE public.blog_accounts ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "blog accounts admin all"  ON public.blog_accounts;
+DROP POLICY IF EXISTS "blog accounts client read" ON public.blog_accounts;
+CREATE POLICY "blog accounts admin all" ON public.blog_accounts
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+CREATE POLICY "blog accounts client read" ON public.blog_accounts
+  FOR SELECT TO authenticated
+  USING (client_id IN (SELECT id FROM public.clients WHERE owner_user_id = auth.uid()));
+
+-- framer_logs kan ook per blogaccount gelogd worden (zonder klant-FK).
+ALTER TABLE public.framer_logs ADD COLUMN IF NOT EXISTS account_id uuid;
+
+-- blogs koppelen aan een blogaccount; client_id wordt optioneel.
+ALTER TABLE public.blogs ADD COLUMN IF NOT EXISTS account_id uuid REFERENCES public.blog_accounts(id) ON DELETE CASCADE;
+DO $$ BEGIN ALTER TABLE public.blogs ALTER COLUMN client_id DROP NOT NULL; EXCEPTION WHEN others THEN NULL; END $$;
+CREATE INDEX IF NOT EXISTS idx_blogs_account ON public.blogs (account_id);
+
+-- Wie heeft een blog (in het klantenportaal) laatst bewerkt?
+ALTER TABLE public.blogs ADD COLUMN IF NOT EXISTS laatst_bewerkt_door text;
+ALTER TABLE public.blogs ADD COLUMN IF NOT EXISTS laatst_bewerkt_op   timestamptz;
+
+-- Klant mag enkel de blogs van zijn eigen (gekoppelde) blogaccount LEZEN.
+-- Bewerken loopt via de server-API (service role) zodat push-naar-Framer + logging
+-- centraal en gecontroleerd gebeurt.
+DROP POLICY IF EXISTS "blogs client read" ON public.blogs;
+CREATE POLICY "blogs client read" ON public.blogs
+  FOR SELECT TO authenticated
+  USING (client_id IN (SELECT id FROM public.clients WHERE owner_user_id = auth.uid()));
+
+DO $$
+BEGIN
+  DROP TRIGGER IF EXISTS trg_blog_accounts_updated ON public.blog_accounts;
+  CREATE TRIGGER trg_blog_accounts_updated BEFORE UPDATE ON public.blog_accounts FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+EXCEPTION WHEN others THEN NULL; END $$;
+
+-- ── Datamigratie: bestaande klant-bloginstellingen → blogaccounts ─────────────
+-- Idempotent: maakt enkel accounts voor klanten met blogs_inbegrepen die er nog
+-- geen hebben, en koppelt bestaande blogs op basis van client_id.
+DO $$
+BEGIN
+  INSERT INTO public.blog_accounts (name, website_url, framer_project_url, framer_api_key, framer_blog_collection_id, framer_field_map, frequentie_maanden, aantal_per_cyclus, startdatum, volgende_generatie_datum, briefing, active, client_id, framer_last_sync)
+  SELECT c.company_name, c.website_url, c.framer_project_url, c.framer_api_key, c.framer_blog_collection_id, c.framer_field_map,
+         COALESCE(c.blog_frequentie_maanden, 1), COALESCE(c.blog_aantal_per_cyclus, 1), c.blog_startdatum, c.blog_volgende_generatie_datum,
+         c.blog_brand_context, true, c.id, c.framer_last_sync
+  FROM public.clients c
+  WHERE c.blogs_inbegrepen = true
+    AND NOT EXISTS (SELECT 1 FROM public.blog_accounts a WHERE a.client_id = c.id);
+
+  UPDATE public.blogs b
+     SET account_id = a.id
+    FROM public.blog_accounts a
+   WHERE b.account_id IS NULL AND b.client_id IS NOT NULL AND a.client_id = b.client_id;
+EXCEPTION WHEN others THEN NULL; END $$;
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.

@@ -9,7 +9,7 @@ export async function FramerStatusWidget() {
     const admin = createAdminSupabaseClient()
     const startToday = new Date(); startToday.setHours(0, 0, 0, 0)
     const [{ data: clients }, { data: blogs }, { data: logs }] = await Promise.all([
-      admin.from('clients').select('framer_project_url, framer_api_key, framer_blog_collection_id, framer_field_map').eq('blogs_inbegrepen', true).is('archived_at', null),
+      admin.from('blog_accounts').select('framer_project_url, framer_api_key, framer_blog_collection_id, framer_field_map').eq('active', true),
       admin.from('blogs').select('status'),
       admin.from('framer_logs').select('actie, status, created_at').gte('created_at', startToday.toISOString()),
     ])

@@ -83,7 +83,7 @@ function ClientCard({ row, onChanged }: { row: Row; onChanged: () => void }) {
   const call = async (action: string, extra?: object) => {
     setBusy(action)
     try {
-      const res = await fetch('/api/admin/framer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, client_id: row.id, ...extra }) })
+      const res = await fetch('/api/admin/framer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, account_id: row.id, ...extra }) })
       const j = await res.json(); if (!res.ok || j.ok === false) throw new Error(j.error || 'Mislukt')
       return j
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Fout'); return null } finally { setBusy(null) }
@@ -92,7 +92,7 @@ function ClientCard({ row, onChanged }: { row: Row; onChanged: () => void }) {
   const saveSettings = async (patch: object, msg: string) => {
     setBusy('save')
     try {
-      const res = await fetch('/api/admin/blog-settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ client_id: row.id, ...patch }) })
+      const res = await fetch('/api/admin/blog-accounts', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: row.id, ...patch }) })
       const j = await res.json(); if (!res.ok) throw new Error(j.error)
       toast.success(msg); onChanged()
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Fout') } finally { setBusy(null) }
@@ -149,7 +149,7 @@ function ClientCard({ row, onChanged }: { row: Row; onChanged: () => void }) {
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Link href={`/admin/blogs?client=${row.id}`} className="btn-secondary text-xs">Review</Link>
+          <Link href={`/admin/blogs?account=${row.id}`} className="btn-secondary text-xs">Review</Link>
           <button onClick={() => setOpen((o) => !o)} className="btn-secondary text-xs">{open ? 'Sluiten' : 'Beheren'}</button>
         </div>
       </div>

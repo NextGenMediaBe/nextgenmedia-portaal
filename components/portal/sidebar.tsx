@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { useRefresh } from '@/lib/use-refresh'
 import { Logo } from '@/components/logo'
-import { LayoutDashboard, FileText, Calendar, Globe, LogOut, RefreshCcw, Menu, X, ListChecks } from 'lucide-react'
+import { LayoutDashboard, FileText, Calendar, Globe, LogOut, RefreshCcw, Menu, X, ListChecks, Newspaper } from 'lucide-react'
 
 type NavItem = {
   label: string
@@ -15,6 +15,7 @@ type NavItem = {
   icon: React.ElementType
   exact?: boolean
   requiresService?: string
+  requiresBlogs?: boolean
 }
 
 const NAV: NavItem[] = [
@@ -23,14 +24,17 @@ const NAV: NavItem[] = [
   { label: 'Taken',        href: '/portal/tasks',         icon: ListChecks },
   { label: 'Social Media', href: '/portal/social-media',  icon: Calendar, requiresService: 'social-media' },
   { label: 'Website',      href: '/portal/website',       icon: Globe,    requiresService: 'webdesign' },
+  { label: 'Blogs',        href: '/portal/blogs',         icon: Newspaper, requiresBlogs: true },
 ]
 
 export function PortalSidebar({
   companyName,
   activeServices = [],
+  hasBlogs = false,
 }: {
   companyName: string
   activeServices?: string[]
+  hasBlogs?: boolean
 }) {
   const pathname = usePathname()
   const router = useRouter()
@@ -46,7 +50,9 @@ export function PortalSidebar({
   const closeMobile = () => setMobileOpen(false)
 
   const visibleNav = NAV.filter(
-    (item) => !item.requiresService || activeServices.includes(item.requiresService)
+    (item) =>
+      (!item.requiresService || activeServices.includes(item.requiresService)) &&
+      (!item.requiresBlogs || hasBlogs)
   )
 
   return (

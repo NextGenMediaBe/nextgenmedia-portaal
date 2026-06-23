@@ -83,7 +83,7 @@ export function buildFieldData(fieldMap: Record<string, string>, blog: BlogForPu
  * `pending`-resultaat terug i.p.v. een echte publicatie — zo gaat er nooit
  * ongeteste/niet-goedgekeurde content live en blijft de build groen.
  */
-export async function publishBlogToFramer(config: FramerClientConfig, blog: BlogForPublish, opts?: { confirmOverride?: boolean; clientId?: string }): Promise<PublishResult> {
+export async function publishBlogToFramer(config: FramerClientConfig, blog: BlogForPublish, opts?: { confirmOverride?: boolean; accountId?: string }): Promise<PublishResult> {
   const v = validateFramerConfig(config)
   if (!v.ok) return { ok: false, error: `Ontbrekende Framer-configuratie: ${v.missing.join(', ')}` }
 
@@ -101,7 +101,7 @@ export async function publishBlogToFramer(config: FramerClientConfig, blog: Blog
   // connect() neemt per aanroep project + key → elke klant publiceert naar zijn
   // eigen Framer-project. Dynamische import zodat de (ESM) package alleen laadt
   // wanneer er effectief gepubliceerd wordt.
-  const cid = opts?.clientId ?? null
+  const cid = opts?.accountId ?? null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let framer: any = null
   try {
@@ -167,17 +167,17 @@ export async function publishBlogToFramer(config: FramerClientConfig, blog: Blog
 
 type FramerAction = 'connect' | 'getChangedPaths' | 'publish' | 'deploy' | 'disconnect' | 'test'
 
-/** Best-effort logregel in framer_logs. Breekt nooit de flow. */
-export async function logFramerAction(clientId: string | null, blogId: string | null, actie: FramerAction, status: 'ok' | 'gefaald', foutmelding?: string | null): Promise<void> {
+/** Best-effort logregel in framer_logs (per blogaccount). Breekt nooit de flow. */
+export async function logFramerAction(accountId: string | null, blogId: string | null, actie: FramerAction, status: 'ok' | 'gefaald', foutmelding?: string | null): Promise<void> {
   try {
     const admin = createAdminSupabaseClient()
-    await admin.from('framer_logs').insert({ client_id: clientId, blog_id: blogId, actie, status, foutmelding: foutmelding ?? null })
+    await admin.from('framer_logs').insert({ account_id: accountId, blog_id: blogId, actie, status, foutmelding: foutmelding ?? null })
   } catch { /* logging mag nooit breken */ }
 }
 
-/** Markeert de laatste geslaagde synchronisatie van een klant. */
-export async function markFramerSync(clientId: string): Promise<void> {
-  try { await createAdminSupabaseClient().from('clients').update({ framer_last_sync: new Date().toISOString() }).eq('id', clientId) } catch { }
+/** Markeert de laatste geslaagde synchronisatie van een blogaccount. */
+export async function markFramerSync(accountId: string): Promise<void> {
+  try { await createAdminSupabaseClient().from('blog_accounts').update({ framer_last_sync: new Date().toISOString() }).eq('id', accountId) } catch { }
 }
 
 /** Automatische field-map-suggestie op basis van veldnamen. */

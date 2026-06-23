@@ -10,14 +10,14 @@ export async function BlogStatusWidget() {
     const todayStr = today.toISOString().slice(0, 10)
     const weekStr = new Date(today.getTime() + 7 * 86400e3).toISOString().slice(0, 10)
 
-    const [{ data: clients }, { data: blogs }] = await Promise.all([
-      admin.from('clients').select('blog_volgende_generatie_datum').eq('blogs_inbegrepen', true).is('archived_at', null),
+    const [{ data: accounts }, { data: blogs }] = await Promise.all([
+      admin.from('blog_accounts').select('volgende_generatie_datum').eq('active', true),
       admin.from('blogs').select('status'),
     ])
-    const cs = (clients ?? []) as { blog_volgende_generatie_datum: string | null }[]
+    const cs = (accounts ?? []) as { volgende_generatie_datum: string | null }[]
     activeClients = cs.length
-    dueToday = cs.filter((c) => c.blog_volgende_generatie_datum && c.blog_volgende_generatie_datum <= todayStr).length
-    dueWeek = cs.filter((c) => c.blog_volgende_generatie_datum && c.blog_volgende_generatie_datum > todayStr && c.blog_volgende_generatie_datum <= weekStr).length
+    dueToday = cs.filter((c) => c.volgende_generatie_datum && c.volgende_generatie_datum <= todayStr).length
+    dueWeek = cs.filter((c) => c.volgende_generatie_datum && c.volgende_generatie_datum > todayStr && c.volgende_generatie_datum <= weekStr).length
     const b = (blogs ?? []) as { status: string }[]
     review = b.filter((x) => x.status === 'klaar_voor_review').length
     published = b.filter((x) => x.status === 'gepubliceerd').length
@@ -29,7 +29,7 @@ export async function BlogStatusWidget() {
   if (activeClients === 0 && review === 0 && published === 0) return null
 
   const cells = [
-    { label: 'Actieve blogklanten', value: activeClients, color: 'text-gray-900' },
+    { label: 'Actieve blogaccounts', value: activeClients, color: 'text-gray-900' },
     { label: 'Klaar voor review', value: review, color: 'text-amber-600' },
     { label: 'Gepubliceerd', value: published, color: 'text-green-600' },
     { label: 'Gefaald', value: failed, color: 'text-red-600' },
