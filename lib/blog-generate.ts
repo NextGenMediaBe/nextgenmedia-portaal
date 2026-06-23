@@ -5,6 +5,7 @@ import { buildEmailHtml, buildEmailText } from '@/lib/email-html'
 import { generateBlog, slugify, type BlogMemory, type BlogKnowledge } from '@/lib/blog-ai'
 import { nextGenerationDate, todayISO } from '@/lib/blog-dates'
 import { analyzeWebsiteDeep, analysisToPromptText, type WebsiteAnalysis } from '@/lib/website-analyze'
+import { findStockImage } from '@/lib/blog-image'
 
 export type BlogAccount = {
   id: string; name: string; website_url: string | null; briefing: string | null
@@ -65,10 +66,14 @@ export async function generateBlogsForAccount(account: BlogAccount, count: numbe
     while (usedSlugs.has(slug)) { slug = `${blog.slug}-${n++}` }
     usedSlugs.add(slug)
 
+    // Gratis passende stockfoto (Pexels) op basis van de AI-zoekterm; best-effort.
+    const imageQuery = blog.image_query || blog.keywords.slice(0, 3).join(' ') || blog.topic || account.name
+    const thumbnail = blog.thumbnail_url || (await findStockImage(imageQuery))
+
     const { data, error } = await admin.from('blogs').insert({
       account_id: account.id, client_id: account.client_id ?? null,
       titel: blog.titel, slug, content: blog.content, meta_title: blog.meta_title,
-      meta_description: blog.meta_description, thumbnail_url: blog.thumbnail_url, status: 'klaar_voor_review',
+      meta_description: blog.meta_description, thumbnail_url: thumbnail, status: 'klaar_voor_review',
       tags: blog.tags?.length ? blog.tags : null,
       // Optionele gewenste publicatiedatum meteen meegeven; effectieve planning
       // gebeurt pas bij goedkeuren in de kalender.

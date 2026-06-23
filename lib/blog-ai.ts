@@ -48,6 +48,7 @@ export type GeneratedBlog = {
   cta: string
   internal_link_suggestions: string[]
   tags: string[]
+  image_query: string   // Engelse zoekterm voor een passende stockfoto
   word_count: number
 }
 
@@ -132,6 +133,8 @@ de gekozen invalshoek in enkele woorden
 de call-to-action die je gebruikt hebt
 ===INTERNAL_LINKS===
 suggesties voor interne links, één per regel
+===IMAGE_QUERY===
+2 tot 4 Engelse zoekwoorden voor een passende stockfoto (bv. "modern office team meeting")
 ===CONTENT===
 de volledige blog in Markdown met ## tussenkoppen, praktische voorbeelden en een afsluitende CTA (minimaal 1200 woorden). Schrijf hier vrijuit; dit is het laatste veld.`
 
@@ -179,6 +182,7 @@ de volledige blog in Markdown met ## tussenkoppen, praktische voorbeelden en een
     cta: section('CTA').slice(0, 300),
     internal_link_suggestions: list(section('INTERNAL_LINKS'), /\n/),
     tags: list(section('TAGS'), /[,\n]/).slice(0, 6),
+    image_query: section('IMAGE_QUERY').replace(/["']/g, '').slice(0, 100),
     word_count: content.trim().split(/\s+/).filter(Boolean).length,
   }
 }

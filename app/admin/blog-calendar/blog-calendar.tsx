@@ -177,7 +177,7 @@ const STATUS_CLS: Record<string, string> = { klaar_voor_review: 'bg-amber-100 te
 
 function BlogEditorModal({ blog, onClose }: { blog: CalBlog; onClose: () => void }) {
   const router = useRouter()
-  const [f, setF] = useState({ titel: blog.titel, content: blog.content ?? '', meta_title: blog.meta_title ?? '', meta_description: blog.meta_description ?? '' })
+  const [f, setF] = useState({ titel: blog.titel, content: blog.content ?? '', meta_title: blog.meta_title ?? '', meta_description: blog.meta_description ?? '', thumbnail_url: blog.thumbnail_url ?? '' })
   const [date, setDate] = useState(blog.publish_at ? blog.publish_at.slice(0, 10) : '')
   const [busy, setBusy] = useState<string | null>(null)
 
@@ -238,6 +238,14 @@ function BlogEditorModal({ blog, onClose }: { blog: CalBlog; onClose: () => void
           <div className="grid sm:grid-cols-2 gap-3">
             <div><label className="block text-xs text-gray-600 mb-1">Meta titel</label><input className={inp} value={f.meta_title} onChange={(e) => setF((x) => ({ ...x, meta_title: e.target.value }))} /></div>
             <div><label className="block text-xs text-gray-600 mb-1">Meta beschrijving</label><input className={inp} value={f.meta_description} onChange={(e) => setF((x) => ({ ...x, meta_description: e.target.value }))} /></div>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-600 mb-1">Afbeelding (URL)</label>
+            <input className={inp} value={f.thumbnail_url} onChange={(e) => setF((x) => ({ ...x, thumbnail_url: e.target.value }))} placeholder="Automatisch ingevuld; plak hier een eigen foto-URL om te vervangen" />
+            {f.thumbnail_url && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={f.thumbnail_url} alt="" className="mt-2 h-28 w-full object-cover rounded-lg border border-gray-100" />
+            )}
           </div>
 
           <div className="flex items-center gap-2 pt-1">
