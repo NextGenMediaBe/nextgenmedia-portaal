@@ -31,6 +31,7 @@ export type BlogInput = {
   recentTitles?: string[]
   memory?: BlogMemory | null        // reeds gebruikte onderwerpen/keywords/invalshoeken/CTA's
   knowledge?: BlogKnowledge | null  // kennisbank — HOOGSTE prioriteit
+  topic?: string | null             // optioneel opgelegd onderwerp
 }
 
 export type GeneratedBlog = {
@@ -101,6 +102,7 @@ Blog briefing / merkcontext: ${input.brandContext || '—'}
 
 ${input.websiteContent ? `Website-analyse (gebruik dit voor concrete, niet-generieke content — diensten, doelgroep, tone of voice, zoekwoorden):\n${input.websiteContent}\n` : ''}
 ${memBlock}
+${input.topic ? `Gevraagd onderwerp (verplicht de blog hierover schrijven): ${input.topic}\n` : ''}
 Vermijd herhaling van deze recente titels:
 ${avoid || '- (geen)'}
 

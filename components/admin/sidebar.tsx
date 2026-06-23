@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, Users, FileText, UserSquare2, ArrowLeftRight, TrendingUp,
   LogOut, ChevronDown, Globe, Calendar, Briefcase, RefreshCcw, Menu, X,
-  Info, ClipboardList, CalendarDays, PieChart, ShoppingCart, Mail, Receipt, Newspaper, Plug,
+  Info, ClipboardList, CalendarDays, PieChart, ShoppingCart, Mail, Receipt, Newspaper,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useRefresh } from '@/lib/use-refresh'
@@ -25,13 +25,10 @@ const NAV = [
     ],
   },
   {
-    label: 'Blog & CMS', href: '/admin/cms', icon: Newspaper,
+    label: 'Blogs', href: '/admin/blog-calendar', icon: Newspaper,
     children: [
-      { label: 'CMS Manager',   href: '/admin/cms',          icon: LayoutDashboard },
-      { label: 'Blogaccounts',  href: '/admin/blogaccounts', icon: Newspaper },
-      { label: 'Blog review',   href: '/admin/blogs',        icon: FileText },
-      { label: 'Blog Kalender', href: '/admin/blog-calendar', icon: CalendarDays },
-      { label: 'Framer Manager', href: '/admin/framer',      icon: Plug },
+      { label: 'Projecten', href: '/admin/blogaccounts',  icon: Newspaper },
+      { label: 'Kalender',  href: '/admin/blog-calendar', icon: CalendarDays },
     ],
   },
   { label: 'Partners',    href: '/admin/partners',     icon: UserSquare2 },

@@ -48,9 +48,9 @@ export async function POST(req: NextRequest) {
     const { data: account } = await admin.from('blog_accounts').select(BLOG_ACCOUNT_COLS).eq('id', b.account_id).maybeSingle()
     if (!account) return NextResponse.json({ error: 'Blogaccount niet gevonden' }, { status: 404 })
     const count = Math.max(1, Number(b.count) || (account as BlogAccount).aantal_per_cyclus || 1)
-    const created = await generateBlogsForAccount(account as BlogAccount, count)
+    const created = await generateBlogsForAccount(account as BlogAccount, count, { topic: b.topic || null, publishAt: b.publish_at || null })
     await sendBlogReviewMail(account as BlogAccount, created)
-    try { revalidatePath('/admin/blogs') } catch { }
+    try { revalidatePath('/admin/blogs'); revalidatePath('/admin/blog-calendar') } catch { }
     return NextResponse.json({ created: created.length })
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
@@ -140,12 +140,21 @@ export async function PATCH(req: NextRequest) {
     if (b.action === 'approve') {
       const { data: account } = await admin.from('blog_accounts').select(FRAMER_COLS).eq('id', blog.account_id).maybeSingle()
       const mode = b.publish_mode || blog.publish_mode || 'now'
+      const when = b.publish_at || blog.publish_at || null
+
+      // "Concept houden": niet publiceren, terug als concept/review klaarzetten.
+      if (mode === 'concept') {
+        const { error } = await admin.from('blogs').update({ status: 'klaar_voor_review', publish_mode: 'now', publish_at: null, sync_status: null, foutmelding: null }).eq('id', b.id)
+        if (error) throw new Error(error.message)
+        try { revalidatePath('/admin/blogs'); revalidatePath('/admin/blog-calendar') } catch { }
+        return NextResponse.json({ ok: true, concept: true })
+      }
 
       // "Publiceer later": plannen i.p.v. nu publiceren.
-      if (mode === 'scheduled' && b.publish_at) {
-        const { error } = await admin.from('blogs').update({ status: 'goedgekeurd', goedgekeurd_op: blog.goedgekeurd_op ?? new Date().toISOString(), publish_mode: 'scheduled', publish_at: b.publish_at, sync_status: 'pending', foutmelding: null }).eq('id', b.id)
+      if (mode === 'scheduled' && when) {
+        const { error } = await admin.from('blogs').update({ status: 'goedgekeurd', goedgekeurd_op: blog.goedgekeurd_op ?? new Date().toISOString(), publish_mode: 'scheduled', publish_at: when, sync_status: 'pending', foutmelding: null }).eq('id', b.id)
         if (error) throw new Error(error.message)
-        try { revalidatePath('/admin/blogs') } catch { }
+        try { revalidatePath('/admin/blogs'); revalidatePath('/admin/blog-calendar') } catch { }
         return NextResponse.json({ ok: true, scheduled: true })
       }
 

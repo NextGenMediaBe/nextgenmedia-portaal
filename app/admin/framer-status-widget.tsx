@@ -39,11 +39,11 @@ export async function FramerStatusWidget() {
     <div className="card-base">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="font-semibold text-gray-900 text-sm flex items-center gap-2"><Plug className="h-4 w-4 text-gray-400" />Framer status</h2>
-        <Link href="/admin/framer" className="text-xs text-gray-400 hover:text-black flex items-center gap-1">Framer Manager <ArrowRight className="h-3 w-3" /></Link>
+        <Link href="/admin/blogaccounts" className="text-xs text-gray-400 hover:text-black flex items-center gap-1">Framer <ArrowRight className="h-3 w-3" /></Link>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
         {cells.map((c) => (
-          <Link key={c.label} href="/admin/framer" className="rounded-xl border border-gray-100 p-3 hover:bg-gray-50 transition-colors">
+          <Link key={c.label} href="/admin/blogaccounts" className="rounded-xl border border-gray-100 p-3 hover:bg-gray-50 transition-colors">
             <div className="text-[11px] text-gray-500">{c.label}</div>
             <div className={`mt-0.5 text-xl font-bold ${c.color}`}>{c.value}</div>
           </Link>

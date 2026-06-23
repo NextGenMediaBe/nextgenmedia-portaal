@@ -3,7 +3,7 @@ import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { encryptSecret, isEncrypted } from '@/lib/crypto'
 import { firstGenerationDate } from '@/lib/blog-dates'
-import { validateFramerConfig } from '@/lib/framer'
+import { validateFramerConfig, analyzeFramerProject, listFramerFields, suggestFieldMap, type FramerClientConfig } from '@/lib/framer'
 import { analyzeWebsiteDeep, buildSiteSignature } from '@/lib/website-analyze'
 import { computeHealth } from '@/lib/blog-health'
 import { getCronState, runWebsiteMonitor } from '@/lib/blog-automation'
@@ -63,6 +63,40 @@ export async function POST(req: NextRequest) {
     if (!actor) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const b = await req.json()
     const admin = createAdminSupabaseClient()
+
+    // 1-klik "Koppel Framer": detecteert automatisch de blogcollectie + velden
+    // en bewaart die. De gebruiker hoeft geen Collection ID of Field Map te zien.
+    if (b.action === 'connect_framer') {
+      if (!b.id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })
+      const { data: acc } = await admin.from('blog_accounts').select('framer_project_url, framer_api_key').eq('id', b.id).maybeSingle()
+      if (!acc) return NextResponse.json({ error: 'Blogproject niet gevonden' }, { status: 404 })
+      const config: FramerClientConfig = { projectUrl: acc.framer_project_url, apiKeyEncrypted: acc.framer_api_key, collectionId: null, fieldMap: null }
+      if (!config.projectUrl) return NextResponse.json({ error: 'Vul eerst de Framer projectlink in.' }, { status: 400 })
+      if (!config.apiKeyEncrypted) return NextResponse.json({ error: 'Vul eerst de Framer toegangssleutel in.' }, { status: 400 })
+
+      const r = await analyzeFramerProject(config)
+      if (!r.ok) return NextResponse.json({ error: r.error || 'Kon geen verbinding maken met Framer.' }, { status: 400 })
+      // Kies de blogcollectie: gedetecteerd, anders de enige/eerste collectie.
+      let collectionId = r.detectedId ?? null
+      let fieldMap = r.suggested ?? null
+      if (!collectionId) {
+        const first = (r.collections ?? [])[0]
+        if (!first) return NextResponse.json({ error: 'Geen CMS-collecties gevonden in dit Framer-project.' }, { status: 400 })
+        collectionId = first.id
+      }
+      // Velden ophalen indien nog niet voorgesteld (bv. bij meerdere collecties).
+      if (!fieldMap || Object.keys(fieldMap).length === 0) {
+        const f = await listFramerFields(config, collectionId)
+        if (f.ok && f.fields) fieldMap = suggestFieldMap(f.fields)
+      }
+      if (!fieldMap || !fieldMap.titel || !fieldMap.content) {
+        return NextResponse.json({ error: 'Verbonden, maar kon de titel-/inhoudvelden niet automatisch herkennen in de collectie.' }, { status: 400 })
+      }
+      await admin.from('blog_accounts').update({ framer_blog_collection_id: collectionId, framer_field_map: fieldMap }).eq('id', b.id)
+      try { revalidatePath('/admin/blogaccounts') } catch { }
+      const colName = (r.collections ?? []).find((c) => c.id === collectionId)?.name ?? 'blogcollectie'
+      return NextResponse.json({ ok: true, collection: colName })
+    }
 
     // Website opnieuw analyseren (gecached resultaat verversen).
     if (b.action === 'reanalyze') {

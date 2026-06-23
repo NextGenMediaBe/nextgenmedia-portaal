@@ -41,7 +41,7 @@ export async function getOrAnalyzeWebsite(account: BlogAccount): Promise<Website
 }
 
 /** Genereert `count` blogs voor een blogaccount; opslaan als klaar_voor_review. */
-export async function generateBlogsForAccount(account: BlogAccount, count: number): Promise<{ id: string; titel: string }[]> {
+export async function generateBlogsForAccount(account: BlogAccount, count: number, opts?: { topic?: string | null; publishAt?: string | null }): Promise<{ id: string; titel: string }[]> {
   const admin = createAdminSupabaseClient()
 
   const { data: recent } = await admin.from('blogs').select('titel, slug').eq('account_id', account.id).order('gegenereerd_op', { ascending: false }).limit(50)
@@ -51,13 +51,14 @@ export async function generateBlogsForAccount(account: BlogAccount, count: numbe
   const analysis = await getOrAnalyzeWebsite(account)
   const websiteContent = analysisToPromptText(analysis)
   const memory: BlogMemory = { ...emptyMemory(), ...(account.blog_memory ?? {}) }
+  const publishAt = opts?.publishAt || null
 
   const created: { id: string; titel: string }[] = []
   for (let i = 0; i < Math.max(1, count); i++) {
     const blog = await generateBlog({
       clientName: account.name, website: account.website_url, brandContext: account.briefing,
       websiteContent, recentTitles: [...recentTitles, ...created.map((c) => c.titel)], memory,
-      knowledge: account.knowledge ?? null,
+      knowledge: account.knowledge ?? null, topic: opts?.topic ?? null,
     })
     let slug = blog.slug || slugify(blog.titel)
     let n = 2
@@ -69,6 +70,9 @@ export async function generateBlogsForAccount(account: BlogAccount, count: numbe
       titel: blog.titel, slug, content: blog.content, meta_title: blog.meta_title,
       meta_description: blog.meta_description, thumbnail_url: blog.thumbnail_url, status: 'klaar_voor_review',
       tags: blog.tags?.length ? blog.tags : null,
+      // Optionele gewenste publicatiedatum meteen meegeven; effectieve planning
+      // gebeurt pas bij goedkeuren in de kalender.
+      publish_mode: publishAt ? 'scheduled' : 'now', publish_at: publishAt,
     }).select('id, titel').single()
     if (!error && data) {
       created.push(data)

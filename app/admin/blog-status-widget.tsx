@@ -40,11 +40,11 @@ export async function BlogStatusWidget() {
     <div className="card-base">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="font-semibold text-gray-900 text-sm flex items-center gap-2"><Newspaper className="h-4 w-4 text-gray-400" />Blog Manager</h2>
-        <Link href="/admin/blogs" className="text-xs text-gray-400 hover:text-black flex items-center gap-1">Blogs <ArrowRight className="h-3 w-3" /></Link>
+        <Link href="/admin/blog-calendar" className="text-xs text-gray-400 hover:text-black flex items-center gap-1">Blogs <ArrowRight className="h-3 w-3" /></Link>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
         {cells.map((c) => (
-          <Link key={c.label} href="/admin/blogs" className="rounded-xl border border-gray-100 p-3 hover:bg-gray-50 transition-colors">
+          <Link key={c.label} href="/admin/blog-calendar" className="rounded-xl border border-gray-100 p-3 hover:bg-gray-50 transition-colors">
             <div className="text-[11px] text-gray-500">{c.label}</div>
             <div className={`mt-0.5 text-xl font-bold ${c.color}`}>{c.value}</div>
           </Link>

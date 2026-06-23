@@ -59,8 +59,8 @@ export function ClientBlogs({ clientId }: { clientId: string }) {
             {account.failed > 0 && <span className="status-badge bg-red-100 text-red-700">{account.failed} gefaald</span>}
           </div>
           <div className="flex gap-2 flex-wrap">
-            <Link href={`/admin/blogs?account=${account.id}`} className="btn-secondary text-sm">Review</Link>
-            <Link href="/admin/framer" className="btn-secondary text-sm">Framer Manager</Link>
+            <Link href={`/admin/blog-calendar?account=${account.id}`} className="btn-secondary text-sm">Kalender</Link>
+            <Link href="/admin/blogaccounts" className="btn-secondary text-sm">Blogproject</Link>
             <button onClick={generate} disabled={busy} className="btn-primary text-sm">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}Genereer nu</button>
           </div>
         </>

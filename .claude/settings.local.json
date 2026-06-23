@@ -75,7 +75,11 @@
       "WebFetch(domain:www.framer.com)",
       "WebFetch(domain:github.com)",
       "Bash(node -e \"try{const p=require\\('framer-api/package.json'\\);console.log\\('version',p.version,'types:',p.types||p.typings||'\\(none\\)','type:',p.type||'commonjs'\\);}catch\\(e\\){console.log\\('resolve fail',e.message\\)}\")",
-      "Bash(cd \"/c/Users/12401776/Downloads/NextGenMedia Content-Portal \\(1\\)\" && cat node_modules/framer-api/package.json 2>/dev/null | head -40; echo \"---FILES---\"; ls node_modules/framer-api/dist 2>/dev/null || ls node_modules/framer-api 2>/dev/null)"
+      "Bash(cd \"/c/Users/12401776/Downloads/NextGenMedia Content-Portal \\(1\\)\" && cat node_modules/framer-api/package.json 2>/dev/null | head -40; echo \"---FILES---\"; ls node_modules/framer-api/dist 2>/dev/null || ls node_modules/framer-api 2>/dev/null)",
+      "Bash(cd \"/c/Users/12401776/Downloads/NextGenMedia Content-Portal \\(1\\)\" && grep -rn \"/admin/blogs\\\\b\\\\|/admin/framer\\\\b\\\\|/admin/cms\\\\b\" app/admin/blog-status-widget.tsx app/admin/framer-status-widget.tsx \"app/admin/clients/[id]/client-blogs.tsx\" 2>/dev/null)",
+      "Bash(sed -i 's#href=\"/admin/blogs\"#href=\"/admin/blog-calendar\"#g' app/admin/blog-status-widget.tsx)",
+      "Bash(sed -i 's#href=\"/admin/framer\"#href=\"/admin/blogaccounts\"#g' app/admin/framer-status-widget.tsx)",
+      "Bash(sed -i 's#Framer Manager <ArrowRight#Framer <ArrowRight#g' app/admin/framer-status-widget.tsx)"
     ]
   }
 }
