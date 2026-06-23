@@ -39,8 +39,21 @@ export function BlogAccountsManager() {
   const remove = async (a: Account) => {
     if (!confirm(`Blogproject "${a.name}" verwijderen?`)) return
     setBusy(a.id)
-    try { const res = await fetch(`/api/admin/blog-accounts?id=${a.id}`, { method: 'DELETE' }); const j = await res.json(); if (!res.ok) throw new Error(j.error); await load() }
-    catch (e) { toast.error(e instanceof Error ? e.message : 'Fout') } finally { setBusy(null) }
+    try {
+      let res = await fetch(`/api/admin/blog-accounts?id=${a.id}`, { method: 'DELETE' })
+      let j = await res.json()
+      // Project heeft blogs → extra bevestiging, dan cascade-verwijderen.
+      if (res.status === 409 && j.needsForce) {
+        setBusy(null)
+        if (!confirm(`Dit project heeft ${j.blogCount} blog(s). Die worden mee VERWIJDERD (definitief, ook van de planning). Doorgaan?`)) return
+        setBusy(a.id)
+        res = await fetch(`/api/admin/blog-accounts?id=${a.id}&force=1`, { method: 'DELETE' })
+        j = await res.json()
+      }
+      if (!res.ok) throw new Error(j.error)
+      toast.success(j.deletedBlogs ? `Project en ${j.deletedBlogs} blog(s) verwijderd.` : 'Project verwijderd.')
+      await load()
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Fout') } finally { setBusy(null) }
   }
   const connectFramer = async (id: string) => {
     setBusy(id + ':framer')

@@ -181,19 +181,24 @@ export async function PATCH(req: NextRequest) {
   }
 }
 
-// DELETE ?id= — enkel als er geen blogs aan hangen (anders inactief zetten).
+// DELETE ?id=[&force=1] — met blogs eraan vereist ?force=1 (cascade verwijdert
+// dan ook alle blogs van het project). Zonder force geven we het aantal terug
+// zodat de UI een duidelijke bevestiging kan tonen.
 export async function DELETE(req: NextRequest) {
   try {
     if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const id = req.nextUrl.searchParams.get('id')
+    const force = req.nextUrl.searchParams.get('force') === '1'
     if (!id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })
     const admin = createAdminSupabaseClient()
     const { count } = await admin.from('blogs').select('id', { count: 'exact', head: true }).eq('account_id', id)
-    if ((count ?? 0) > 0) return NextResponse.json({ error: 'Account heeft blogs — zet het inactief in plaats van verwijderen.' }, { status: 400 })
+    if ((count ?? 0) > 0 && !force) {
+      return NextResponse.json({ error: 'Dit project heeft blogs.', needsForce: true, blogCount: count ?? 0 }, { status: 409 })
+    }
     const { error } = await admin.from('blog_accounts').delete().eq('id', id)
     if (error) throw new Error(error.message)
-    try { revalidatePath('/admin/blogaccounts') } catch { }
-    return NextResponse.json({ ok: true })
+    try { revalidatePath('/admin/blogaccounts'); revalidatePath('/admin/blog-calendar') } catch { }
+    return NextResponse.json({ ok: true, deletedBlogs: count ?? 0 })
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
   }
