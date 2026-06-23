@@ -12,6 +12,7 @@ export type ReviewBlog = {
   status: string; foutmelding: string | null; gegenereerd_op: string
   sync_status: string | null; publish_mode: string | null; publish_at: string | null
   laatst_bewerkt_door: string | null; laatst_bewerkt_op: string | null
+  tags: string[] | null
 }
 
 type Version = {
@@ -188,6 +189,9 @@ function BlogCard({ blog, editing, busy, selected, onToggle, onEdit, onSave, onA
               {blog.laatst_bewerkt_door && <span>· laatst bewerkt door {blog.laatst_bewerkt_door}</span>}
               {blog.publish_at && blog.status === 'goedgekeurd' && <span className="text-amber-600">· gepland {formatDate(blog.publish_at)}</span>}
             </div>
+            {blog.tags && blog.tags.length > 0 && (
+              <div className="mt-1 flex flex-wrap gap-1">{blog.tags.map((t) => <span key={t} className="status-badge bg-indigo-50 text-indigo-700 text-[10px]">{t}</span>)}</div>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">

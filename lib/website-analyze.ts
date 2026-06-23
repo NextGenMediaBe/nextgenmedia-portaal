@@ -185,3 +185,59 @@ export async function analyzeWebsite(url: string | null | undefined): Promise<st
   const a = await analyzeWebsiteDeep(url)
   return analysisToPromptText(a)
 }
+
+// ── Website monitor: detecteert wijzigingen (1×/week) zonder te heranalyseren ──
+
+export type SiteSignature = {
+  pages: string[]
+  headings: string[]
+  ctas: string[]
+}
+
+function extractHeadings(html: string): string[] {
+  const out: string[] = []
+  for (const m of html.matchAll(/<(h1|h2|h3)[^>]*>([\s\S]*?)<\/\1>/gi)) {
+    const t = stripText(m[2])
+    if (t.length > 2 && t.length < 120) out.push(t.toLowerCase())
+  }
+  return [...new Set(out)].slice(0, 60)
+}
+
+function extractCtas(html: string): string[] {
+  const out: string[] = []
+  for (const m of html.matchAll(/<(?:a|button)[^>]*>([\s\S]*?)<\/(?:a|button)>/gi)) {
+    const t = stripText(m[1])
+    if (t.length > 2 && t.length < 40 && /[a-z]/i.test(t)) out.push(t.toLowerCase())
+  }
+  return [...new Set(out)].slice(0, 60)
+}
+
+/** Bouwt een lichte signatuur van de website (pagina's, koppen, CTA's). */
+export async function buildSiteSignature(url: string | null | undefined): Promise<SiteSignature | null> {
+  if (!url) return null
+  const home = normalizeUrl(url)
+  const html = await fetchHtml(home)
+  if (!html) return null
+  const links = extractInternalLinks(html, home)
+  const pages = [...new Set([home, ...links])].map((u) => { try { return new URL(u).pathname.replace(/\/+$/, '') || '/' } catch { return u } })
+  return {
+    pages: [...new Set(pages)].sort().slice(0, 100),
+    headings: extractHeadings(html),
+    ctas: extractCtas(html),
+  }
+}
+
+/** Vergelijkt twee signaturen en geeft een lijst met gedetecteerde wijzigingen. */
+export function diffSignatures(prev: SiteSignature | null | undefined, next: SiteSignature): string[] {
+  if (!prev) return []
+  const details: string[] = []
+  const newPages = next.pages.filter((p) => !prev.pages.includes(p))
+  const removedPages = prev.pages.filter((p) => !next.pages.includes(p))
+  if (newPages.length) details.push(`${newPages.length} nieuwe pagina('s): ${newPages.slice(0, 5).join(', ')}`)
+  if (removedPages.length) details.push(`${removedPages.length} verwijderde pagina('s)`)
+  const headingChange = next.headings.filter((h) => !prev.headings.includes(h)).length
+  if (headingChange > 2) details.push(`Aangepaste koppen/diensten (${headingChange} nieuwe)`)
+  const ctaChange = next.ctas.filter((c) => !prev.ctas.includes(c)).length
+  if (ctaChange > 2) details.push(`Gewijzigde call-to-actions (${ctaChange})`)
+  return details
+}

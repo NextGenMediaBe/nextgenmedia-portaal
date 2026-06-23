@@ -12,6 +12,16 @@ export type BlogMemory = {
   ctas: string[]
 }
 
+export type BlogKnowledge = {
+  bedrijfsinformatie?: string
+  doelgroep?: string
+  tone_of_voice?: string
+  belangrijke_termen?: string[]
+  verboden_woorden?: string[]
+  faqs?: { vraag: string; antwoord?: string }[]
+  cases?: string[]
+}
+
 export type BlogInput = {
   clientName: string
   website?: string | null
@@ -20,6 +30,7 @@ export type BlogInput = {
   websiteContent?: string | null   // gestructureerde website-analyse als prompttekst
   recentTitles?: string[]
   memory?: BlogMemory | null        // reeds gebruikte onderwerpen/keywords/invalshoeken/CTA's
+  knowledge?: BlogKnowledge | null  // kennisbank — HOOGSTE prioriteit
 }
 
 export type GeneratedBlog = {
@@ -35,7 +46,23 @@ export type GeneratedBlog = {
   angle: string
   cta: string
   internal_link_suggestions: string[]
+  tags: string[]
   word_count: number
+}
+
+/** Bouwt het kennisbank-blok (hoogste prioriteit) voor de prompt. */
+function knowledgeBlock(k?: BlogKnowledge | null): string {
+  if (!k) return ''
+  const parts: string[] = []
+  if (k.bedrijfsinformatie) parts.push(`Bedrijfsinformatie: ${k.bedrijfsinformatie}`)
+  if (k.doelgroep) parts.push(`Doelgroep: ${k.doelgroep}`)
+  if (k.tone_of_voice) parts.push(`Tone of voice (verplicht volgen): ${k.tone_of_voice}`)
+  if (k.belangrijke_termen?.length) parts.push(`Gebruik deze belangrijke termen: ${k.belangrijke_termen.join(', ')}`)
+  if (k.verboden_woorden?.length) parts.push(`VERBODEN woorden (nooit gebruiken): ${k.verboden_woorden.join(', ')}`)
+  if (k.cases?.length) parts.push(`Concrete cases/voorbeelden om naar te verwijzen:\n${k.cases.map((c) => `- ${c}`).join('\n')}`)
+  if (k.faqs?.length) parts.push(`Veelgestelde vragen:\n${k.faqs.map((f) => `- ${f.vraag}${f.antwoord ? ` → ${f.antwoord}` : ''}`).join('\n')}`)
+  if (parts.length === 0) return ''
+  return `KENNISBANK (HOOGSTE PRIORITEIT — volg dit strikt, het overschrijft alle andere bronnen):\n${parts.join('\n')}\n`
 }
 
 export function slugify(s: string): string {
@@ -66,6 +93,7 @@ export async function generateBlog(input: BlogInput): Promise<GeneratedBlog> {
   const prompt = `Je bent een ervaren Nederlandstalige (Vlaamse) SEO-contentmarketeer voor het bedrijf "${input.clientName}".
 Schrijf één diepgaande, professionele, SEO-geoptimaliseerde blogpost.
 
+${knowledgeBlock(input.knowledge)}
 Bedrijf: ${input.clientName}
 Website: ${input.website || '—'}
 Niche: ${input.niche || '—'}
@@ -94,7 +122,8 @@ Geef UITSLUITEND geldige JSON terug met deze velden:
   "keywords": ["belangrijkste zoekwoord", "..."],
   "angle": "de gekozen invalshoek in enkele woorden",
   "cta": "de call-to-action die je gebruikt hebt",
-  "internal_link_suggestions": ["suggestie voor interne link (anchor of paginathema)", "..."]
+  "internal_link_suggestions": ["suggestie voor interne link (anchor of paginathema)", "..."],
+  "tags": ["1 tot 4 thematische tags, bv. SEO, Branding, HR, Vastgoed, Burn-out, Social Media"]
 }`
 
   try {
@@ -122,6 +151,7 @@ Geef UITSLUITEND geldige JSON terug met deze velden:
       angle: String(parsed.angle || '').slice(0, 200),
       cta: String(parsed.cta || '').slice(0, 300),
       internal_link_suggestions: arr(parsed.internal_link_suggestions),
+      tags: arr(parsed.tags).slice(0, 6),
       word_count: content.trim().split(/\s+/).filter(Boolean).length,
     }
   } catch {
@@ -146,6 +176,39 @@ function templateDraft(input: BlogInput): GeneratedBlog {
     angle: '',
     cta: '',
     internal_link_suggestions: [],
+    tags: [],
     word_count: content.trim().split(/\s+/).filter(Boolean).length,
+  }
+}
+
+/**
+ * Stelt ontbrekende blogonderwerpen voor (content gaps) op basis van de reeds
+ * behandelde titels/keywords en de website-analyse. Best-effort — lege lijst bij fout.
+ */
+export async function suggestContentGaps(input: { clientName: string; websiteContent?: string | null; existingTitles: string[]; usedKeywords: string[] }): Promise<string[]> {
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) return []
+  try {
+    const prompt = `Je bent SEO-strateeg voor "${input.clientName}".
+${input.websiteContent ? `Website-analyse:\n${input.websiteContent}\n` : ''}
+Reeds behandelde blogtitels:
+${input.existingTitles.slice(0, 40).map((t) => `- ${t}`).join('\n') || '- (geen)'}
+
+Reeds gebruikte zoekwoorden: ${input.usedKeywords.slice(0, 40).join(', ') || '(geen)'}
+
+Geef UITSLUITEND geldige JSON: {"gaps": ["ontbrekend blogonderwerp 1", "..."]}
+Stel 5-10 concrete, relevante onderwerpen voor die nog NIET behandeld zijn en die SEO-waarde hebben.`
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({ model: MODEL(), max_tokens: 800, messages: [{ role: 'user', content: prompt }] }),
+    })
+    const json = await res.json()
+    if (!res.ok) return []
+    const text: string = (json?.content ?? []).map((b: { text?: string }) => b.text ?? '').join('')
+    const parsed = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1))
+    return Array.isArray(parsed.gaps) ? parsed.gaps.map((x: unknown) => String(x)).filter(Boolean).slice(0, 12) : []
+  } catch {
+    return []
   }
 }

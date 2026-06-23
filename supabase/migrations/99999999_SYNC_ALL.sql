@@ -1114,5 +1114,28 @@ CREATE POLICY "blog versions admin all" ON public.blog_versions
   USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
   WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
 
+-- ── Blog ecosystem automation ─────────────────────────────────────────────────
+-- tags: automatische tagging per blog (SEO, Branding, HR, …)
+ALTER TABLE public.blogs ADD COLUMN IF NOT EXISTS tags text[];
+-- knowledge: kennisbank per account (bedrijfsinfo, FAQ's, tone, termen, verboden
+--   woorden, doelgroep, cases) — door de AI als HOOGSTE prioriteit gebruikt.
+ALTER TABLE public.blog_accounts ADD COLUMN IF NOT EXISTS knowledge jsonb;
+-- website_monitor: { last_checked, signature, changed, details } voor wekelijkse
+--   detectie van websitewijzigingen (heranalyse aanbevolen, niet automatisch).
+ALTER TABLE public.blog_accounts ADD COLUMN IF NOT EXISTS website_monitor jsonb;
+
+-- ── app_state: kleine key/value-store voor systeemvlaggen (bv. laatste cron-run)
+CREATE TABLE IF NOT EXISTS public.app_state (
+  key        text PRIMARY KEY,
+  value      jsonb,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.app_state ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "app state admin all" ON public.app_state;
+CREATE POLICY "app state admin all" ON public.app_state
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.

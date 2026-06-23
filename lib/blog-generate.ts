@@ -2,7 +2,7 @@ import 'server-only'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { sendEmail, getAdminEmails, baseUrl } from '@/lib/email'
 import { buildEmailHtml, buildEmailText } from '@/lib/email-html'
-import { generateBlog, slugify, type BlogMemory } from '@/lib/blog-ai'
+import { generateBlog, slugify, type BlogMemory, type BlogKnowledge } from '@/lib/blog-ai'
 import { nextGenerationDate, todayISO } from '@/lib/blog-dates'
 import { analyzeWebsiteDeep, analysisToPromptText, type WebsiteAnalysis } from '@/lib/website-analyze'
 
@@ -11,10 +11,10 @@ export type BlogAccount = {
   aantal_per_cyclus: number | null; frequentie_maanden: number | null
   volgende_generatie_datum: string | null; client_id: string | null
   website_analysis?: WebsiteAnalysis | null; website_analyzed_at?: string | null
-  blog_memory?: BlogMemory | null
+  blog_memory?: BlogMemory | null; knowledge?: BlogKnowledge | null
 }
 
-export const BLOG_ACCOUNT_COLS = 'id, name, website_url, briefing, aantal_per_cyclus, frequentie_maanden, volgende_generatie_datum, client_id, website_analysis, website_analyzed_at, blog_memory'
+export const BLOG_ACCOUNT_COLS = 'id, name, website_url, briefing, aantal_per_cyclus, frequentie_maanden, volgende_generatie_datum, client_id, website_analysis, website_analyzed_at, blog_memory, knowledge'
 
 const emptyMemory = (): BlogMemory => ({ topics: [], keywords: [], angles: [], ctas: [] })
 
@@ -57,6 +57,7 @@ export async function generateBlogsForAccount(account: BlogAccount, count: numbe
     const blog = await generateBlog({
       clientName: account.name, website: account.website_url, brandContext: account.briefing,
       websiteContent, recentTitles: [...recentTitles, ...created.map((c) => c.titel)], memory,
+      knowledge: account.knowledge ?? null,
     })
     let slug = blog.slug || slugify(blog.titel)
     let n = 2
@@ -67,6 +68,7 @@ export async function generateBlogsForAccount(account: BlogAccount, count: numbe
       account_id: account.id, client_id: account.client_id ?? null,
       titel: blog.titel, slug, content: blog.content, meta_title: blog.meta_title,
       meta_description: blog.meta_description, thumbnail_url: blog.thumbnail_url, status: 'klaar_voor_review',
+      tags: blog.tags?.length ? blog.tags : null,
     }).select('id, titel').single()
     if (!error && data) {
       created.push(data)
