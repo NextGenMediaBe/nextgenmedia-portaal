@@ -23,10 +23,11 @@ const KIND_OPTIONS = [
 ]
 
 export function WebsiteRequestClient({
-  clientId, initialRequests,
+  clientId, initialRequests, canRequest = true,
 }: {
   clientId: string
   initialRequests: Request[]
+  canRequest?: boolean
 }) {
   const router = useRouter()
   const [requests, setRequests] = useState(initialRequests)
@@ -131,10 +132,12 @@ export function WebsiteRequestClient({
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h2 className="font-semibold text-gray-900">Mijn aanvragen</h2>
-        <button onClick={() => setShowForm(true)} className="btn-primary">
-          <Plus className="h-4 w-4" />
-          Nieuwe aanvraag
-        </button>
+        {canRequest && (
+          <button onClick={() => setShowForm(true)} className="btn-primary">
+            <Plus className="h-4 w-4" />
+            Nieuwe aanvraag
+          </button>
+        )}
       </div>
 
       {/* Info box */}
@@ -173,7 +176,7 @@ export function WebsiteRequestClient({
                       {STATUS_LABEL[r.status] ?? r.status}
                     </span>
                     {/* Only editable while still 'new' (not yet picked up by admin) */}
-                    {r.status === 'new' && (
+                    {r.status === 'new' && canRequest && (
                       <div className="flex items-center gap-1">
                         <button onClick={() => openEdit(r)} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400" title="Bewerken">
                           <Pencil className="h-3.5 w-3.5" />

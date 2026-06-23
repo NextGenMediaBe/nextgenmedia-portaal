@@ -23,7 +23,7 @@ const PRIO: Record<string, { label: string; cls: string }> = {
   hoog: { label: 'Hoog', cls: 'bg-red-100 text-red-700' },
 }
 
-export function PortalTasks({ initialTasks }: { initialTasks: PortalTask[] }) {
+export function PortalTasks({ initialTasks, canComplete = true }: { initialTasks: PortalTask[]; canComplete?: boolean }) {
   const router = useRouter()
   const [tasks, setTasks] = useState(initialTasks)
   const [busy, setBusy] = useState<string | null>(null)
@@ -74,9 +74,11 @@ export function PortalTasks({ initialTasks }: { initialTasks: PortalTask[] }) {
 
             {!done && t.status !== 'cancelled' && (
               <div className="mt-3 flex items-center gap-2 flex-wrap">
-                <button onClick={() => complete(t.id)} disabled={busy === t.id} className="btn-primary text-xs">
-                  {busy === t.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}Markeer als voltooid
-                </button>
+                {canComplete && (
+                  <button onClick={() => complete(t.id)} disabled={busy === t.id} className="btn-primary text-xs">
+                    {busy === t.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}Markeer als voltooid
+                  </button>
+                )}
                 {noteFor === t.id ? null : (
                   <button onClick={() => { setNoteFor(t.id); setNoteText(t.client_note ?? '') }} className="btn-secondary text-xs">Opmerking toevoegen</button>
                 )}

@@ -9,6 +9,7 @@ import { ClientEditForm } from './client-edit-form'
 import { DeleteClientButton } from './delete-client-button'
 import { PortalAccessCard } from './portal-access-card'
 import { CredentialsCard } from '@/components/credentials-card'
+import { ClientUsers } from './client-users'
 import { ClientLifecycleBlock } from './client-lifecycle'
 import { ClientMonths } from './client-months'
 import { ClientTasks } from './client-tasks'
@@ -151,6 +152,9 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
             email={client.email ?? null}
             storedPassword={(client.login_password ?? null) as string | null}
           />
+
+          {/* Subaccounts & rechten */}
+          <ClientUsers clientId={id} clientName={client.company_name} />
 
           {/* Klant Lifecycle (batch, contract, reviews) */}
           <ClientLifecycleBlock clientId={id} companyName={client.company_name} />

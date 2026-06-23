@@ -1,22 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
+import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { notifyClientScriptActivity } from '@/lib/admin-alerts'
+import { requirePortalPermission, sessionCan } from '@/lib/portal-auth'
+import { logAudit, requestMeta } from '@/lib/audit'
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Niet ingelogd' }, { status: 401 })
-
-    const { data: client } = await supabase
-      .from('clients').select('id').eq('owner_user_id', user.id).maybeSingle()
-    if (!client) return NextResponse.json({ error: 'Geen klantprofiel' }, { status: 403 })
+    const g = await requirePortalPermission('social_media', 'view')
+    if (!g.ok) return g.response
+    const { session } = g
 
     const { id, decision, feedback } = await req.json()
 
-    if (decision === 'changes_requested' && !feedback?.trim()) {
-      return NextResponse.json({ error: 'Feedback is verplicht bij wijzigingsverzoek' }, { status: 400 })
+    // Goedkeuren vereist approve_scripts; wijziging vragen vereist feedback-recht.
+    if (decision === 'approved' && !sessionCan(session, 'social_media', 'approve_scripts')) {
+      return NextResponse.json({ error: 'Geen toestemming om scripts goed te keuren' }, { status: 403 })
+    }
+    if (decision === 'changes_requested') {
+      if (!sessionCan(session, 'social_media', 'feedback')) {
+        return NextResponse.json({ error: 'Geen toestemming om feedback te geven' }, { status: 403 })
+      }
+      if (!feedback?.trim()) return NextResponse.json({ error: 'Feedback is verplicht bij wijzigingsverzoek' }, { status: 400 })
     }
 
     const admin = createAdminSupabaseClient()
@@ -28,7 +33,7 @@ export async function POST(req: NextRequest) {
         reviewed_at: new Date().toISOString(),
       })
       .eq('id', id)
-      .eq('client_id', client.id)
+      .eq('client_id', session.clientId)
 
     if (error) throw new Error(error.message)
 
@@ -38,8 +43,17 @@ export async function POST(req: NextRequest) {
       revalidatePath('/admin/services/social-media')
     } catch { }
 
+    const meta = requestMeta(req)
+    await logAudit({
+      action: decision === 'approved' ? 'portal.script.approved' : 'portal.script.changes_requested',
+      entityType: 'social_content_item', entityId: id,
+      summary: decision === 'approved' ? 'Script goedgekeurd via portaal' : 'Wijziging gevraagd via portaal',
+      actorUserId: session.userId, actorRole: 'client',
+      metadata: { client_id: session.clientId, by_subaccount: !session.isOwner }, ip: meta.ip, userAgent: meta.userAgent,
+    })
+
     // Directe interne adminmail met 1-uur bundeling per klant (best-effort).
-    await notifyClientScriptActivity(client.id)
+    await notifyClientScriptActivity(session.clientId)
 
     return NextResponse.json({ ok: true })
   } catch (err) {

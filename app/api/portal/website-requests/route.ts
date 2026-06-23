@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
+import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { notifyMaintenanceRequest } from '@/lib/admin-alerts'
+import { requirePortalPermission, type PortalSession } from '@/lib/portal-auth'
 
 // Store images in the 'contracts' bucket (always exists, admin service role bypasses RLS)
 // under a webdesign/ prefix so they stay separate from contract PDFs.
@@ -24,25 +25,22 @@ const DROPPABLE_KEYS = ['categories', 'image_paths'] as const
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Niet ingelogd' }, { status: 401 })
+    const g = await requirePortalPermission('website', 'request_maintenance')
+    if (!g.ok) return g.response
+    const { session } = g
 
     const formData = await req.formData()
-    const client_id = formData.get('client_id') as string
     const title = formData.get('title') as string
     const description = formData.get('description') as string | null
     const friendlyKind = (formData.get('kind') as string) || 'other'
     const imageFiles = formData.getAll('images') as File[]
 
-    if (!client_id || !title) {
-      return NextResponse.json({ error: 'client_id en titel zijn verplicht' }, { status: 400 })
+    if (!title) {
+      return NextResponse.json({ error: 'Titel is verplicht' }, { status: 400 })
     }
 
-    // Verify the logged-in user owns this client
-    const { data: clientData } = await supabase
-      .from('clients').select('id').eq('id', client_id).eq('owner_user_id', user.id).maybeSingle()
-    if (!clientData) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    // Aanvraag hoort altijd bij de klant van de ingelogde gebruiker.
+    const client_id = session.clientId
 
     const admin = createAdminSupabaseClient()
 
@@ -132,16 +130,11 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Verify the logged-in user owns the request AND it's still editable (status 'new').
+// Verify the session's client owns the request AND it's still editable (status 'new').
 async function loadEditableRequest(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  admin: any, supabase: Awaited<ReturnType<typeof createClient>>, userId: string, id: string,
+  admin: any, session: PortalSession, id: string,
 ): Promise<{ ok: true; request: { id: string; status: string; image_paths?: string[] | null } } | { ok: false; status: number; error: string }> {
-  // Which clients does this user own?
-  const { data: clients } = await supabase.from('clients').select('id').eq('owner_user_id', userId)
-  const clientIds = (clients ?? []).map((c: { id: string }) => c.id)
-  if (clientIds.length === 0) return { ok: false, status: 403, error: 'Geen toegang' }
-
   const { data: request } = await admin
     .from('webdesign_change_requests')
     .select('*')
@@ -149,7 +142,7 @@ async function loadEditableRequest(
     .maybeSingle()
 
   if (!request) return { ok: false, status: 404, error: 'Aanvraag niet gevonden' }
-  if (!clientIds.includes(request.client_id)) return { ok: false, status: 403, error: 'Geen toegang' }
+  if (request.client_id !== session.clientId) return { ok: false, status: 403, error: 'Geen toegang' }
   if (request.status !== 'new') {
     return { ok: false, status: 409, error: 'Deze aanvraag is al in behandeling genomen en kan niet meer gewijzigd worden.' }
   }
@@ -159,9 +152,9 @@ async function loadEditableRequest(
 // PATCH — client edits their own request while it's still 'new'
 export async function PATCH(req: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Niet ingelogd' }, { status: 401 })
+    const g = await requirePortalPermission('website', 'request_maintenance')
+    if (!g.ok) return g.response
+    const { session } = g
 
     const { id, title, description, kind } = await req.json()
     if (!id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })
@@ -170,7 +163,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     const admin = createAdminSupabaseClient()
-    const check = await loadEditableRequest(admin, supabase, user.id, id)
+    const check = await loadEditableRequest(admin, session, id)
     if (!check.ok) return NextResponse.json({ error: check.error }, { status: check.status })
 
     // Keep the friendly kind in description prefix + categories (same as POST).
@@ -208,15 +201,15 @@ export async function PATCH(req: NextRequest) {
 // DELETE — client removes their own request while it's still 'new'
 export async function DELETE(req: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Niet ingelogd' }, { status: 401 })
+    const g = await requirePortalPermission('website', 'request_maintenance')
+    if (!g.ok) return g.response
+    const { session } = g
 
     const id = req.nextUrl.searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })
 
     const admin = createAdminSupabaseClient()
-    const check = await loadEditableRequest(admin, supabase, user.id, id)
+    const check = await loadEditableRequest(admin, session, id)
     if (!check.ok) return NextResponse.json({ error: check.error }, { status: check.status })
 
     // Clean up any uploaded images (best effort)

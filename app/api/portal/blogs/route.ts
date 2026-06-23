@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
+import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { slugify } from '@/lib/blog-ai'
 import { publishBlogToFramer, markFramerSync, type FramerClientConfig } from '@/lib/framer'
 import { snapshotBlogVersion, describeChanges } from '@/lib/blog-versions'
+import { requirePortalPermission } from '@/lib/portal-auth'
+import { logAudit, requestMeta } from '@/lib/audit'
 
 // Opslaan pusht (bij gepubliceerde blogs) naar Framer — externe call, kan duren.
 export const maxDuration = 60
@@ -16,25 +18,22 @@ const FRAMER_COLS = 'id, client_id, framer_project_url, framer_api_key, framer_b
 // wie de wijziging deed. Klanten kunnen blogs NIET verwijderen of genereren.
 export async function PATCH(req: NextRequest) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return NextResponse.json({ error: 'Niet ingelogd' }, { status: 401 })
+    const g = await requirePortalPermission('blogs', 'edit')
+    if (!g.ok) return g.response
+    const { session } = g
+    const user = { id: session.userId, email: undefined as string | undefined }
 
     const b = await req.json()
     if (!b.id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })
-
-    // Eigendomscheck: blog → blogaccount → klant van deze gebruiker.
-    const { data: clients } = await supabase.from('clients').select('id').eq('owner_user_id', user.id)
-    const clientIds = (clients ?? []).map((c: { id: string }) => c.id)
-    if (clientIds.length === 0) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
 
     const admin = createAdminSupabaseClient()
     const { data: blog } = await admin.from('blogs').select('*').eq('id', b.id).maybeSingle()
     if (!blog) return NextResponse.json({ error: 'Blog niet gevonden' }, { status: 404 })
 
+    // Eigendomscheck: blog → blogaccount → klant van de sessie.
     const { data: account } = await admin.from('blog_accounts').select(FRAMER_COLS).eq('id', blog.account_id).maybeSingle()
-    const ownClient = account?.client_id && clientIds.includes(account.client_id)
-    const ownBlog = blog.client_id && clientIds.includes(blog.client_id)
+    const ownClient = account?.client_id === session.clientId
+    const ownBlog = blog.client_id === session.clientId
     if (!ownClient && !ownBlog) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
 
     const fields: Record<string, unknown> = {}
@@ -83,6 +82,13 @@ export async function PATCH(req: NextRequest) {
         await admin.from('blogs').update({ sync_status: 'failed' }).eq('id', b.id)
       }
     }
+
+    const meta = requestMeta(req)
+    await logAudit({
+      action: 'portal.blog.edited', entityType: 'blog', entityId: b.id,
+      summary: 'Blog bewerkt via portaal', actorUserId: session.userId, actorRole: 'client',
+      metadata: { client_id: session.clientId, by_subaccount: !session.isOwner, pushed }, ip: meta.ip, userAgent: meta.userAgent,
+    })
 
     try { revalidatePath('/portal/blogs'); revalidatePath('/admin/blogs') } catch { }
     return NextResponse.json({ ok: true, pushed, pushError })

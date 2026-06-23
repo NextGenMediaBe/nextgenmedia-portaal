@@ -26,7 +26,7 @@ const STATUS: Record<string, { label: string; cls: string }> = {
   gefaald: { label: 'Mislukt', cls: 'bg-red-100 text-red-700' },
 }
 
-export function PortalBlogs({ initialBlogs }: { initialBlogs: PortalBlog[] }) {
+export function PortalBlogs({ initialBlogs, canEdit = true }: { initialBlogs: PortalBlog[]; canEdit?: boolean }) {
   const router = useRouter()
   const [blogs, setBlogs] = useState(initialBlogs)
   const [editing, setEditing] = useState<string | null>(null)
@@ -78,7 +78,7 @@ export function PortalBlogs({ initialBlogs }: { initialBlogs: PortalBlog[] }) {
                   {b.laatst_bewerkt_door && <span>laatst bewerkt door {b.laatst_bewerkt_door}</span>}
                 </div>
               </div>
-              {!isEditing && (
+              {!isEditing && canEdit && (
                 <button onClick={() => startEdit(b)} className="btn-secondary text-sm shrink-0"><Pencil className="h-3.5 w-3.5" />Bewerken</button>
               )}
             </div>

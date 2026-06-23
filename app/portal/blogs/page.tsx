@@ -1,27 +1,20 @@
-import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { PortalBlogs, type PortalBlog } from './portal-blogs'
+import { requirePortalView, sessionCan } from '@/lib/portal-auth'
 
 export const dynamic = 'force-dynamic'
 
 export default async function PortalBlogsPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
+  const session = await requirePortalView('blogs')
+  const canEdit = sessionCan(session, 'blogs', 'edit')
+  const admin = createAdminSupabaseClient()
 
-  const { data: clients } = await supabase.from('clients').select('id').eq('owner_user_id', user.id)
-  const clientIds = (clients ?? []).map((c: { id: string }) => c.id)
-
-  let accounts: { id: string }[] = []
-  if (clientIds.length > 0) {
-    const { data } = await supabase.from('blog_accounts').select('id').in('client_id', clientIds)
-    accounts = data ?? []
-  }
-  const accountIds = accounts.map((a) => a.id)
+  const { data: accountsData } = await admin.from('blog_accounts').select('id').eq('client_id', session.clientId)
+  const accountIds = (accountsData ?? []).map((a: { id: string }) => a.id)
 
   let blogs: PortalBlog[] = []
   if (accountIds.length > 0) {
-    const { data } = await supabase
+    const { data } = await admin
       .from('blogs')
       .select('id, titel, slug, content, meta_title, meta_description, status, gepubliceerd_op, gegenereerd_op, laatst_bewerkt_door, laatst_bewerkt_op')
       .in('account_id', accountIds)
@@ -38,7 +31,7 @@ export default async function PortalBlogsPage() {
       {accountIds.length === 0 ? (
         <div className="card-base text-sm text-gray-500">Er is nog geen blogaccount aan jouw bedrijf gekoppeld.</div>
       ) : (
-        <PortalBlogs initialBlogs={blogs} />
+        <PortalBlogs initialBlogs={blogs} canEdit={canEdit} />
       )}
     </div>
   )

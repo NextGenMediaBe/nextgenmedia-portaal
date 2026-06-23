@@ -16,25 +16,29 @@ type NavItem = {
   exact?: boolean
   requiresService?: string
   requiresBlogs?: boolean
+  module?: string
 }
 
 const NAV: NavItem[] = [
   { label: 'Dashboard',    href: '/portal',               icon: LayoutDashboard, exact: true },
-  { label: 'Contracten',   href: '/portal/contracts',     icon: FileText },
-  { label: 'Taken',        href: '/portal/tasks',         icon: ListChecks },
-  { label: 'Social Media', href: '/portal/social-media',  icon: Calendar, requiresService: 'social-media' },
-  { label: 'Website',      href: '/portal/website',       icon: Globe,    requiresService: 'webdesign' },
-  { label: 'Blogs',        href: '/portal/blogs',         icon: Newspaper, requiresBlogs: true },
+  { label: 'Contracten',   href: '/portal/contracts',     icon: FileText,  module: 'contracts' },
+  { label: 'Taken',        href: '/portal/tasks',         icon: ListChecks, module: 'tasks' },
+  { label: 'Social Media', href: '/portal/social-media',  icon: Calendar, requiresService: 'social-media', module: 'social_media' },
+  { label: 'Website',      href: '/portal/website',       icon: Globe,    requiresService: 'webdesign', module: 'website' },
+  { label: 'Blogs',        href: '/portal/blogs',         icon: Newspaper, requiresBlogs: true, module: 'blogs' },
 ]
 
 export function PortalSidebar({
   companyName,
   activeServices = [],
   hasBlogs = false,
+  allowedModules,
 }: {
   companyName: string
   activeServices?: string[]
   hasBlogs?: boolean
+  /** Modules met view-recht. Undefined = alles tonen (owner/backward compat). */
+  allowedModules?: string[]
 }) {
   const pathname = usePathname()
   const router = useRouter()
@@ -52,7 +56,8 @@ export function PortalSidebar({
   const visibleNav = NAV.filter(
     (item) =>
       (!item.requiresService || activeServices.includes(item.requiresService)) &&
-      (!item.requiresBlogs || hasBlogs)
+      (!item.requiresBlogs || hasBlogs) &&
+      (!item.module || !allowedModules || allowedModules.includes(item.module))
   )
 
   return (

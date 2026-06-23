@@ -1,29 +1,24 @@
-import { createClient } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
-import { formatDate } from '@/lib/utils'
+import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { WebsiteRequestClient } from './website-request-client'
+import { requirePortalView, sessionCan } from '@/lib/portal-auth'
 
 export default async function PortalWebsitePage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
-
-  const { data: client } = await supabase
-    .from('clients').select('id, company_name').eq('owner_user_id', user.id).maybeSingle()
-  if (!client) redirect('/portal')
+  const session = await requirePortalView('website')
+  const canRequest = sessionCan(session, 'website', 'request_maintenance')
+  const admin = createAdminSupabaseClient()
 
   // Check webdesign service
-  const { data: service } = await supabase
+  const { data: service } = await admin
     .from('client_services')
     .select('active, config')
-    .eq('client_id', client.id)
+    .eq('client_id', session.clientId)
     .eq('service_slug', 'webdesign')
     .maybeSingle()
 
-  const { data: requests } = await supabase
+  const { data: requests } = await admin
     .from('webdesign_change_requests')
     .select('id, title, description, kind, status, created_at')
-    .eq('client_id', client.id)
+    .eq('client_id', session.clientId)
     .order('created_at', { ascending: false })
 
   if (!service?.active) {
@@ -42,7 +37,8 @@ export default async function PortalWebsitePage() {
       </div>
 
       <WebsiteRequestClient
-        clientId={client.id}
+        clientId={session.clientId}
+        canRequest={canRequest}
         initialRequests={(requests ?? []).map((r) => ({
           id: r.id,
           title: r.title,

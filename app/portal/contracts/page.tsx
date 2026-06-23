@@ -1,20 +1,16 @@
-import { createClient, createAdminSupabaseClient, trySignedUrl } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
+import { createAdminSupabaseClient, trySignedUrl } from '@/lib/supabase/server'
 import { formatDate } from '@/lib/utils'
 import Link from 'next/link'
 import { FileText, CheckCircle2, Download, Eye, Clock } from 'lucide-react'
 import { canonicalStatus, statusInfo } from '@/lib/contract-status'
+import { requirePortalView, sessionCan } from '@/lib/portal-auth'
 
 export const dynamic = 'force-dynamic'
 
 export default async function PortalContractsPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
-
-  const { data: client } = await supabase
-    .from('clients').select('id').eq('owner_user_id', user.id).maybeSingle()
-  if (!client) redirect('/portal')
+  const session = await requirePortalView('contracts')
+  const canSign = sessionCan(session, 'contracts', 'sign')
+  const canDownload = sessionCan(session, 'contracts', 'download')
 
   const admin = createAdminSupabaseClient()
 
@@ -23,7 +19,7 @@ export default async function PortalContractsPage() {
   const { data: contractsRaw, error: fetchErr } = await admin
     .from('contracts')
     .select('*')
-    .eq('client_id', client.id)
+    .eq('client_id', session.clientId)
     .order('created_at', { ascending: false })
 
   if (fetchErr) {
@@ -103,12 +99,14 @@ export default async function PortalContractsPage() {
                           Bekijken
                         </a>
                       )}
-                      <Link
-                        href={`/sign/${c.access_token}`}
-                        className="btn-primary text-xs flex-1 sm:flex-none justify-center"
-                      >
-                        ✍️ Ondertekenen
-                      </Link>
+                      {canSign && (
+                        <Link
+                          href={`/sign/${c.access_token}`}
+                          className="btn-primary text-xs flex-1 sm:flex-none justify-center"
+                        >
+                          ✍️ Ondertekenen
+                        </Link>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -154,7 +152,7 @@ export default async function PortalContractsPage() {
                             Bekijken
                           </a>
                         )}
-                        {c.signedPdfUrl && (
+                        {c.signedPdfUrl && canDownload && (
                           <a
                             href={c.signedPdfUrl}
                             download

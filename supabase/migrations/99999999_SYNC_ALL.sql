@@ -1186,5 +1186,40 @@ CREATE POLICY "contract templates admin all" ON public.contract_templates
   USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
   WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
 
+-- ── Subaccounts & rechtenmodel: client_users ─────────────────────────────────
+-- Eén klant kan meerdere portaalgebruikers hebben, elk met eigen rechten (jsonb).
+-- Bestaande hoofdaccounts (clients.owner_user_id) blijven werken zonder rij hier.
+CREATE TABLE IF NOT EXISTS public.client_users (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id     uuid NOT NULL REFERENCES public.clients(id) ON DELETE CASCADE,
+  auth_user_id  uuid,                       -- gekoppelde auth.users id (login)
+  name          text,
+  email         text,
+  phone         text,
+  role_label    text,                       -- preset/rol-naam (Eigenaar, Marketing, ...)
+  active        boolean NOT NULL DEFAULT true,
+  permissions   jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_at    timestamptz NOT NULL DEFAULT now(),
+  last_login_at timestamptz
+);
+CREATE UNIQUE INDEX IF NOT EXISTS client_users_auth_user_id_key ON public.client_users(auth_user_id) WHERE auth_user_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS client_users_client_id_idx ON public.client_users(client_id);
+
+ALTER TABLE public.client_users ENABLE ROW LEVEL SECURITY;
+
+-- Admin beheert alles.
+DROP POLICY IF EXISTS "client users admin all" ON public.client_users;
+CREATE POLICY "client users admin all" ON public.client_users
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
+-- Een subaccount mag enkel zijn eigen rij lezen (zelfde auth-user).
+DROP POLICY IF EXISTS "client users self read" ON public.client_users;
+CREATE POLICY "client users self read" ON public.client_users
+  FOR SELECT TO authenticated
+  USING (auth_user_id = auth.uid());
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.
