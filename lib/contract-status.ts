@@ -73,6 +73,47 @@ export const STATUS_FILTER_OPTIONS: { value: ContractStatusKey; label: string }[
   { value: 'vervangen',            label: 'Vervangen' },
 ]
 
+/** Opvolging/reminders: bepaalt of een contract aandacht vereist (geen automail). */
+export type FollowUp = { needs: boolean; level: 'none' | 'warn' | 'urgent'; reason: string }
+
+export function followUp(c: {
+  status: string | null | undefined
+  sent_at?: string | null
+  created_at?: string | null
+  expires_at?: string | null
+}): FollowUp {
+  const key = canonicalStatus(c.status)
+  const now = Date.now()
+  const days = (d?: string | null) => (d ? Math.floor((now - new Date(d).getTime()) / 86400000) : null)
+
+  // Verlopen → urgent.
+  if (key === 'verlopen') return { needs: true, level: 'urgent', reason: 'Tekenlink verlopen' }
+  if (c.expires_at && String(c.expires_at).slice(0, 10) < new Date().toISOString().slice(0, 10) && key !== 'getekend' && key !== 'geannuleerd') {
+    return { needs: true, level: 'urgent', reason: 'Tekenlink verlopen' }
+  }
+
+  // Verzonden/geopend en al een tijd geen handtekening.
+  if (key === 'verzonden' || key === 'geopend' || key === 'ingevuld') {
+    const age = days(c.sent_at) ?? days(c.created_at)
+    if (age !== null && age >= 7) return { needs: true, level: 'urgent', reason: `${age} dagen open` }
+    if (age !== null && age >= 3) return { needs: true, level: 'warn', reason: `${age} dagen open` }
+  }
+  return { needs: false, level: 'none', reason: '' }
+}
+
+/** Gemiddelde tekentijd (in dagen) over getekende contracten met sent_at + signed_at. */
+export function averageSignDays(contracts: Array<{ status: string | null; sent_at?: string | null; signed_at?: string | null }>): number | null {
+  const spans: number[] = []
+  for (const c of contracts) {
+    if (canonicalStatus(c.status) !== 'getekend') continue
+    if (!c.sent_at || !c.signed_at) continue
+    const d = (new Date(c.signed_at).getTime() - new Date(c.sent_at).getTime()) / 86400000
+    if (Number.isFinite(d) && d >= 0) spans.push(d)
+  }
+  if (spans.length === 0) return null
+  return Math.round((spans.reduce((a, b) => a + b, 0) / spans.length) * 10) / 10
+}
+
 /** Contracttemplate-categorieën (vaste lijst). */
 export const TEMPLATE_CATEGORIES = [
   'Social Media pakket 1',

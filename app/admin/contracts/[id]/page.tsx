@@ -6,9 +6,10 @@ import { formatDate } from '@/lib/utils'
 import Link from 'next/link'
 import { ChevronLeft, FileText, CheckCircle2, ExternalLink, Settings2, Download } from 'lucide-react'
 import { ContractActions } from './contract-actions'
-import { ContractPrintButton } from './contract-print-button'
 import { ContractMailButton } from '@/components/admin/contract-mail-button'
 import { ContractLinkManager } from './contract-link-manager'
+import { ContractPdfPreview } from './contract-pdf-preview'
+import { ContractTimeline } from './contract-timeline'
 import { statusInfo, canonicalStatus } from '@/lib/contract-status'
 import { baseUrl } from '@/lib/email'
 
@@ -53,27 +54,6 @@ async function getContract(id: string) {
   }
 }
 
-const EVENT_LABELS: Record<string, string> = {
-  created:             'Aangemaakt',
-  uploaded:            'Geüpload',
-  ai_analyzed:         'AI-analyse',
-  fields_edited:       'Velden aangepast',
-  created_from_template: 'Aangemaakt uit template',
-  sent:                'Verzonden',
-  opened:              'Geopend',
-  viewed:              'Geopend',
-  filled:              'Ingevuld',
-  signed:              'Ondertekend',
-  pdf_generated:       'PDF gegenereerd',
-  downloaded:          'Gedownload',
-  downloaded_original: 'Origineel gedownload',
-  downloaded_signed:   'Getekend exemplaar gedownload',
-  token_regenerated:   'Nieuwe tekenlink',
-  cancelled:           'Geannuleerd',
-  expired:             'Verlopen',
-  replaced:            'Vervangen',
-}
-
 export default async function ContractDetailPage({ params }: { params: { id: string } }) {
   const data = await getContract(params.id)
   if (!data) notFound()
@@ -83,8 +63,6 @@ export default async function ContractDetailPage({ params }: { params: { id: str
   const statusKey = canonicalStatus(c.status)
   const isSigned = statusKey === 'getekend'
   const signLink = `${baseUrl()}/sign/${c.access_token}`
-  // Prefer the signed PDF for preview when available, fall back to the original.
-  const displayPdfUrl = signedPdfUrl ?? pdfUrl
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -140,45 +118,9 @@ export default async function ContractDetailPage({ params }: { params: { id: str
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
-        {/* PDF Preview — show signed version when available */}
-        <div className="lg:col-span-2 bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <FileText className="h-4 w-4 text-gray-400" />
-              {isSigned && signedPdfUrl ? (
-                <span className="flex items-center gap-1.5">
-                  Contract PDF
-                  <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium">Getekend</span>
-                </span>
-              ) : 'Contract PDF'}
-            </div>
-            <div className="flex items-center gap-3">
-              {isSigned && signedPdfUrl && (
-                <ContractPrintButton pdfUrl={signedPdfUrl} />
-              )}
-              {displayPdfUrl && (
-                <a href={displayPdfUrl} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline flex items-center gap-1">
-                  <ExternalLink className="h-3 w-3" />
-                  Nieuw tabblad
-                </a>
-              )}
-            </div>
-          </div>
-          {displayPdfUrl ? (
-            <iframe
-              src={displayPdfUrl}
-              title="Contract"
-              className="w-full bg-gray-50"
-              style={{ height: 'min(70vh, 600px)' }}
-            />
-          ) : (
-            <div className="flex items-center justify-center h-[400px] text-gray-400">
-              <div className="text-center">
-                <FileText className="h-10 w-10 mx-auto mb-3 opacity-30" />
-                <p className="text-sm">Geen PDF beschikbaar</p>
-              </div>
-            </div>
-          )}
+        {/* PDF Preview — schakel tussen origineel en getekend/ingevuld */}
+        <div className="lg:col-span-2">
+          <ContractPdfPreview originalUrl={pdfUrl} signedUrl={signedPdfUrl} />
         </div>
 
         {/* Sidebar */}
@@ -338,27 +280,11 @@ export default async function ContractDetailPage({ params }: { params: { id: str
             </div>
           )}
 
-          {/* Events */}
-          {events.length > 0 && (
-            <div className="card-base space-y-2">
-              <h2 className="font-semibold text-sm">Activiteiten</h2>
-              <div className="space-y-2">
-                {events.slice(0, 12).map((e: { id: string; event_type: string; created_at: string; actor?: string; actor_email?: string }) => {
-                  const who = e.actor ?? e.actor_email
-                  return (
-                    <div key={e.id} className="flex items-start gap-2 text-xs">
-                      <span className="h-1.5 w-1.5 rounded-full bg-gray-300 mt-1.5 shrink-0" />
-                      <div>
-                        <span className="font-medium">{EVENT_LABELS[e.event_type] ?? e.event_type}</span>
-                        {who && <span className="text-gray-400"> · {who}</span>}
-                        <div className="text-gray-400">{formatDate(e.created_at)}</div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
+          {/* Tijdlijn */}
+          <div className="card-base space-y-3">
+            <h2 className="font-semibold text-sm">Tijdlijn</h2>
+            <ContractTimeline events={events} />
+          </div>
         </div>
       </div>
     </div>

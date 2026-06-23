@@ -6,6 +6,7 @@ import { ClientTasksWidget } from './client-tasks-widget'
 import { FramerStatusWidget } from './framer-status-widget'
 import { BlogStatusWidget } from './blog-status-widget'
 import { FinanceWidget } from './finance-widget'
+import { ContractsWidget } from './contracts-widget'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { formatDate, SERVICE_LABELS } from '@/lib/utils'
@@ -276,6 +277,11 @@ export default async function CommandCenter() {
       {/* Financiën deze maand: prognose / gefactureerd / kosten / winst */}
       <Suspense fallback={<div className="card-base text-sm text-gray-400">Financiën laden…</div>}>
         <FinanceWidget />
+      </Suspense>
+
+      {/* Contracten — status + opvolging */}
+      <Suspense fallback={<div className="card-base text-sm text-gray-400">Contracten laden…</div>}>
+        <ContractsWidget />
       </Suspense>
 
       {/* Klant-lifecycle widgets (batch, reviews, contractverlengingen) */}

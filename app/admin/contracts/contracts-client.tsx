@@ -2,9 +2,9 @@
 
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Plus, FileText, Filter as FilterIcon, X } from 'lucide-react'
+import { Plus, FileText, Filter as FilterIcon, X, Search, Bell } from 'lucide-react'
 import { formatDate, SERVICE_LABELS } from '@/lib/utils'
-import { statusInfo, canonicalStatus, STATUS_FILTER_OPTIONS } from '@/lib/contract-status'
+import { statusInfo, canonicalStatus, STATUS_FILTER_OPTIONS, followUp, averageSignDays } from '@/lib/contract-status'
 import { ContractTabs } from './contract-tabs'
 
 type Contract = {
@@ -15,9 +15,12 @@ type Contract = {
   signed_at: string | null
   sent_at: string | null
   created_at: string
+  expires_at: string | null
   access_token: string
   client_id: string | null
   template_id: string | null
+  signer_name: string | null
+  signer_email: string | null
   client: { id: string; company_name: string } | null
 }
 
@@ -27,18 +30,23 @@ type Template = { id: string; name: string }
 const ALL_SERVICES = ['social-media', 'webdesign', 'foto-video', 'grafisch-ontwerp', 'marketing-consultancy', 'ads']
 
 export function ContractsClient({
-  initialContracts, clients, templates = [],
+  initialContracts, clients, templates = [], initialStatus = 'all',
 }: {
   initialContracts: Contract[]
   clients: Client[]
   templates?: Template[]
+  initialStatus?: string
 }) {
   const [filterClient, setFilterClient] = useState<string>('all')
   const [filterService, setFilterService] = useState<string>('all')
-  const [filterStatus, setFilterStatus] = useState<string>('all')
+  const [filterStatus, setFilterStatus] = useState<string>(initialStatus)
   const [filterTemplate, setFilterTemplate] = useState<string>('all')
+  const [query, setQuery] = useState('')
+
+  const templateName = useMemo(() => new Map(templates.map((t) => [t.id, t.name])), [templates])
 
   const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
     return initialContracts.filter((c) => {
       if (filterClient !== 'all' && c.client_id !== filterClient) return false
       if (filterService !== 'all' && (c.service_slug ?? '') !== filterService) return false
@@ -46,24 +54,49 @@ export function ContractsClient({
       if (filterTemplate !== 'all') {
         if (filterTemplate === 'none' ? !!c.template_id : c.template_id !== filterTemplate) return false
       }
+      if (q) {
+        const hay = [
+          c.title, c.client?.company_name, c.signer_name, c.signer_email,
+          c.service_slug, statusInfo(c.status).label, c.template_id ? templateName.get(c.template_id) : '',
+        ].filter(Boolean).join(' ').toLowerCase()
+        if (!hay.includes(q)) return false
+      }
       return true
     })
-  }, [initialContracts, filterClient, filterService, filterStatus, filterTemplate])
+  }, [initialContracts, filterClient, filterService, filterStatus, filterTemplate, query, templateName])
 
-  const byStatus = useMemo(() => ({
-    pending: filtered.filter((c) => ['verzonden', 'geopend', 'ingevuld'].includes(canonicalStatus(c.status))).length,
-    signed:  filtered.filter((c) => canonicalStatus(c.status) === 'getekend').length,
-    other:   filtered.filter((c) => ['klaar_voor_verzenden', 'verlopen', 'geannuleerd', 'vervangen', 'template'].includes(canonicalStatus(c.status))).length,
-  }), [filtered])
+  // ── Dashboard-cijfers (over alle contracten) ───────────────────────────────
+  const stats = useMemo(() => {
+    const todayISO = new Date().toISOString().slice(0, 10)
+    const key = (c: Contract) => canonicalStatus(c.status)
+    return {
+      open:      initialContracts.filter((c) => !['getekend', 'geannuleerd'].includes(key(c))).length,
+      sentToday: initialContracts.filter((c) => c.sent_at && String(c.sent_at).slice(0, 10) === todayISO).length,
+      toSign:    initialContracts.filter((c) => ['verzonden', 'geopend', 'ingevuld'].includes(key(c))).length,
+      expired:   initialContracts.filter((c) => key(c) === 'verlopen').length,
+      signed:    initialContracts.filter((c) => key(c) === 'getekend').length,
+      avgDays:   averageSignDays(initialContracts),
+    }
+  }, [initialContracts])
 
-  const hasActiveFilters = filterClient !== 'all' || filterService !== 'all' || filterStatus !== 'all' || filterTemplate !== 'all'
+  const followUps = useMemo(
+    () => initialContracts.map((c) => ({ c, fu: followUp(c) })).filter((x) => x.fu.needs)
+      .sort((a, b) => (a.fu.level === 'urgent' ? -1 : 1) - (b.fu.level === 'urgent' ? -1 : 1)),
+    [initialContracts],
+  )
+
+  const hasActiveFilters = filterClient !== 'all' || filterService !== 'all' || filterStatus !== 'all' || filterTemplate !== 'all' || query.trim() !== ''
 
   const clearFilters = () => {
     setFilterClient('all')
     setFilterService('all')
     setFilterStatus('all')
     setFilterTemplate('all')
+    setQuery('')
   }
+
+  // Stat-kaart klik → filtert de lijst op die status.
+  const filterByKey = (key: string) => { clearFilters(); setFilterStatus(key) }
 
   const sel = 'px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#fff848]/50 focus:border-[#fff848]'
 
@@ -81,6 +114,55 @@ export function ContractsClient({
         </Link>
       </div>
 
+      {/* Dashboard — klikbare cijfers */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <button onClick={() => clearFilters()} className="stat-card text-left hover:ring-2 hover:ring-gray-200">
+          <div className="text-2xl font-bold">{stats.open}</div>
+          <div className="text-xs text-gray-400 mt-1">Openstaand</div>
+        </button>
+        <button onClick={() => filterByKey('verzonden')} className="stat-card text-left hover:ring-2 hover:ring-gray-200">
+          <div className="text-2xl font-bold text-blue-600">{stats.sentToday}</div>
+          <div className="text-xs text-gray-400 mt-1">Vandaag verzonden</div>
+        </button>
+        <button onClick={() => filterByKey('verzonden')} className="stat-card text-left hover:ring-2 hover:ring-gray-200">
+          <div className="text-2xl font-bold text-amber-600">{stats.toSign}</div>
+          <div className="text-xs text-gray-400 mt-1">Nog te tekenen</div>
+        </button>
+        <button onClick={() => filterByKey('verlopen')} className="stat-card text-left hover:ring-2 hover:ring-gray-200">
+          <div className="text-2xl font-bold text-red-600">{stats.expired}</div>
+          <div className="text-xs text-gray-400 mt-1">Verlopen</div>
+        </button>
+        <button onClick={() => filterByKey('getekend')} className="stat-card text-left hover:ring-2 hover:ring-gray-200">
+          <div className="text-2xl font-bold text-green-600">{stats.signed}</div>
+          <div className="text-xs text-gray-400 mt-1">Getekend</div>
+        </button>
+        <div className="stat-card">
+          <div className="text-2xl font-bold">{stats.avgDays !== null ? `${stats.avgDays}d` : '—'}</div>
+          <div className="text-xs text-gray-400 mt-1">Gem. tekentijd</div>
+        </div>
+      </div>
+
+      {/* Reminders — opvolging vereist (geen automail) */}
+      {followUps.length > 0 && (
+        <div className="card-base border-amber-200 bg-amber-50/40">
+          <div className="flex items-center gap-2 mb-2">
+            <Bell className="h-4 w-4 text-amber-600" />
+            <h2 className="text-sm font-semibold text-amber-800">Contracten vereisen opvolging ({followUps.length})</h2>
+          </div>
+          <div className="space-y-1.5">
+            {followUps.slice(0, 6).map(({ c, fu }) => (
+              <Link key={c.id} href={`/admin/contracts/${c.id}`} className="flex items-center justify-between gap-2 py-1.5 px-2 rounded-lg hover:bg-white/70">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium truncate">{c.title}</div>
+                  <div className="text-xs text-gray-500">{c.client?.company_name ?? c.signer_name ?? '—'}</div>
+                </div>
+                <span className={`status-badge shrink-0 ${fu.level === 'urgent' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{fu.reason}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Filters */}
       <div className="card-base">
         <div className="flex items-center gap-2 mb-3">
@@ -92,6 +174,16 @@ export function ContractsClient({
               Reset
             </button>
           )}
+        </div>
+        {/* Zoeken */}
+        <div className="relative mb-3">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Zoek op titel, klant, ontvanger, e-mail, type, status…"
+            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#fff848]/50 focus:border-[#fff848]"
+          />
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div>
@@ -131,22 +223,6 @@ export function ContractsClient({
               ))}
             </select>
           </div>
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="stat-card text-center">
-          <div className="text-2xl font-bold text-amber-600">{byStatus.pending}</div>
-          <div className="text-xs text-gray-400 mt-1">Wachten op handtekening</div>
-        </div>
-        <div className="stat-card text-center">
-          <div className="text-2xl font-bold text-green-600">{byStatus.signed}</div>
-          <div className="text-xs text-gray-400 mt-1">Getekend</div>
-        </div>
-        <div className="stat-card text-center">
-          <div className="text-2xl font-bold text-gray-600">{byStatus.other}</div>
-          <div className="text-xs text-gray-400 mt-1">Concept / Verlopen</div>
         </div>
       </div>
 
