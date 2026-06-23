@@ -111,6 +111,7 @@ export default async function SignContractPage({ params }: { params: { token: st
             token={params.token}
             signerName={signerName}
             signerEmail={signerEmail}
+            fields={Array.isArray(contract.detected_fields) ? contract.detected_fields : []}
           />
         )}
       </div>

@@ -1145,5 +1145,46 @@ ALTER TABLE public.recurring_invoices ADD COLUMN IF NOT EXISTS invoice_day text 
 ALTER TABLE public.invoices ADD COLUMN IF NOT EXISTS clickup_task_id text;
 ALTER TABLE public.recurring_invoice_months ADD COLUMN IF NOT EXISTS clickup_task_id text;
 
+-- ── AI Contractmodule 2.0: optionele klant, templates, audit ──────────────────
+-- Contract mag zonder klant bestaan (publieke tekenlink / intern).
+DO $$ BEGIN ALTER TABLE public.contracts ALTER COLUMN client_id DROP NOT NULL; EXCEPTION WHEN others THEN NULL; END $$;
+ALTER TABLE public.contracts
+  ADD COLUMN IF NOT EXISTS contract_type  text,
+  ADD COLUMN IF NOT EXISTS recipient_note text,
+  ADD COLUMN IF NOT EXISTS expires_at     date,
+  ADD COLUMN IF NOT EXISTS template_id    uuid,
+  ADD COLUMN IF NOT EXISTS created_by     uuid;
+
+-- Audit-log uitbreiden (contract_events bestaat al voor 'signed' e.d.).
+ALTER TABLE public.contract_events
+  ADD COLUMN IF NOT EXISTS actor      text,
+  ADD COLUMN IF NOT EXISTS ip_address text,
+  ADD COLUMN IF NOT EXISTS user_agent text,
+  ADD COLUMN IF NOT EXISTS meta       jsonb;
+
+-- Contracttemplates: herbruikbare basiscontracten met AI-gedetecteerde velden.
+CREATE TABLE IF NOT EXISTS public.contract_templates (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name            text NOT NULL,
+  category        text,
+  pdf_path        text,
+  detected_fields jsonb NOT NULL DEFAULT '[]'::jsonb,
+  sig_page        integer NOT NULL DEFAULT 1,
+  sig_x_pct       numeric NOT NULL DEFAULT 5,
+  sig_y_pct       numeric NOT NULL DEFAULT 25,
+  sig_width       numeric NOT NULL DEFAULT 200,
+  sig_height      numeric NOT NULL DEFAULT 60,
+  active          boolean NOT NULL DEFAULT true,
+  created_by      uuid,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  updated_at      timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.contract_templates ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "contract templates admin all" ON public.contract_templates;
+CREATE POLICY "contract templates admin all" ON public.contract_templates
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.

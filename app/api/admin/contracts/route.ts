@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient, insertResilient } from '@/lib/supabase/server'
 import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
+import { logContractEvent } from '@/lib/contract-audit'
 
 export async function POST(req: NextRequest) {
   try {
@@ -26,8 +27,10 @@ export async function POST(req: NextRequest) {
     const startMonth = formData.get('start_month') as string | null   // YYYY-MM
     const durationMonths = formData.get('duration_months') as string | null
 
-    if (!pdf || !client_id || !title) {
-      return NextResponse.json({ error: 'Ontbrekende velden' }, { status: 400 })
+    // client_id is OPTIONEEL: een contract mag zonder klant bestaan (publieke
+    // tekenlink / intern). Enkel een PDF en titel zijn verplicht.
+    if (!pdf || !title) {
+      return NextResponse.json({ error: 'PDF en titel zijn verplicht' }, { status: 400 })
     }
 
     // Derive start/end dates from start month + duration
@@ -51,8 +54,9 @@ export async function POST(req: NextRequest) {
       admin,
       'contracts',
       {
-        client_id,
+        client_id: client_id || null,
         title,
+        created_by: user.id,
         service_slug: service_slug || null,
         status: alreadySigned ? 'signed' : 'draft',
         signer_name: signer_name || null,
@@ -70,7 +74,7 @@ export async function POST(req: NextRequest) {
 
     // Upload PDF
     const arrayBuffer = await pdf.arrayBuffer()
-    const pdfPath = `${client_id}/${contractId}.pdf`
+    const pdfPath = `${client_id || 'algemeen'}/${contractId}.pdf`
     const { error: uploadErr } = await admin.storage
       .from('contracts')
       .upload(pdfPath, Buffer.from(arrayBuffer), {
@@ -91,6 +95,8 @@ export async function POST(req: NextRequest) {
       // Separate update so a missing signed_pdf_path column doesn't block pdf_path.
       try { await admin.from('contracts').update({ signed_pdf_path: pdfPath }).eq('id', contractId) } catch { }
     }
+
+    await logContractEvent(admin, contractId, 'uploaded', { actor: user.email ?? user.id, meta: { title } })
 
     // Invalidate caches so new contract appears in lists immediately
     try {

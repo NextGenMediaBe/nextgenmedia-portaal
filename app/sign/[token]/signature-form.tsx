@@ -4,16 +4,22 @@ import { useRef, useState, useEffect } from 'react'
 import { Loader2, PenLine, RotateCcw, CheckCircle2, Download } from 'lucide-react'
 import Link from 'next/link'
 
+type SignField = { label: string; type: string; required?: boolean; placeholder?: string }
+
+const HTML_TYPE: Record<string, string> = { email: 'email', phone: 'tel', date: 'date', number: 'number' }
+
 export function SignatureForm({
   contractId,
   token,
   signerName,
   signerEmail,
+  fields = [],
 }: {
   contractId: string
   token: string
   signerName: string
   signerEmail: string
+  fields?: SignField[]
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [isDrawing, setIsDrawing] = useState(false)
@@ -22,6 +28,10 @@ export function SignatureForm({
   const [loading, setLoading] = useState(false)
   const [done, setDone] = useState(false)
   const [signedPdfUrl, setSignedPdfUrl] = useState<string | null>(null)
+  // In te vullen velden (alles behalve de handtekening, die via het canvas gaat).
+  const fillFields = fields.filter((f) => f.type !== 'signature')
+  const [values, setValues] = useState<Record<string, string | boolean>>({})
+  const missingRequired = fillFields.some((f) => f.required && (f.type === 'checkbox' ? values[f.label] !== true : !String(values[f.label] ?? '').trim()))
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -80,6 +90,7 @@ export function SignatureForm({
     e.preventDefault()
     if (!hasSig) return
     if (!agreed) return
+    if (missingRequired) { alert('Vul alle verplichte velden in.'); return }
 
     setLoading(true)
     try {
@@ -92,6 +103,7 @@ export function SignatureForm({
           signer_name: signerName,
           signer_email: signerEmail,
           signature_data_url: canvasRef.current!.toDataURL('image/png'),
+          field_values: values,
         }),
       })
       const json = await res.json()
@@ -151,6 +163,36 @@ export function SignatureForm({
           <div className="min-w-0">
             {signerName && <div className="text-sm font-semibold text-gray-900 truncate">{signerName}</div>}
             {signerEmail && <div className="text-xs text-gray-500 truncate">{signerEmail}</div>}
+          </div>
+        </div>
+      )}
+
+      {/* In te vullen velden */}
+      {fillFields.length > 0 && (
+        <div className="card-base space-y-3">
+          <h2 className="font-semibold text-gray-900">Gegevens invullen</h2>
+          <div className="grid sm:grid-cols-2 gap-3">
+            {fillFields.map((f) => (
+              <div key={f.label} className={f.type === 'checkbox' ? 'sm:col-span-2' : ''}>
+                {f.type === 'checkbox' ? (
+                  <label className="flex items-center gap-2 text-sm text-gray-700">
+                    <input type="checkbox" checked={values[f.label] === true} onChange={(e) => setValues((v) => ({ ...v, [f.label]: e.target.checked }))} />
+                    {f.label}{f.required ? ' *' : ''}
+                  </label>
+                ) : (
+                  <>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">{f.label}{f.required ? ' *' : ''}</label>
+                    <input
+                      type={HTML_TYPE[f.type] ?? 'text'}
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#fff848]/50"
+                      value={String(values[f.label] ?? '')}
+                      placeholder={f.placeholder}
+                      onChange={(e) => setValues((v) => ({ ...v, [f.label]: e.target.value }))}
+                    />
+                  </>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -218,7 +260,7 @@ export function SignatureForm({
 
       <button
         type="submit"
-        disabled={loading || !hasSig || !agreed}
+        disabled={loading || !hasSig || !agreed || missingRequired}
         className="btn-primary w-full justify-center py-3 text-base disabled:opacity-40 disabled:cursor-not-allowed"
       >
         {loading ? (

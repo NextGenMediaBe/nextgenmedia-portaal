@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { Save, Loader2, Info } from 'lucide-react'
+import { Save, Loader2, Info, Sparkles, Plus, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
 
 interface Zone {
   sig_page: number
@@ -11,19 +12,49 @@ interface Zone {
   sig_height: number
 }
 
+type Field = { label: string; type: string; page_number: number; x: number; y: number; width: number; height: number; required: boolean; placeholder?: string }
+const FIELD_TYPES = ['text', 'email', 'phone', 'date', 'number', 'checkbox', 'signature']
+
 export function SignatureZoneEditor({
   contractId,
   pdfUrl,
   initialZone,
+  initialFields = [],
 }: {
   contractId: string
   pdfUrl: string | null
   initialZone: Zone
+  initialFields?: Field[]
 }) {
   const [zone, setZone] = useState<Zone>(initialZone)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [fields, setFields] = useState<Field[]>(initialFields)
+  const [analyzing, setAnalyzing] = useState(false)
+  const [savingFields, setSavingFields] = useState(false)
+
+  const analyze = async () => {
+    setAnalyzing(true)
+    try {
+      const res = await fetch(`/api/admin/contracts/${contractId}/analyze`, { method: 'POST' })
+      const j = await res.json(); if (!res.ok) throw new Error(j.error)
+      setFields(j.fields ?? [])
+      if (j.signature) setZone((z) => ({ ...z, sig_page: j.signature.page, sig_x_pct: j.signature.x, sig_y_pct: j.signature.y, sig_width: j.signature.width, sig_height: j.signature.height }))
+      toast.success(`${(j.fields ?? []).length} veld(en) gedetecteerd. Controleer en pas aan.`)
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Analyse mislukt') } finally { setAnalyzing(false) }
+  }
+  const setF = (i: number, patch: Partial<Field>) => setFields((fs) => fs.map((f, idx) => idx === i ? { ...f, ...patch } : f))
+  const addField = () => setFields((fs) => [...fs, { label: 'Nieuw veld', type: 'text', page_number: 1, x: 10, y: 50, width: 180, height: 22, required: false }])
+  const delField = (i: number) => setFields((fs) => fs.filter((_, idx) => idx !== i))
+  const saveFields = async () => {
+    setSavingFields(true)
+    try {
+      const res = await fetch(`/api/admin/contracts/${contractId}/field-values`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ detected_fields: fields }) })
+      const j = await res.json(); if (!res.ok) throw new Error(j.error)
+      toast.success('Velden opgeslagen.')
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Opslaan mislukt') } finally { setSavingFields(false) }
+  }
 
   const inp = 'w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#fff848]/50 focus:border-[#fff848]'
   const lbl = 'block text-xs font-medium text-gray-600 mb-1'
@@ -52,6 +83,11 @@ export function SignatureZoneEditor({
   }
 
   return (
+    <div className="space-y-6">
+    <div className="flex items-center justify-between gap-3 flex-wrap">
+      <p className="text-sm text-gray-500">Laat AI invulvelden + handtekeningzone detecteren, controleer en pas aan. AI beslist nooit alleen.</p>
+      <button onClick={analyze} disabled={analyzing} className="btn-primary text-sm">{analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}Analyseer met AI</button>
+    </div>
     <div className="grid lg:grid-cols-2 gap-6">
       {/* PDF viewer */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
@@ -177,6 +213,40 @@ export function SignatureZoneEditor({
             Positie: {zone.sig_x_pct}% van links, {zone.sig_y_pct}% van boven
           </p>
         </div>
+      </div>
+    </div>
+
+      {/* AI-gedetecteerde invulvelden — controleren & aanpassen */}
+      <div className="card-base">
+        <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+          <h2 className="font-semibold text-gray-900">Invulvelden ({fields.length})</h2>
+          <div className="flex gap-2">
+            <button onClick={addField} className="btn-secondary text-xs"><Plus className="h-3.5 w-3.5" />Veld toevoegen</button>
+            <button onClick={saveFields} disabled={savingFields} className="btn-primary text-xs">{savingFields ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}Velden opslaan</button>
+          </div>
+        </div>
+        {fields.length === 0 ? (
+          <p className="text-sm text-gray-400">Nog geen velden. Klik op <b>Analyseer met AI</b> of voeg handmatig een veld toe.</p>
+        ) : (
+          <div className="space-y-2">
+            <div className="hidden sm:grid grid-cols-12 gap-2 text-[10px] text-gray-400 px-1">
+              <span className="col-span-3">Label</span><span className="col-span-2">Type</span><span className="col-span-1">Pag.</span><span className="col-span-1">X%</span><span className="col-span-1">Y%</span><span className="col-span-1">Breedte</span><span className="col-span-2">Verplicht</span><span className="col-span-1"></span>
+            </div>
+            {fields.map((f, i) => (
+              <div key={i} className="grid grid-cols-12 gap-2 items-center">
+                <input className="col-span-12 sm:col-span-3 px-2 py-1.5 text-xs border border-gray-200 rounded-lg" value={f.label} onChange={(e) => setF(i, { label: e.target.value })} placeholder="Label" />
+                <select className="col-span-4 sm:col-span-2 px-2 py-1.5 text-xs border border-gray-200 rounded-lg" value={f.type} onChange={(e) => setF(i, { type: e.target.value })}>{FIELD_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select>
+                <input type="number" min="1" className="col-span-2 sm:col-span-1 px-2 py-1.5 text-xs border border-gray-200 rounded-lg" value={f.page_number} onChange={(e) => setF(i, { page_number: Number(e.target.value) })} />
+                <input type="number" min="0" max="100" className="col-span-2 sm:col-span-1 px-2 py-1.5 text-xs border border-gray-200 rounded-lg" value={f.x} onChange={(e) => setF(i, { x: Number(e.target.value) })} />
+                <input type="number" min="0" max="100" className="col-span-2 sm:col-span-1 px-2 py-1.5 text-xs border border-gray-200 rounded-lg" value={f.y} onChange={(e) => setF(i, { y: Number(e.target.value) })} />
+                <input type="number" min="20" className="col-span-2 sm:col-span-1 px-2 py-1.5 text-xs border border-gray-200 rounded-lg" value={f.width} onChange={(e) => setF(i, { width: Number(e.target.value) })} />
+                <label className="col-span-3 sm:col-span-2 text-xs text-gray-600 flex items-center gap-1.5"><input type="checkbox" checked={f.required} onChange={(e) => setF(i, { required: e.target.checked })} />verplicht</label>
+                <button onClick={() => delField(i)} className="col-span-1 h-8 w-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-red-400 justify-self-end" title="Verwijderen"><Trash2 className="h-3.5 w-3.5" /></button>
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="text-[11px] text-gray-400 mt-3">x/y = positie in % van de pagina (links/boven). Breedte in punten. De ontvanger vult deze velden in bij ondertekening.</p>
       </div>
     </div>
   )
