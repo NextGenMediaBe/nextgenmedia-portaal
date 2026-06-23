@@ -1075,5 +1075,44 @@ BEGIN
    WHERE b.account_id IS NULL AND b.client_id IS NOT NULL AND a.client_id = b.client_id;
 EXCEPTION WHEN others THEN NULL; END $$;
 
+-- ── Blogaccount polish: gecachte website-analyse + blog memory ────────────────
+-- website_analysis: gestructureerde analyse (diensten, SEO-woorden, tone, CTA's,
+-- FAQ's). Wordt NIET elke generatie opnieuw uitgevoerd — enkel bij "opnieuw
+-- analyseren" of wanneer de briefing wijzigt (website_analyzed_at → NULL).
+-- blog_memory: { topics:[], keywords:[], angles:[], ctas:[] } om herhaling te vermijden.
+ALTER TABLE public.blog_accounts ADD COLUMN IF NOT EXISTS website_analysis    jsonb;
+ALTER TABLE public.blog_accounts ADD COLUMN IF NOT EXISTS website_analyzed_at timestamptz;
+ALTER TABLE public.blog_accounts ADD COLUMN IF NOT EXISTS blog_memory         jsonb;
+
+-- ── Blogs: synchronisatiestatus + publicatiebeheer ────────────────────────────
+-- sync_status: synced | pending | failed (NULL = nog niet gepubliceerd)
+-- publish_mode: now | scheduled | auto   publish_at: geplande publicatiedatum
+ALTER TABLE public.blogs ADD COLUMN IF NOT EXISTS sync_status  text;
+ALTER TABLE public.blogs ADD COLUMN IF NOT EXISTS publish_mode text NOT NULL DEFAULT 'now';
+ALTER TABLE public.blogs ADD COLUMN IF NOT EXISTS publish_at   timestamptz;
+
+-- ── blog_versions: volledige versiegeschiedenis per blog ──────────────────────
+CREATE TABLE IF NOT EXISTS public.blog_versions (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  blog_id          uuid NOT NULL REFERENCES public.blogs(id) ON DELETE CASCADE,
+  titel            text,
+  slug             text,
+  content          text,
+  meta_title       text,
+  meta_description text,
+  thumbnail_url    text,
+  edited_by        text,            -- e-mail/identiteit van wie de wijziging deed
+  change_summary   text,            -- korte omschrijving van wat gewijzigd werd
+  created_at       timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_blog_versions_blog ON public.blog_versions (blog_id, created_at DESC);
+
+ALTER TABLE public.blog_versions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "blog versions admin all" ON public.blog_versions;
+CREATE POLICY "blog versions admin all" ON public.blog_versions
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.

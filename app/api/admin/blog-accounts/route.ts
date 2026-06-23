@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { encryptSecret, isEncrypted } from '@/lib/crypto'
 import { firstGenerationDate } from '@/lib/blog-dates'
 import { validateFramerConfig } from '@/lib/framer'
+import { analyzeWebsiteDeep } from '@/lib/website-analyze'
 
 // GET — alle blogaccounts + tellingen + klanten voor koppeling
 export async function GET() {
@@ -29,6 +30,7 @@ export async function GET() {
         briefing: a.briefing, framer_project_url: a.framer_project_url, framer_blog_collection_id: a.framer_blog_collection_id,
         framer_field_map: a.framer_field_map, has_api_key: !!a.framer_api_key, api_key_encrypted: isEncrypted(a.framer_api_key as string),
         framer_valid: validateFramerConfig(cfg).ok,
+        website_analyzed_at: a.website_analyzed_at ?? null, has_analysis: !!a.website_analysis,
         published: cnt(a.id as string, 'gepubliceerd'), review: cnt(a.id as string, 'klaar_voor_review'), failed: cnt(a.id as string, 'gefaald'),
       }
     })
@@ -43,8 +45,22 @@ export async function POST(req: NextRequest) {
     const actor = await requireAdmin()
     if (!actor) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const b = await req.json()
-    if (!b.name?.trim()) return NextResponse.json({ error: 'Naam is verplicht' }, { status: 400 })
     const admin = createAdminSupabaseClient()
+
+    // Website opnieuw analyseren (gecached resultaat verversen).
+    if (b.action === 'reanalyze') {
+      if (!b.id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })
+      const { data: acc } = await admin.from('blog_accounts').select('id, website_url').eq('id', b.id).maybeSingle()
+      if (!acc) return NextResponse.json({ error: 'Blogaccount niet gevonden' }, { status: 404 })
+      if (!acc.website_url) return NextResponse.json({ error: 'Geen website-URL ingesteld voor dit account.' }, { status: 400 })
+      const analysis = await analyzeWebsiteDeep(acc.website_url)
+      if (!analysis) return NextResponse.json({ error: 'Website kon niet geanalyseerd worden (niet bereikbaar of geen inhoud).' }, { status: 400 })
+      await admin.from('blog_accounts').update({ website_analysis: analysis, website_analyzed_at: new Date().toISOString() }).eq('id', b.id)
+      try { revalidatePath('/admin/blogaccounts') } catch { }
+      return NextResponse.json({ ok: true, analysis })
+    }
+
+    if (!b.name?.trim()) return NextResponse.json({ error: 'Naam is verplicht' }, { status: 400 })
     const freq = Math.max(1, Number(b.frequentie_maanden) || 1)
     const start = b.startdatum || null
     const insert: Record<string, unknown> = {
@@ -89,6 +105,9 @@ export async function PATCH(req: NextRequest) {
     }
     if (typeof b.framer_api_key === 'string' && b.framer_api_key.trim()) patch.framer_api_key = encryptSecret(b.framer_api_key.trim())
     else if (b.framer_api_key === null) patch.framer_api_key = null
+    // Briefing gewijzigd → website-analyse markeren als verouderd zodat de
+    // volgende generatie ze opnieuw uitvoert (zonder hier te blokkeren op een fetch).
+    if (b.briefing !== undefined) patch.website_analyzed_at = null
     if (Object.keys(patch).length === 0) return NextResponse.json({ error: 'Geen wijzigingen' }, { status: 400 })
     const { error } = await admin.from('blog_accounts').update(patch).eq('id', b.id)
     if (error) throw new Error(error.message)

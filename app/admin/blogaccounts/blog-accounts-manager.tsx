@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Plus, X, Loader2, Pencil, Trash2, Sparkles, Newspaper, Plug, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { Plus, X, Loader2, Pencil, Trash2, Sparkles, Newspaper, Plug, CheckCircle2, AlertTriangle, ScanSearch } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatDate } from '@/lib/utils'
 
@@ -11,6 +11,7 @@ type Account = {
   active: boolean; frequentie_maanden: number; aantal_per_cyclus: number; startdatum: string | null
   volgende_generatie_datum: string | null; max_live_blogs: number | null; briefing: string | null
   framer_project_url: string | null; has_api_key: boolean; framer_valid: boolean
+  website_analyzed_at: string | null; has_analysis: boolean
   published: number; review: number; failed: number
 }
 type ClientOpt = { id: string; company_name: string }
@@ -40,6 +41,11 @@ export function BlogAccountsManager() {
     try { const res = await fetch(`/api/admin/blog-accounts?id=${a.id}`, { method: 'DELETE' }); const j = await res.json(); if (!res.ok) throw new Error(j.error); await load() }
     catch (e) { toast.error(e instanceof Error ? e.message : 'Fout') } finally { setBusy(null) }
   }
+  const reanalyze = async (id: string) => {
+    setBusy(id + ':analyze')
+    try { const res = await fetch('/api/admin/blog-accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'reanalyze', id }) }); const j = await res.json(); if (!res.ok) throw new Error(j.error); toast.success('Website opnieuw geanalyseerd.'); await load() }
+    catch (e) { toast.error(e instanceof Error ? e.message : 'Fout') } finally { setBusy(null) }
+  }
 
   return (
     <div className="space-y-4">
@@ -66,6 +72,7 @@ export function BlogAccountsManager() {
                     <span>{a.aantal_per_cyclus}× per {a.frequentie_maanden} mnd</span>
                     <span>volgende: {a.volgende_generatie_datum ? formatDate(a.volgende_generatie_datum) : '—'}</span>
                     {a.max_live_blogs ? <span>max {a.max_live_blogs} live</span> : null}
+                    <span className={a.has_analysis ? 'text-green-600' : 'text-gray-400'}>{a.has_analysis ? `website-analyse ✓${a.website_analyzed_at ? ` (${formatDate(a.website_analyzed_at)})` : ''}` : 'nog niet geanalyseerd'}</span>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
                     <span className="status-badge bg-green-100 text-green-700">{a.published} gepubliceerd</span>
@@ -76,6 +83,7 @@ export function BlogAccountsManager() {
                 <div className="flex items-center gap-1.5 shrink-0">
                   <Link href={`/admin/blogs?account=${a.id}`} className="btn-secondary text-xs">Review</Link>
                   <Link href="/admin/framer" className="btn-secondary text-xs"><Plug className="h-3.5 w-3.5" />Framer</Link>
+                  {a.website_url && <button onClick={() => reanalyze(a.id)} disabled={busy === a.id + ':analyze'} className="btn-secondary text-xs" title="Website opnieuw analyseren">{busy === a.id + ':analyze' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ScanSearch className="h-3.5 w-3.5" />}Analyseer site</button>}
                   <button onClick={() => generate(a.id)} disabled={busy === a.id} className="btn-secondary text-xs">{busy === a.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}Genereer</button>
                   <button onClick={() => setDialog({ account: a })} className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400"><Pencil className="h-3.5 w-3.5" /></button>
                   <button onClick={() => remove(a)} disabled={busy === a.id} className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-red-400"><Trash2 className="h-3.5 w-3.5" /></button>

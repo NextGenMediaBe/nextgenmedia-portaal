@@ -3,6 +3,7 @@ import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { slugify } from '@/lib/blog-ai'
 import { publishBlogToFramer, markFramerSync, type FramerClientConfig } from '@/lib/framer'
+import { snapshotBlogVersion, describeChanges } from '@/lib/blog-versions'
 
 const FRAMER_COLS = 'id, client_id, framer_project_url, framer_api_key, framer_blog_collection_id, framer_field_map'
 
@@ -33,16 +34,24 @@ export async function PATCH(req: NextRequest) {
     const ownBlog = blog.client_id && clientIds.includes(blog.client_id)
     if (!ownClient && !ownBlog) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
 
+    const fields: Record<string, unknown> = {}
+    if (b.titel !== undefined) fields.titel = String(b.titel)
+    if (b.slug !== undefined) fields.slug = slugify(String(b.slug))
+    if (b.content !== undefined) fields.content = b.content
+    if (b.meta_title !== undefined) fields.meta_title = b.meta_title
+    if (b.meta_description !== undefined) fields.meta_description = b.meta_description
+    if (b.thumbnail_url !== undefined) fields.thumbnail_url = b.thumbnail_url || null
+    if (Object.keys(fields).length === 0) return NextResponse.json({ error: 'Geen wijzigingen' }, { status: 400 })
+
+    // Versiegeschiedenis: huidige toestand bewaren vóór de wijziging.
+    await snapshotBlogVersion(admin, blog.id, blog, user.email ?? user.id, describeChanges(blog, fields))
+
     const patch: Record<string, unknown> = {
+      ...fields,
       laatst_bewerkt_door: user.email ?? user.id,
       laatst_bewerkt_op: new Date().toISOString(),
     }
-    if (b.titel !== undefined) patch.titel = String(b.titel)
-    if (b.slug !== undefined) patch.slug = slugify(String(b.slug))
-    if (b.content !== undefined) patch.content = b.content
-    if (b.meta_title !== undefined) patch.meta_title = b.meta_title
-    if (b.meta_description !== undefined) patch.meta_description = b.meta_description
-    if (b.thumbnail_url !== undefined) patch.thumbnail_url = b.thumbnail_url || null
+    if (blog.status === 'gepubliceerd') patch.sync_status = 'pending'
 
     const { error } = await admin.from('blogs').update(patch).eq('id', b.id)
     if (error) throw new Error(error.message)
@@ -62,12 +71,13 @@ export async function PATCH(req: NextRequest) {
       }, { confirmOverride: true, accountId: account.id })
       if (result.ok) {
         pushed = true
-        const p: Record<string, unknown> = { gepubliceerd_op: new Date().toISOString(), foutmelding: null }
+        const p: Record<string, unknown> = { gepubliceerd_op: new Date().toISOString(), foutmelding: null, sync_status: 'synced' }
         if (result.framerItemId) p.framer_item_id = result.framerItemId
         await admin.from('blogs').update(p).eq('id', b.id)
         await markFramerSync(account.id)
       } else if (!result.pending) {
         pushError = result.error ?? 'Publicatie mislukt'
+        await admin.from('blogs').update({ sync_status: 'failed' }).eq('id', b.id)
       }
     }
 

@@ -2,14 +2,42 @@ import 'server-only'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { sendEmail, getAdminEmails, baseUrl } from '@/lib/email'
 import { buildEmailHtml, buildEmailText } from '@/lib/email-html'
-import { generateBlog, slugify } from '@/lib/blog-ai'
+import { generateBlog, slugify, type BlogMemory } from '@/lib/blog-ai'
 import { nextGenerationDate, todayISO } from '@/lib/blog-dates'
-import { analyzeWebsite } from '@/lib/website-analyze'
+import { analyzeWebsiteDeep, analysisToPromptText, type WebsiteAnalysis } from '@/lib/website-analyze'
 
 export type BlogAccount = {
   id: string; name: string; website_url: string | null; briefing: string | null
   aantal_per_cyclus: number | null; frequentie_maanden: number | null
   volgende_generatie_datum: string | null; client_id: string | null
+  website_analysis?: WebsiteAnalysis | null; website_analyzed_at?: string | null
+  blog_memory?: BlogMemory | null
+}
+
+export const BLOG_ACCOUNT_COLS = 'id, name, website_url, briefing, aantal_per_cyclus, frequentie_maanden, volgende_generatie_datum, client_id, website_analysis, website_analyzed_at, blog_memory'
+
+const emptyMemory = (): BlogMemory => ({ topics: [], keywords: [], angles: [], ctas: [] })
+
+/** Voegt nieuwe items toe aan een geheugenlijst zonder duplicaten, met een plafond. */
+function mergeMemoryList(existing: string[] | undefined, add: string[], cap = 200): string[] {
+  const seen = new Set((existing ?? []).map((x) => x.toLowerCase()))
+  const out = [...(existing ?? [])]
+  for (const a of add) { const k = a.trim(); if (k && !seen.has(k.toLowerCase())) { seen.add(k.toLowerCase()); out.push(k) } }
+  return out.slice(-cap)
+}
+
+/**
+ * Haalt de gecachte website-analyse op of voert die éénmalig uit en bewaart ze.
+ * Wordt NIET elke generatie opnieuw uitgevoerd (caching).
+ */
+export async function getOrAnalyzeWebsite(account: BlogAccount): Promise<WebsiteAnalysis | null> {
+  if (account.website_analysis && account.website_analyzed_at) return account.website_analysis
+  if (!account.website_url) return null
+  const analysis = await analyzeWebsiteDeep(account.website_url)
+  if (analysis) {
+    try { await createAdminSupabaseClient().from('blog_accounts').update({ website_analysis: analysis, website_analyzed_at: new Date().toISOString() }).eq('id', account.id) } catch { }
+  }
+  return analysis
 }
 
 /** Genereert `count` blogs voor een blogaccount; opslaan als klaar_voor_review. */
@@ -20,13 +48,15 @@ export async function generateBlogsForAccount(account: BlogAccount, count: numbe
   const recentTitles = (recent ?? []).map((b: { titel: string }) => b.titel).filter(Boolean)
   const usedSlugs = new Set((recent ?? []).map((b: { slug: string }) => b.slug))
 
-  const websiteContent = await analyzeWebsite(account.website_url)
+  const analysis = await getOrAnalyzeWebsite(account)
+  const websiteContent = analysisToPromptText(analysis)
+  const memory: BlogMemory = { ...emptyMemory(), ...(account.blog_memory ?? {}) }
 
   const created: { id: string; titel: string }[] = []
   for (let i = 0; i < Math.max(1, count); i++) {
     const blog = await generateBlog({
       clientName: account.name, website: account.website_url, brandContext: account.briefing,
-      websiteContent, recentTitles: [...recentTitles, ...created.map((c) => c.titel)],
+      websiteContent, recentTitles: [...recentTitles, ...created.map((c) => c.titel)], memory,
     })
     let slug = blog.slug || slugify(blog.titel)
     let n = 2
@@ -38,7 +68,19 @@ export async function generateBlogsForAccount(account: BlogAccount, count: numbe
       titel: blog.titel, slug, content: blog.content, meta_title: blog.meta_title,
       meta_description: blog.meta_description, thumbnail_url: blog.thumbnail_url, status: 'klaar_voor_review',
     }).select('id, titel').single()
-    if (!error && data) created.push(data)
+    if (!error && data) {
+      created.push(data)
+      // Geheugen in-memory bijwerken zodat de volgende blog in deze batch ook varieert.
+      memory.topics = mergeMemoryList(memory.topics, [blog.topic])
+      memory.keywords = mergeMemoryList(memory.keywords, blog.keywords)
+      memory.angles = mergeMemoryList(memory.angles, [blog.angle])
+      memory.ctas = mergeMemoryList(memory.ctas, [blog.cta])
+    }
+  }
+
+  // Bijgewerkt blog-geheugen persisteren (herhaling vermijden bij volgende cyclus).
+  if (created.length > 0) {
+    try { await admin.from('blog_accounts').update({ blog_memory: memory }).eq('id', account.id) } catch { }
   }
   return created
 }
@@ -68,7 +110,7 @@ export async function runBlogScheduler(now = new Date()): Promise<{ accounts: nu
   const admin = createAdminSupabaseClient()
   const today = todayISO(now)
   const { data: due } = await admin.from('blog_accounts')
-    .select('id, name, website_url, briefing, aantal_per_cyclus, frequentie_maanden, volgende_generatie_datum, client_id')
+    .select(BLOG_ACCOUNT_COLS)
     .eq('active', true)
     .not('volgende_generatie_datum', 'is', null)
     .lte('volgende_generatie_datum', today)

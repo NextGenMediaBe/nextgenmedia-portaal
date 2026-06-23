@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { runBlogScheduler } from '@/lib/blog-generate'
+import { publishScheduledBlogs } from '@/lib/blog-publish'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -17,5 +18,6 @@ function authorized(req: NextRequest): boolean {
 export async function GET(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ error: 'Niet geautoriseerd' }, { status: 401 })
   const res = await runBlogScheduler()
-  return NextResponse.json({ ok: true, ...res })
+  const scheduled = await publishScheduledBlogs()
+  return NextResponse.json({ ok: true, ...res, scheduledPublished: scheduled.published, scheduledFailed: scheduled.failed })
 }
