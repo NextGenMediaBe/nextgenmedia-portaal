@@ -145,11 +145,24 @@ export async function publishBlogToFramer(config: FramerClientConfig, blog: Blog
       }
     } catch { /* getChangedPaths optioneel */ }
 
-    // Item toevoegen of updaten (addItems met bestaande id = merge/update → geen duplicaat).
-    await collection.addItems([itemId ? { id: itemId, slug: blog.slug, fieldData: fd } : { slug: blog.slug, fieldData: fd }])
+    // Item toevoegen of updaten (addItems met bestaande id = update; zonder id = nieuw item).
+    // Robuust: faalt een update omdat de id niet (meer) bestaat ("No item found
+    // with ID …"), dan maken we het item gewoon opnieuw aan zonder id.
+    let createdFresh = false
+    try {
+      await collection.addItems([itemId ? { id: itemId, slug: blog.slug, fieldData: fd } : { slug: blog.slug, fieldData: fd }])
+    } catch (e) {
+      const m = e instanceof Error ? e.message : String(e)
+      if (itemId && /no item found/i.test(m)) {
+        await collection.addItems([{ slug: blog.slug, fieldData: fd }])
+        createdFresh = true
+      } else {
+        throw e
+      }
+    }
 
     // Echte Framer-id ophalen (na een create heeft het nieuwe item een gegenereerde id).
-    let realId: string | null = itemId
+    let realId: string | null = createdFresh ? null : itemId
     if (!realId) {
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
