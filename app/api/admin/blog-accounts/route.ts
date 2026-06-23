@@ -8,6 +8,10 @@ import { analyzeWebsiteDeep, buildSiteSignature } from '@/lib/website-analyze'
 import { computeHealth } from '@/lib/blog-health'
 import { getCronState, runWebsiteMonitor } from '@/lib/blog-automation'
 
+// connect_framer / reanalyze / monitor doen externe calls (Framer + website-scrape
+// + AI) die even kunnen duren; verhoog de tijdslimiet zodat ze niet afkappen.
+export const maxDuration = 60
+
 // GET — alle blogaccounts + tellingen + klanten voor koppeling
 export async function GET() {
   try {

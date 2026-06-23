@@ -5,6 +5,9 @@ import {
   analyzeFramerProject, testPublish, friendlyMissing, testFramerConnection, logFramerAction, type FramerClientConfig,
 } from '@/lib/framer'
 
+// Framer-verbindingen + publicaties zijn externe calls die kunnen aanslepen.
+export const maxDuration = 60
+
 type AccountRow = {
   id: string; name: string; framer_project_url: string | null; framer_api_key: string | null
   framer_blog_collection_id: string | null; framer_field_map: unknown; framer_last_sync: string | null

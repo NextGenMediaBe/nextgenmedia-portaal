@@ -7,6 +7,11 @@ import { findStockImage } from '@/lib/blog-image'
 import { publishApprovedBlog, type AccountFramer, type BlogRow } from '@/lib/blog-publish'
 import { snapshotBlogVersion, describeChanges } from '@/lib/blog-versions'
 
+// AI-generatie + website-analyse + Framer-publicatie kunnen tientallen seconden
+// duren; verhoog de serverless-tijdslimiet zodat de aanvraag niet afkapt
+// ("Failed to fetch"). 60s is het maximum op het Vercel Hobby-plan.
+export const maxDuration = 60
+
 const FRAMER_COLS = 'id, framer_project_url, framer_api_key, framer_blog_collection_id, framer_field_map, max_live_blogs'
 
 // GET ?account_id= | ?client_id= | ?status= | ?versions=<blog_id>

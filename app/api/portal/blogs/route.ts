@@ -5,6 +5,9 @@ import { slugify } from '@/lib/blog-ai'
 import { publishBlogToFramer, markFramerSync, type FramerClientConfig } from '@/lib/framer'
 import { snapshotBlogVersion, describeChanges } from '@/lib/blog-versions'
 
+// Opslaan pusht (bij gepubliceerde blogs) naar Framer — externe call, kan duren.
+export const maxDuration = 60
+
 const FRAMER_COLS = 'id, client_id, framer_project_url, framer_api_key, framer_blog_collection_id, framer_field_map'
 
 // PATCH { id, titel?, content?, meta_title?, meta_description? }
