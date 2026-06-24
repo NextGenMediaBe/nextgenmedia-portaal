@@ -1,18 +1,28 @@
 'use client'
 
-import { useRef, useState } from 'react'
-import { GripVertical } from 'lucide-react'
+import { useEffect, useRef, useState, useCallback } from 'react'
+import { GripVertical, Loader2 } from 'lucide-react'
+import { FIELD_FONT_PT } from '@/lib/contract-render'
 
-// Visuele drag & drop editor: sleep velden + handtekeningzone bovenop de PDF.
-// x/y in % (links/boven), width/height in punten. Bij verslepen/resizen worden
-// de coördinaten automatisch bijgewerkt — geen manuele invoer meer nodig.
+// Echte WYSIWYG drag & drop editor: de PDF-pagina wordt met pdf.js naar een canvas
+// gerenderd op exact dezelfde schaal als de overlay. Wat je hier ziet = wat op de
+// uiteindelijke PDF terechtkomt (zelfde paginamaten, zelfde positie, zelfde font).
 
-type Field = { label: string; type: string; page_number: number; x: number; y: number; width: number; height: number; required: boolean; placeholder?: string }
+type Field = { label: string; type: string; page_number: number; x: number; y: number; width: number; height: number; required: boolean; placeholder?: string; confidence?: number }
 type Zone = { sig_page: number; sig_x_pct: number; sig_y_pct: number; sig_width: number; sig_height: number }
 
-// Benaderende A4-puntmaten voor visuele schaling van breedte/hoogte.
-const PT_W = 595
-const PT_H = 842
+// pdf.js wordt lazy geladen (alleen client) + worker via CDN op exact dezelfde versie.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let pdfjsPromise: Promise<any> | null = null
+function loadPdfjs() {
+  if (!pdfjsPromise) {
+    pdfjsPromise = import('pdfjs-dist').then((pdfjs) => {
+      pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`
+      return pdfjs
+    })
+  }
+  return pdfjsPromise
+}
 
 export function FieldOverlayEditor({
   pdfUrl, fields, setFields, zone, setZone,
@@ -25,14 +35,62 @@ export function FieldOverlayEditor({
 }) {
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<number | null>(null)
-  const canvasRef = useRef<HTMLDivElement>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  // Echte paginamaten (punten) + weergaveschaal (px per punt).
+  const [pageDims, setPageDims] = useState<{ wPt: number; hPt: number; wPx: number; hPx: number }>({ wPt: 595, hPt: 842, wPx: 1, hPx: 1 })
+
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const pdfDocRef = useRef<any>(null)
   const drag = useRef<null | { kind: 'field' | 'zone'; index: number; mode: 'move' | 'resize'; startX: number; startY: number; orig: { x: number; y: number; w: number; h: number } }>(null)
 
   const maxPage = Math.max(1, zone.sig_page, ...fields.map((f) => f.page_number || 1))
+  const scale = pageDims.wPx / pageDims.wPt // px per punt
 
-  const onPointerDown = (
-    e: React.PointerEvent, kind: 'field' | 'zone', index: number, mode: 'move' | 'resize',
-  ) => {
+  // Render de gekozen pagina naar het canvas op de breedte van de container.
+  const renderPage = useCallback(async () => {
+    if (!pdfUrl || !wrapRef.current || !canvasRef.current) return
+    setLoading(true); setError(null)
+    try {
+      const pdfjs = await loadPdfjs()
+      if (!pdfDocRef.current) {
+        pdfDocRef.current = await pdfjs.getDocument({ url: pdfUrl }).promise
+      }
+      const doc = pdfDocRef.current
+      const pageNum = Math.min(page, doc.numPages)
+      const pdfPage = await doc.getPage(pageNum)
+      const vp1 = pdfPage.getViewport({ scale: 1 }) // punten
+      const containerWidth = wrapRef.current.clientWidth || 600
+      const renderScale = containerWidth / vp1.width
+      const vp = pdfPage.getViewport({ scale: renderScale })
+      const canvas = canvasRef.current
+      const ctx = canvas.getContext('2d')!
+      const dpr = Math.min(2, window.devicePixelRatio || 1)
+      canvas.width = Math.floor(vp.width * dpr)
+      canvas.height = Math.floor(vp.height * dpr)
+      canvas.style.width = `${vp.width}px`
+      canvas.style.height = `${vp.height}px`
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      await pdfPage.render({ canvasContext: ctx, viewport: vp }).promise
+      setPageDims({ wPt: vp1.width, hPt: vp1.height, wPx: vp.width, hPx: vp.height })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'PDF kon niet geladen worden')
+    } finally {
+      setLoading(false)
+    }
+  }, [pdfUrl, page])
+
+  useEffect(() => { renderPage() }, [renderPage])
+  // Herteken bij venstergrootte-wijziging (schaal blijft exact).
+  useEffect(() => {
+    const onResize = () => renderPage()
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [renderPage])
+
+  const onPointerDown = (e: React.PointerEvent, kind: 'field' | 'zone', index: number, mode: 'move' | 'resize') => {
     e.preventDefault(); e.stopPropagation()
     ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
     const orig = kind === 'zone'
@@ -44,35 +102,36 @@ export function FieldOverlayEditor({
 
   const onPointerMove = (e: React.PointerEvent) => {
     const d = drag.current
-    const rect = canvasRef.current?.getBoundingClientRect()
-    if (!d || !rect) return
-    const dxPct = ((e.clientX - d.startX) / rect.width) * 100
-    const dyPct = ((e.clientY - d.startY) / rect.height) * 100
-    const clamp = (v: number) => Math.max(0, Math.min(98, v))
-
+    if (!d) return
+    const dxPct = ((e.clientX - d.startX) / pageDims.wPx) * 100
+    const dyPct = ((e.clientY - d.startY) / pageDims.hPx) * 100
+    const clamp = (v: number) => Math.max(0, Math.min(99, v))
     if (d.mode === 'move') {
       const nx = clamp(d.orig.x + dxPct)
       const ny = clamp(d.orig.y + dyPct)
-      if (d.kind === 'zone') setZone((z) => ({ ...z, sig_x_pct: Math.round(nx), sig_y_pct: Math.round(ny) }))
-      else setFields((fs) => fs.map((f, i) => i === d.index ? { ...f, x: Math.round(nx), y: Math.round(ny) } : f))
+      if (d.kind === 'zone') setZone((z) => ({ ...z, sig_x_pct: round1(nx), sig_y_pct: round1(ny) }))
+      else setFields((fs) => fs.map((f, i) => i === d.index ? { ...f, x: round1(nx), y: round1(ny) } : f))
     } else {
-      // Resize: schaal pixel-delta terug naar punten.
-      const dwPt = ((e.clientX - d.startX) / rect.width) * PT_W
-      const dhPt = ((e.clientY - d.startY) / rect.height) * PT_H
-      const nw = Math.max(40, Math.round(d.orig.w + dwPt))
-      const nh = Math.max(16, Math.round(d.orig.h + dhPt))
-      if (d.kind === 'zone') setZone((z) => ({ ...z, sig_width: Math.max(50, nw), sig_height: Math.max(30, nh) }))
+      // Resize: pixel-delta exact terug naar punten via de echte schaal.
+      const dwPt = (e.clientX - d.startX) / scale
+      const dhPt = (e.clientY - d.startY) / scale
+      const nw = Math.max(30, Math.round(d.orig.w + dwPt))
+      const nh = Math.max(12, Math.round(d.orig.h + dhPt))
+      if (d.kind === 'zone') setZone((z) => ({ ...z, sig_width: Math.max(50, nw), sig_height: Math.max(24, nh) }))
       else setFields((fs) => fs.map((f, i) => i === d.index ? { ...f, width: nw, height: nh } : f))
     }
   }
-
   const onPointerUp = () => { drag.current = null }
 
+  // Posities in px op basis van de echte paginamaten.
   const boxStyle = (x: number, y: number, w: number, h: number): React.CSSProperties => ({
-    left: `${x}%`, top: `${y}%`,
-    width: `${Math.min(95, (w / PT_W) * 100)}%`,
-    height: `${Math.max(2.2, (h / PT_H) * 100)}%`,
+    left: `${(x / 100) * pageDims.wPx}px`,
+    top: `${(y / 100) * pageDims.hPx}px`,
+    width: `${Math.max(8, w * scale)}px`,
+    height: `${Math.max(10, h * scale)}px`,
   })
+  // Fontgrootte exact zoals de stamping (FIELD_FONT_PT punten → px via schaal).
+  const fontPx = FIELD_FONT_PT * scale
 
   const pageFields = fields.map((f, i) => ({ f, i })).filter(({ f }) => (f.page_number || 1) === page)
 
@@ -82,82 +141,78 @@ export function FieldOverlayEditor({
         <div className="flex items-center gap-1.5 text-xs">
           <span className="text-gray-500">Pagina:</span>
           {Array.from({ length: maxPage }, (_, i) => i + 1).map((p) => (
-            <button
-              key={p} onClick={() => setPage(p)}
-              className={`h-7 w-7 rounded-lg text-xs font-medium ${p === page ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-            >{p}</button>
+            <button key={p} onClick={() => setPage(p)} className={`h-7 w-7 rounded-lg text-xs font-medium ${p === page ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>{p}</button>
           ))}
           <button onClick={() => setPage(maxPage + 1)} className="h-7 px-2 rounded-lg text-xs border border-dashed border-gray-300 text-gray-500 hover:bg-gray-50">+ pagina</button>
         </div>
-        <p className="text-[11px] text-gray-400">Sleep velden om te verplaatsen · hoekje rechtsonder om te vergroten</p>
+        <p className="text-[11px] text-gray-400">Sleep om te verplaatsen · hoekje rechtsonder om te vergroten · exact zoals op de PDF</p>
       </div>
 
-      <div className="relative w-full mx-auto border-2 border-gray-200 rounded-lg overflow-hidden bg-gray-50" style={{ paddingBottom: '141.4%' }}>
-        {/* PDF-achtergrond (pagina via fragment) */}
-        {pdfUrl ? (
-          <iframe
-            key={page}
-            src={`${pdfUrl}#page=${page}&toolbar=0&navpanes=0&view=FitH`}
-            title="PDF"
-            className="absolute inset-0 w-full h-full pointer-events-none"
-          />
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center text-gray-400 text-sm">Geen PDF beschikbaar</div>
+      <div ref={wrapRef} className="relative w-full border-2 border-gray-200 rounded-lg overflow-hidden bg-gray-100" style={{ minHeight: 120 }}>
+        {loading && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60"><Loader2 className="h-5 w-5 animate-spin text-gray-400" /></div>
         )}
-
-        {/* Overlay-laag */}
-        <div
-          ref={canvasRef}
-          className="absolute inset-0"
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerLeave={onPointerUp}
-          onClick={() => setSelected(null)}
-          style={{ touchAction: 'none' }}
-        >
-          {/* Velden op deze pagina */}
-          {pageFields.map(({ f, i }) => (
+        {error ? (
+          <div className="flex items-center justify-center h-64 text-gray-400 text-sm px-4 text-center">{error}</div>
+        ) : !pdfUrl ? (
+          <div className="flex items-center justify-center h-64 text-gray-400 text-sm">Geen PDF beschikbaar</div>
+        ) : (
+          <div className="relative" style={{ width: pageDims.wPx, height: pageDims.hPx }}>
+            <canvas ref={canvasRef} className="block" />
+            {/* Overlay exact over het canvas */}
             <div
-              key={i}
-              onPointerDown={(e) => onPointerDown(e, 'field', i, 'move')}
-              className={`absolute rounded border-2 bg-blue-500/15 flex items-center px-1 cursor-move select-none ${selected === i ? 'border-blue-600' : 'border-blue-400'}`}
-              style={boxStyle(f.x, f.y, f.width, f.height)}
+              className="absolute inset-0"
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerLeave={onPointerUp}
+              onClick={() => setSelected(null)}
+              style={{ touchAction: 'none' }}
             >
-              <GripVertical className="h-3 w-3 text-blue-600 shrink-0" />
-              <span className="text-[10px] text-blue-800 font-medium truncate ml-0.5">{f.label}{f.required ? ' *' : ''}</span>
-              <span
-                onPointerDown={(e) => onPointerDown(e, 'field', i, 'resize')}
-                className="absolute -bottom-1 -right-1 h-3 w-3 bg-blue-600 rounded-sm cursor-se-resize"
-              />
-            </div>
-          ))}
+              {pageFields.map(({ f, i }) => {
+                const lowConf = typeof f.confidence === 'number' && f.confidence < 0.6
+                return (
+                  <div
+                    key={i}
+                    onPointerDown={(e) => onPointerDown(e, 'field', i, 'move')}
+                    className={`absolute rounded-sm border bg-blue-500/10 cursor-move select-none ${selected === i ? 'border-blue-600 ring-1 ring-blue-400' : lowConf ? 'border-amber-500 border-dashed' : 'border-blue-400'}`}
+                    style={boxStyle(f.x, f.y, f.width, f.height)}
+                    title={lowConf ? 'Lage zekerheid — controle aanbevolen' : f.label}
+                  >
+                    {/* De waarde/het label op exact dezelfde plek + grootte als de stamping */}
+                    <span
+                      className="absolute left-0 top-0 whitespace-nowrap text-gray-900 leading-none overflow-hidden"
+                      style={{ fontSize: `${fontPx}px`, lineHeight: 1 }}
+                    >
+                      {f.placeholder || f.label}
+                    </span>
+                    <GripVertical className="absolute -left-3 top-0 h-3 w-3 text-blue-500" />
+                    <span onPointerDown={(e) => onPointerDown(e, 'field', i, 'resize')} className="absolute -bottom-1 -right-1 h-3 w-3 bg-blue-600 rounded-sm cursor-se-resize" />
+                  </div>
+                )
+              })}
 
-          {/* Handtekeningzone (alleen op haar pagina) */}
-          {zone.sig_page === page && (
-            <div
-              onPointerDown={(e) => onPointerDown(e, 'zone', -1, 'move')}
-              className="absolute rounded border-2 border-[#caa800] bg-[#fff848]/30 flex items-center justify-center cursor-move select-none"
-              style={boxStyle(zone.sig_x_pct, zone.sig_y_pct, zone.sig_width, zone.sig_height)}
-            >
-              <span className="text-[10px] text-[#8a7a00] font-semibold">✎ Handtekening</span>
-              <span
-                onPointerDown={(e) => onPointerDown(e, 'zone', -1, 'resize')}
-                className="absolute -bottom-1 -right-1 h-3 w-3 bg-[#caa800] rounded-sm cursor-se-resize"
-              />
+              {zone.sig_page === page && (
+                <div
+                  onPointerDown={(e) => onPointerDown(e, 'zone', -1, 'move')}
+                  className="absolute rounded border-2 border-[#caa800] bg-[#fff848]/25 flex items-center justify-center cursor-move select-none"
+                  style={boxStyle(zone.sig_x_pct, zone.sig_y_pct, zone.sig_width, zone.sig_height)}
+                >
+                  <span className="text-[10px] text-[#8a7a00] font-semibold">✎ Handtekening</span>
+                  <span onPointerDown={(e) => onPointerDown(e, 'zone', -1, 'resize')} className="absolute -bottom-1 -right-1 h-3 w-3 bg-[#caa800] rounded-sm cursor-se-resize" />
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
-      {/* Handtekeningzone naar deze pagina verplaatsen */}
       {zone.sig_page !== page && (
-        <button
-          onClick={() => setZone((z) => ({ ...z, sig_page: page }))}
-          className="text-xs text-[#8a7a00] hover:underline"
-        >
+        <button onClick={() => setZone((z) => ({ ...z, sig_page: page }))} className="text-xs text-[#8a7a00] hover:underline">
           ✎ Handtekeningzone naar pagina {page} verplaatsen
         </button>
       )}
     </div>
   )
 }
+
+function round1(v: number) { return Math.round(v * 10) / 10 }

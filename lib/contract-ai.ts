@@ -19,6 +19,7 @@ export type ContractField = {
   height: number           // punten
   required: boolean
   placeholder?: string
+  confidence?: number      // 0-1; < 0.6 → "controle aanbevolen"
 }
 
 export type ContractAnalysis = {
@@ -35,6 +36,7 @@ function coerceField(raw: Record<string, unknown>): ContractField | null {
   if (!label) return null
   const num = (v: unknown, d: number) => { const n = Number(v); return Number.isFinite(n) ? n : d }
   const clampPct = (v: number) => Math.max(0, Math.min(100, v))
+  const conf = num(raw.confidence, NaN)
   return {
     label, type: type as ContractFieldType,
     page_number: Math.max(1, Math.round(num(raw.page_number ?? raw.page, 1))),
@@ -42,6 +44,7 @@ function coerceField(raw: Record<string, unknown>): ContractField | null {
     width: Math.max(20, num(raw.width, 180)), height: Math.max(12, num(raw.height, 24)),
     required: raw.required === undefined ? true : !!raw.required,
     placeholder: raw.placeholder ? String(raw.placeholder).slice(0, 120) : undefined,
+    confidence: Number.isFinite(conf) ? Math.max(0, Math.min(1, conf)) : undefined,
   }
 }
 
@@ -53,24 +56,31 @@ export async function analyzeContractPdf(base64Pdf: string): Promise<ContractAna
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) throw new Error('AI niet geconfigureerd: ANTHROPIC_API_KEY ontbreekt in deze omgeving.')
 
-  const prompt = `Je analyseert een contract-PDF om automatisch invulvelden en de handtekeningzone te detecteren.
+  const prompt = `Je analyseert een contract-PDF om automatisch invulvelden en de handtekeningzone te detecteren EN exact te positioneren.
 
 Geef UITSLUITEND geldige JSON terug met deze structuur:
 {
   "fields": [
-    { "label": "Naam", "type": "text", "page_number": 1, "x": 12, "y": 40, "width": 200, "height": 22, "required": true, "placeholder": "Voor- en achternaam" }
+    { "label": "BTW-nummer", "type": "text", "page_number": 1, "x": 32, "y": 41.5, "width": 200, "height": 14, "required": true, "placeholder": "BE0123456789", "confidence": 0.9 }
   ],
   "signature": { "page": 1, "x": 10, "y": 80, "width": 200, "height": 60 }
 }
 
+POSITIONERING — gebruik meerdere ankers, niet alleen het labelwoord:
+- Kijk naar (1) het label/de tekst, (2) de invullijn of het kader, (3) de witruimte waar getypt moet worden.
+- Plaats x,y op het BEGIN van de witte invulzone (net na het label / op de lijn), NIET op het labelwoord zelf.
+- y = de bovenkant van waar de ingevulde tekst hoort te staan, exact op de invullijn.
+- Als een veld een ":" of een doorlopende lijn heeft, begint de invulzone net daarna.
+
 Regels:
 - type ∈ text | email | phone | date | number | checkbox | signature
 - page_number is 1-geïndexeerd (eerste pagina = 1)
-- x = percentage van links (0-100), y = percentage van boven (0-100)
-- width/height in punten (geschat)
+- x = percentage van links (0-100), y = percentage van boven (0-100); mag decimalen bevatten voor precisie
+- width/height in punten (geschat op basis van de invulzone)
+- "confidence" = 0..1: hoe zeker je bent van de POSITIE (1 = exact op de lijn herkend, < 0.6 = onzeker → mens controleert)
 - Detecteer velden zoals: naam, bedrijfsnaam, e-mailadres, telefoonnummer, adres, btw-nummer, ondernemingsnummer, datum, functie, prijs, dienst, looptijd, startdatum.
 - "signature" = de plek waar de klant moet ondertekenen (null als er geen is).
-- Schat posities zo goed mogelijk; de mens controleert en corrigeert nadien.`
+- Geef nooit een wilde gok als hoge confidence; bij twijfel een lage confidence i.p.v. een verkeerde positie.`
 
   let res: Response
   try {

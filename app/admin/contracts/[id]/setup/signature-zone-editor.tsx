@@ -14,7 +14,7 @@ interface Zone {
   sig_height: number
 }
 
-type Field = { label: string; type: string; page_number: number; x: number; y: number; width: number; height: number; required: boolean; placeholder?: string }
+type Field = { label: string; type: string; page_number: number; x: number; y: number; width: number; height: number; required: boolean; placeholder?: string; confidence?: number }
 const FIELD_TYPES = ['text', 'email', 'phone', 'date', 'number', 'checkbox', 'signature']
 
 export function SignatureZoneEditor({
@@ -140,15 +140,21 @@ export function SignatureZoneEditor({
             <p className="text-sm text-gray-400">Nog geen velden. Klik op <b>Analyseer met AI</b>, voeg een <b>standaardblok</b> toe of voeg handmatig een veld toe.</p>
           ) : (
             <div className="space-y-2">
-              {fields.map((f, i) => (
-                <div key={i} className="grid grid-cols-12 gap-2 items-center">
-                  <input className="col-span-12 sm:col-span-5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg" value={f.label} onChange={(e) => setF(i, { label: e.target.value })} placeholder="Label" />
-                  <select className="col-span-5 sm:col-span-3 px-2 py-1.5 text-xs border border-gray-200 rounded-lg" value={f.type} onChange={(e) => setF(i, { type: e.target.value })}>{FIELD_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select>
-                  <input type="number" min="1" title="Pagina" className="col-span-3 sm:col-span-1 px-2 py-1.5 text-xs border border-gray-200 rounded-lg" value={f.page_number} onChange={(e) => setF(i, { page_number: Math.max(1, Number(e.target.value)) })} />
-                  <label className="col-span-3 sm:col-span-2 text-[11px] text-gray-600 flex items-center gap-1"><input type="checkbox" checked={f.required} onChange={(e) => setF(i, { required: e.target.checked })} />verpl.</label>
-                  <button onClick={() => delField(i)} className="col-span-1 h-7 w-7 flex items-center justify-center rounded-lg hover:bg-red-50 text-red-400 justify-self-end" title="Verwijderen"><Trash2 className="h-3.5 w-3.5" /></button>
+              {fields.map((f, i) => {
+                const lowConf = typeof f.confidence === 'number' && f.confidence < 0.6
+                return (
+                <div key={i} className="space-y-1">
+                  <div className="grid grid-cols-12 gap-2 items-center">
+                    <input className="col-span-12 sm:col-span-5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg" value={f.label} onChange={(e) => setF(i, { label: e.target.value })} placeholder="Label" />
+                    <select className="col-span-5 sm:col-span-3 px-2 py-1.5 text-xs border border-gray-200 rounded-lg" value={f.type} onChange={(e) => setF(i, { type: e.target.value })}>{FIELD_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select>
+                    <input type="number" min="1" title="Pagina" className="col-span-3 sm:col-span-1 px-2 py-1.5 text-xs border border-gray-200 rounded-lg" value={f.page_number} onChange={(e) => setF(i, { page_number: Math.max(1, Number(e.target.value)) })} />
+                    <label className="col-span-3 sm:col-span-2 text-[11px] text-gray-600 flex items-center gap-1"><input type="checkbox" checked={f.required} onChange={(e) => setF(i, { required: e.target.checked })} />verpl.</label>
+                    <button onClick={() => delField(i)} className="col-span-1 h-7 w-7 flex items-center justify-center rounded-lg hover:bg-red-50 text-red-400 justify-self-end" title="Verwijderen"><Trash2 className="h-3.5 w-3.5" /></button>
+                  </div>
+                  {lowConf && <div className="text-[10px] text-amber-600 pl-1">⚠ Lage zekerheid — controle aanbevolen</div>}
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
           <p className="text-[11px] text-gray-400 mt-3">Posities en grootte stel je in door op de PDF te slepen. De ontvanger vult deze velden in bij ondertekening.</p>

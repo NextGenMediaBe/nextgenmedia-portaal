@@ -4,6 +4,7 @@ import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 import { revalidatePath } from 'next/cache'
 import { logContractEvent } from '@/lib/contract-audit'
 import { resolvePortalSession, canAccessContract } from '@/lib/portal-auth'
+import { FIELD_FONT_PT, baselineFromTopPct } from '@/lib/contract-render'
 
 export const maxDuration = 60
 
@@ -86,9 +87,11 @@ export async function POST(req: NextRequest) {
             const pIdx = Math.max(0, Math.min(pages.length - 1, (Number(f.page_number) || 1) - 1))
             const fp = pages[pIdx]
             const { width: fw, height: fh } = fp.getSize()
+            // Exact dezelfde positionering als de editor (geen benadering): x vanaf
+            // links, baseline afgeleid van de top-positie via de echte paginahoogte.
             const fx = (Number(f.x) || 0) / 100 * fw
-            const fy = fh - (Number(f.y) || 0) / 100 * fh - 10
-            fp.drawText(text.slice(0, 200), { x: fx, y: fy, size: 10, font: helvetica, color: rgb(0.1, 0.1, 0.1) })
+            const fy = baselineFromTopPct(Number(f.y) || 0, fh)
+            fp.drawText(text.slice(0, 200), { x: fx, y: fy, size: FIELD_FONT_PT, font: helvetica, color: rgb(0.1, 0.1, 0.1) })
           }
 
           // 2. Embed the signature PNG image

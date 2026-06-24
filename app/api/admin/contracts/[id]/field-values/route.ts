@@ -31,6 +31,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         width: Math.max(20, num(f.width, 180)), height: Math.max(12, num(f.height, 24)),
         required: !!f.required,
         placeholder: f.placeholder ? String(f.placeholder).slice(0, 120) : undefined,
+        confidence: Number.isFinite(Number(f.confidence)) ? Math.max(0, Math.min(1, Number(f.confidence))) : undefined,
       }
     }).filter((f) => f.label)
 
