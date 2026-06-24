@@ -11,7 +11,8 @@ async function getContracts() {
     admin
       .from('contracts')
       .select('*')
-      .order('created_at', { ascending: false }),
+      .order('created_at', { ascending: false })
+      .limit(1000),
     admin.from('clients').select('id, company_name').order('company_name'),
     admin.from('contract_templates').select('id, name').order('name'),
   ])

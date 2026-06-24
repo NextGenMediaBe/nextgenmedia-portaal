@@ -79,6 +79,7 @@ export function AiAssistant() {
                   {m.content}
                   {m.actions && m.actions.length > 0 && (
                     <div className="mt-2 space-y-1.5">
+                      <div className="text-[11px] font-semibold text-amber-700">Voorstel — bevestiging vereist</div>
                       {m.actions.map((a, j) => (
                         <Link key={j} href={a.href} onClick={() => setOpen(false)} className="flex items-center justify-between gap-2 text-xs font-medium bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 hover:border-gray-300">
                           {a.label}<ArrowRight className="h-3.5 w-3.5 text-gray-400" />

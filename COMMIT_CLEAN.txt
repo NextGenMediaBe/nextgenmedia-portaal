@@ -1,0 +1,11 @@
+Platform 1.0 stability/cleanup pass
+
+- Command Center compacter: enkel Vandaag + kritieke contracten + recente activiteit (audit_log). Zware module-widgets (lifecycle/client-tasks/blog-status/framer-status) waren enkel hier in gebruik en zijn verwijderd (0 referenties); finance-widget bleef (gebruikt op /admin/revenue/omzet). Scheelt ook meerdere dashboard-queries.
+- Globale zoek: vaste prioriteitsvolgorde klanten > contracten > facturen > taken > blogs > prognose > partners; resultaten uniek per entiteit.
+- AI-assistent: expliciete "Voorstel — bevestiging vereist" boven elke voorgestelde deep-link; blijft read-only/confirm-first.
+- Quick Actions: "Nieuwe taak" toegevoegd (volledige set).
+- Performance: contractenlijst gecapt op 1000 (zoek/notificaties/AI-snapshot waren al gelimiteerd; CC drastisch lichter).
+- Security geverifieerd: alle /api/admin routes hebben role/requireAdmin; geen /api/portal service-role endpoint zonder guard.
+- Geen DB-wijziging, geen data verwijderd. Build groen.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>

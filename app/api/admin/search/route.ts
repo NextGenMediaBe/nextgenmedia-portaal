@@ -46,13 +46,14 @@ export async function GET(req: NextRequest) {
       { id: string; name: string }[],
     ]
 
+    // Vaste prioriteitsvolgorde: klanten → contracten → facturen → taken → blogs → prognose → partners.
     const results: Result[] = []
     for (const c of clients) results.push({ type: 'client', label: 'Klant', title: c.company_name, subtitle: c.btw_nummer ?? undefined, href: `/admin/clients/${c.id}` })
     for (const c of contracts) results.push({ type: 'contract', label: 'Contract', title: c.title, subtitle: c.signer_name ?? c.signer_email ?? undefined, href: `/admin/contracts/${c.id}` })
-    for (const b of blogs) results.push({ type: 'blog', label: 'Blog', title: b.titel, subtitle: b.status ?? undefined, href: `/admin/blogs` })
     for (const i of invoices) results.push({ type: 'invoice', label: 'Factuur', title: i.description || 'Factuur', subtitle: i.status ?? undefined, href: `/admin/invoices` })
-    for (const f of forecast) results.push({ type: 'forecast', label: 'Prognose', title: f.title || 'Prognose', href: `/admin/revenue/omzet` })
     for (const t of tasks) results.push({ type: 'task', label: 'Taak', title: t.title, subtitle: t.status ?? undefined, href: t.client_id ? `/admin/clients/${t.client_id}#taken` : '/admin/clients' })
+    for (const b of blogs) results.push({ type: 'blog', label: 'Blog', title: b.titel, subtitle: b.status ?? undefined, href: `/admin/blogs` })
+    for (const f of forecast) results.push({ type: 'forecast', label: 'Prognose', title: f.title || 'Prognose', href: `/admin/revenue/omzet` })
     for (const p of partners) results.push({ type: 'partner', label: 'Partner', title: p.name, href: `/admin/partners/${p.id}` })
 
     return NextResponse.json({ results })

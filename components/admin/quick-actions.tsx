@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
-import { Plus, Users, FileText, Receipt, Newspaper, TrendingUp } from 'lucide-react'
+import { Plus, Users, FileText, Receipt, Newspaper, TrendingUp, ListChecks } from 'lucide-react'
 
 // Globale Quick Actions: nieuw aanmaken zonder eerst naar een module te navigeren.
 const ACTIONS = [
@@ -11,6 +11,7 @@ const ACTIONS = [
   { label: 'Nieuwe factuur', href: '/admin/invoices', icon: Receipt },
   { label: 'Nieuwe blog', href: '/admin/blog-calendar', icon: Newspaper },
   { label: 'Nieuwe prognose', href: '/admin/revenue/omzet', icon: TrendingUp },
+  { label: 'Nieuwe taak', href: '/admin/clients', icon: ListChecks },
 ]
 
 export function QuickActions() {
