@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Plus, FileText, Filter as FilterIcon, X, Search, Bell } from 'lucide-react'
 import { formatDate, SERVICE_LABELS } from '@/lib/utils'
@@ -41,12 +41,41 @@ export function ContractsClient({
   const [filterService, setFilterService] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<string>(initialStatus)
   const [filterTemplate, setFilterTemplate] = useState<string>('all')
+  const [filterLinked, setFilterLinked] = useState<string>('all') // all | yes | no
+  const [dateFrom, setDateFrom] = useState<string>('')
+  const [dateTo, setDateTo] = useState<string>('')
   const [query, setQuery] = useState('')
+  const [dq, setDq] = useState('') // debounced query
 
   const templateName = useMemo(() => new Map(templates.map((t) => [t.id, t.name])), [templates])
 
+  // Laatst gebruikte filters bewaren/herstellen (localStorage).
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('ngm.contractFilters')
+      if (raw) {
+        const s = JSON.parse(raw)
+        if (s.filterClient) setFilterClient(s.filterClient)
+        if (s.filterService) setFilterService(s.filterService)
+        if (s.filterStatus && initialStatus === 'all') setFilterStatus(s.filterStatus)
+        if (s.filterTemplate) setFilterTemplate(s.filterTemplate)
+        if (s.filterLinked) setFilterLinked(s.filterLinked)
+        if (s.dateFrom) setDateFrom(s.dateFrom)
+        if (s.dateTo) setDateTo(s.dateTo)
+      }
+    } catch { /* negeer */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  useEffect(() => {
+    try {
+      localStorage.setItem('ngm.contractFilters', JSON.stringify({ filterClient, filterService, filterStatus, filterTemplate, filterLinked, dateFrom, dateTo }))
+    } catch { /* negeer */ }
+  }, [filterClient, filterService, filterStatus, filterTemplate, filterLinked, dateFrom, dateTo])
+  // Debounce de zoekterm (vlot bij grote lijsten).
+  useEffect(() => { const t = setTimeout(() => setDq(query), 200); return () => clearTimeout(t) }, [query])
+
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
+    const q = dq.trim().toLowerCase()
     return initialContracts.filter((c) => {
       if (filterClient !== 'all' && c.client_id !== filterClient) return false
       if (filterService !== 'all' && (c.service_slug ?? '') !== filterService) return false
@@ -54,6 +83,10 @@ export function ContractsClient({
       if (filterTemplate !== 'all') {
         if (filterTemplate === 'none' ? !!c.template_id : c.template_id !== filterTemplate) return false
       }
+      if (filterLinked === 'yes' && !c.client_id) return false
+      if (filterLinked === 'no' && !!c.client_id) return false
+      if (dateFrom && (c.created_at ?? '').slice(0, 10) < dateFrom) return false
+      if (dateTo && (c.created_at ?? '').slice(0, 10) > dateTo) return false
       if (q) {
         const hay = [
           c.title, c.client?.company_name, c.signer_name, c.signer_email,
@@ -63,7 +96,7 @@ export function ContractsClient({
       }
       return true
     })
-  }, [initialContracts, filterClient, filterService, filterStatus, filterTemplate, query, templateName])
+  }, [initialContracts, filterClient, filterService, filterStatus, filterTemplate, filterLinked, dateFrom, dateTo, dq, templateName])
 
   // ── Dashboard-cijfers (over alle contracten) ───────────────────────────────
   const stats = useMemo(() => {
@@ -85,13 +118,16 @@ export function ContractsClient({
     [initialContracts],
   )
 
-  const hasActiveFilters = filterClient !== 'all' || filterService !== 'all' || filterStatus !== 'all' || filterTemplate !== 'all' || query.trim() !== ''
+  const hasActiveFilters = filterClient !== 'all' || filterService !== 'all' || filterStatus !== 'all' || filterTemplate !== 'all' || filterLinked !== 'all' || dateFrom !== '' || dateTo !== '' || query.trim() !== ''
 
   const clearFilters = () => {
     setFilterClient('all')
     setFilterService('all')
     setFilterStatus('all')
     setFilterTemplate('all')
+    setFilterLinked('all')
+    setDateFrom('')
+    setDateTo('')
     setQuery('')
   }
 
@@ -222,6 +258,22 @@ export function ContractsClient({
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
             </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Gekoppeld aan klant</label>
+            <select className={`${sel} w-full`} value={filterLinked} onChange={(e) => setFilterLinked(e.target.value)}>
+              <option value="all">Alle</option>
+              <option value="yes">Wel gekoppeld</option>
+              <option value="no">Los / intern</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Aangemaakt vanaf</label>
+            <input type="date" className={`${sel} w-full`} value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Aangemaakt tot</label>
+            <input type="date" className={`${sel} w-full`} value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
           </div>
         </div>
       </div>

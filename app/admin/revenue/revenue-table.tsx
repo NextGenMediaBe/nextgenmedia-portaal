@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Trash2, Loader2, Repeat2, ArrowUpRight, Pencil, X } from 'lucide-react'
+import { Trash2, Loader2, Repeat2, ArrowUpRight, Pencil, X, Search, Filter as FilterIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatEuro, SERVICE_LABELS, SERVICE_SLUGS } from '@/lib/utils'
 
@@ -34,10 +34,65 @@ function fmtMonth(s: string | null) {
   return new Date(s).toLocaleDateString('nl-BE', { month: 'long', year: 'numeric' })
 }
 
+function entryYear(e: EntryRow): string {
+  const m = e.type === 'recurring' ? e.start_month : e.transaction_month
+  return m ? m.slice(0, 4) : ''
+}
+
 export function RevenueTable({ entries }: { entries: EntryRow[] }) {
   const router = useRouter()
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [editing, setEditing] = useState<EntryRow | null>(null)
+
+  // ── Filters ────────────────────────────────────────────────────────────────
+  const [query, setQuery] = useState('')
+  const [dq, setDq] = useState('')
+  const [fType, setFType] = useState<string>('all')      // all | recurring | one_time
+  const [fService, setFService] = useState<string>('all')
+  const [fYear, setFYear] = useState<string>('all')
+  const [minAmount, setMinAmount] = useState<string>('')
+  const [maxAmount, setMaxAmount] = useState<string>('')
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('ngm.prognoseFilters')
+      if (raw) {
+        const s = JSON.parse(raw)
+        setFType(s.fType ?? 'all'); setFService(s.fService ?? 'all'); setFYear(s.fYear ?? 'all')
+        setMinAmount(s.minAmount ?? ''); setMaxAmount(s.maxAmount ?? '')
+      }
+    } catch { /* negeer */ }
+  }, [])
+  useEffect(() => {
+    try { localStorage.setItem('ngm.prognoseFilters', JSON.stringify({ fType, fService, fYear, minAmount, maxAmount })) } catch { /* negeer */ }
+  }, [fType, fService, fYear, minAmount, maxAmount])
+  useEffect(() => { const t = setTimeout(() => setDq(query), 200); return () => clearTimeout(t) }, [query])
+
+  const years = useMemo(() => Array.from(new Set(entries.map(entryYear).filter(Boolean))).sort().reverse(), [entries])
+  const amountOf = (e: EntryRow) => (e.type === 'recurring' ? e.amount_per_month : e.amount) ?? 0
+
+  const shown = useMemo(() => {
+    const q = dq.trim().toLowerCase()
+    const min = minAmount ? Number(minAmount) : null
+    const max = maxAmount ? Number(maxAmount) : null
+    return entries.filter((e) => {
+      if (fType !== 'all' && e.type !== fType) return false
+      if (fService !== 'all' && (e.service_slug ?? '') !== fService) return false
+      if (fYear !== 'all' && entryYear(e) !== fYear) return false
+      const amt = amountOf(e)
+      if (min !== null && amt < min) return false
+      if (max !== null && amt > max) return false
+      if (q) {
+        const hay = [e.title, e.company_name, e.notes, e.service_slug ? SERVICE_LABELS[e.service_slug] : ''].filter(Boolean).join(' ').toLowerCase()
+        if (!hay.includes(q)) return false
+      }
+      return true
+    })
+  }, [entries, dq, fType, fService, fYear, minAmount, maxAmount])
+
+  const hasFilters = query.trim() !== '' || fType !== 'all' || fService !== 'all' || fYear !== 'all' || minAmount !== '' || maxAmount !== ''
+  const clearFilters = () => { setQuery(''); setFType('all'); setFService('all'); setFYear('all'); setMinAmount(''); setMaxAmount('') }
+  const fsel = 'px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#fff848]/50'
 
   const handleDelete = async (id: string) => {
     if (!confirm('Deze omzet-entry verwijderen?')) return
@@ -58,7 +113,39 @@ export function RevenueTable({ entries }: { entries: EntryRow[] }) {
 
   return (
     <div className="card-base">
-      <h2 className="font-semibold mb-4">Alle entries</h2>
+      <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+        <h2 className="font-semibold">Alle entries <span className="text-sm font-normal text-gray-400">({shown.length}/{entries.length})</span></h2>
+        {hasFilters && (
+          <button onClick={clearFilters} className="text-xs text-gray-500 hover:text-black flex items-center gap-1"><X className="h-3 w-3" />Reset</button>
+        )}
+      </div>
+
+      {/* Filterbalk */}
+      <div className="space-y-2 mb-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Zoek op klant, titel, dienst, notitie…" className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#fff848]/50" />
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <FilterIcon className="h-4 w-4 text-gray-400" />
+          <select className={fsel} value={fType} onChange={(e) => setFType(e.target.value)}>
+            <option value="all">Alle types</option>
+            <option value="recurring">Recurring</option>
+            <option value="one_time">Eenmalig</option>
+          </select>
+          <select className={fsel} value={fService} onChange={(e) => setFService(e.target.value)}>
+            <option value="all">Alle diensten</option>
+            {SERVICE_SLUGS.map((s) => <option key={s} value={s}>{SERVICE_LABELS[s]}</option>)}
+          </select>
+          <select className={fsel} value={fYear} onChange={(e) => setFYear(e.target.value)}>
+            <option value="all">Alle jaren</option>
+            {years.map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <input type="number" min="0" placeholder="€ min" className={`${fsel} w-24`} value={minAmount} onChange={(e) => setMinAmount(e.target.value)} />
+          <input type="number" min="0" placeholder="€ max" className={`${fsel} w-24`} value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} />
+        </div>
+      </div>
+
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -73,7 +160,7 @@ export function RevenueTable({ entries }: { entries: EntryRow[] }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {entries.map((e) => (
+            {shown.map((e) => (
               <tr key={e.id} className="hover:bg-gray-50">
                 <td className="py-2.5">
                   {e.type === 'recurring' ? (
