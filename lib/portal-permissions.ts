@@ -24,6 +24,17 @@ export const MODULE_LABELS: Record<PortalModule, string> = {
   files:        'Bestanden',
 }
 
+// Welke modules hebben een werkende pagina/route. 'files' bestaat nog niet —
+// niet misleidend tonen alsof het al werkt.
+export const MODULE_IMPLEMENTED: Record<PortalModule, boolean> = {
+  social_media: true,
+  website:      true,
+  contracts:    true,
+  blogs:        true,
+  tasks:        true,
+  files:        false,
+}
+
 export const ACTION_LABELS: Record<string, string> = {
   view: 'Bekijken',
   feedback: 'Feedback geven',
@@ -98,11 +109,12 @@ export function sanitizePermissions(input: unknown): Permissions {
   return out
 }
 
-/** Korte samenvatting van toegekende modules, bv. "Social Media, Contracten". */
+/** Korte samenvatting van toegekende (en gebouwde) modules, bv. "Social Media, Contracten". */
 export function permissionSummary(permissions: Permissions | null | undefined): string {
   if (!permissions) return '—'
-  const mods = PORTAL_MODULES.filter((m) => can(permissions, m, 'view'))
+  const live = PORTAL_MODULES.filter((m) => MODULE_IMPLEMENTED[m])
+  const mods = live.filter((m) => can(permissions, m, 'view'))
   if (mods.length === 0) return 'Geen toegang'
-  if (mods.length === PORTAL_MODULES.length) return 'Alle modules'
+  if (mods.length === live.length) return 'Alle modules'
   return mods.map((m) => MODULE_LABELS[m]).join(', ')
 }

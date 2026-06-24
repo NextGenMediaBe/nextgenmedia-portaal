@@ -36,8 +36,10 @@ export async function PATCH(req: NextRequest) {
       const meta = requestMeta(req)
       await logAudit({
         action: 'portal.task.completed', entityType: 'client_task', entityId: id,
-        summary: 'Taak voltooid via portaal', actorUserId: session.userId, actorRole: 'client',
-        metadata: { client_id: session.clientId, by_subaccount: !session.isOwner }, ip: meta.ip, userAgent: meta.userAgent,
+        summary: `Taak voltooid via portaal door ${session.name || session.email || (session.isOwner ? 'hoofdaccount' : 'subaccount')}`,
+        actorUserId: session.userId, actorEmail: session.email, actorRole: session.isOwner ? 'client_owner' : 'client_subaccount',
+        metadata: { client_id: session.clientId, actor_name: session.name, actor_email: session.email, by_subaccount: !session.isOwner },
+        ip: meta.ip, userAgent: meta.userAgent,
       })
     }
 

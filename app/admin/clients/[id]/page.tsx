@@ -154,7 +154,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
           />
 
           {/* Subaccounts & rechten */}
-          <ClientUsers clientId={id} clientName={client.company_name} />
+          <ClientUsers clientId={id} clientName={client.company_name} ownerEmail={client.email ?? null} />
 
           {/* Klant Lifecycle (batch, contract, reviews) */}
           <ClientLifecycleBlock clientId={id} companyName={client.company_name} />

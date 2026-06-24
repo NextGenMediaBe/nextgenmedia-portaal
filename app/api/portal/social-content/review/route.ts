@@ -44,12 +44,14 @@ export async function POST(req: NextRequest) {
     } catch { }
 
     const meta = requestMeta(req)
+    const who = session.name || session.email || (session.isOwner ? 'hoofdaccount' : 'subaccount')
     await logAudit({
       action: decision === 'approved' ? 'portal.script.approved' : 'portal.script.changes_requested',
       entityType: 'social_content_item', entityId: id,
-      summary: decision === 'approved' ? 'Script goedgekeurd via portaal' : 'Wijziging gevraagd via portaal',
-      actorUserId: session.userId, actorRole: 'client',
-      metadata: { client_id: session.clientId, by_subaccount: !session.isOwner }, ip: meta.ip, userAgent: meta.userAgent,
+      summary: `${decision === 'approved' ? 'Script goedgekeurd' : 'Wijziging gevraagd'} via portaal door ${who}`,
+      actorUserId: session.userId, actorEmail: session.email, actorRole: session.isOwner ? 'client_owner' : 'client_subaccount',
+      metadata: { client_id: session.clientId, actor_name: session.name, actor_email: session.email, by_subaccount: !session.isOwner },
+      ip: meta.ip, userAgent: meta.userAgent,
     })
 
     // Directe interne adminmail met 1-uur bundeling per klant (best-effort).

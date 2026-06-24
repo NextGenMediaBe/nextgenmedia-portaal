@@ -20,6 +20,8 @@ export type PortalSession = {
   active: boolean
   permissions: Permissions
   clientUserId: string | null
+  email: string | null
+  name: string | null
 }
 
 /** Resolveert de portaalsessie van de huidige gebruiker, of null. */
@@ -34,16 +36,20 @@ export async function resolvePortalSession(): Promise<PortalSession | null> {
   const { data: ownClient } = await admin
     .from('clients').select('id').eq('owner_user_id', user.id).maybeSingle()
   if (ownClient?.id) {
-    return { userId: user.id, clientId: ownClient.id, isOwner: true, active: true, permissions: fullPermissions(), clientUserId: null }
+    return {
+      userId: user.id, clientId: ownClient.id, isOwner: true, active: true,
+      permissions: fullPermissions(), clientUserId: null,
+      email: user.email ?? null, name: (user.user_metadata?.full_name as string | undefined) ?? null,
+    }
   }
 
   // 2) Subaccount → rechten uit client_users (lege rechten = volledige als fallback).
-  type CURow = { id: string; client_id: string; active: boolean; permissions: unknown }
+  type CURow = { id: string; client_id: string; active: boolean; permissions: unknown; email: string | null; name: string | null }
   let cu: CURow | null = null
   try {
     const { data } = await admin
       .from('client_users')
-      .select('id, client_id, active, permissions')
+      .select('id, client_id, active, permissions, email, name')
       .eq('auth_user_id', user.id)
       .maybeSingle()
     cu = (data as CURow | null) ?? null
@@ -55,7 +61,11 @@ export async function resolvePortalSession(): Promise<PortalSession | null> {
     const perms = (cu.permissions && typeof cu.permissions === 'object' && Object.keys(cu.permissions as object).length > 0)
       ? (cu.permissions as Permissions)
       : fullPermissions()
-    return { userId: user.id, clientId: cu.client_id, isOwner: false, active: !!cu.active, permissions: perms, clientUserId: cu.id }
+    return {
+      userId: user.id, clientId: cu.client_id, isOwner: false, active: !!cu.active,
+      permissions: perms, clientUserId: cu.id,
+      email: cu.email ?? user.email ?? null, name: cu.name ?? null,
+    }
   }
 
   return null

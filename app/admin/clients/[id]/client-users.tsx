@@ -1,10 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Users, Plus, Loader2, X, Trash2, KeyRound, Mail, Power } from 'lucide-react'
+import { Users, Plus, Loader2, X, Trash2, KeyRound, Mail, Power, Crown, Eye } from 'lucide-react'
 import { toast } from 'sonner'
 import {
-  PORTAL_MODULES, MODULE_ACTIONS, MODULE_LABELS, ACTION_LABELS, PRESETS,
+  PORTAL_MODULES, MODULE_ACTIONS, MODULE_LABELS, MODULE_IMPLEMENTED, ACTION_LABELS, PRESETS,
   presetPermissions, permissionSummary, type Permissions, type PresetKey, type PortalModule,
 } from '@/lib/portal-permissions'
 
@@ -14,7 +14,7 @@ type CU = {
   created_at: string; last_login_at: string | null
 }
 
-export function ClientUsers({ clientId, clientName }: { clientId: string; clientName: string }) {
+export function ClientUsers({ clientId, clientName, ownerEmail }: { clientId: string; clientName: string; ownerEmail?: string | null }) {
   const [users, setUsers] = useState<CU[]>([])
   const [loading, setLoading] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
@@ -60,10 +60,23 @@ export function ClientUsers({ clientId, clientName }: { clientId: string; client
         <button onClick={() => setCreateOpen(true)} className="btn-secondary text-xs"><Plus className="h-3.5 w-3.5" />Gebruiker</button>
       </div>
 
+      {/* Hoofdaccount — altijd volledige toegang, niet bewerkbaar als subaccount */}
+      <div className="flex items-center justify-between gap-2 p-2.5 rounded-lg border border-[#fff848] bg-[#fff848]/10">
+        <div className="min-w-0">
+          <div className="text-sm font-medium truncate flex items-center gap-2">
+            <Crown className="h-3.5 w-3.5 text-[#caa800]" />
+            Hoofdaccount
+            <span className="status-badge bg-[#fff848]/60 text-[#7a6a00]">Eigenaar</span>
+          </div>
+          <div className="text-xs text-gray-500 truncate">{ownerEmail || '—'}</div>
+          <div className="text-[11px] text-gray-500 flex items-center gap-1"><Eye className="h-3 w-3" />Ziet: alle modules</div>
+        </div>
+      </div>
+
       {loading ? (
         <div className="text-center py-4 text-gray-400"><Loader2 className="h-4 w-4 animate-spin mx-auto" /></div>
       ) : users.length === 0 ? (
-        <p className="text-sm text-gray-400">Nog geen extra gebruikers. Het hoofdaccount heeft volledige toegang.</p>
+        <p className="text-sm text-gray-400">Nog geen extra gebruikers. Voeg een subaccount toe om rechten per persoon te beheren.</p>
       ) : (
         <div className="space-y-2">
           {users.map((u) => (
@@ -71,10 +84,11 @@ export function ClientUsers({ clientId, clientName }: { clientId: string; client
               <div className="min-w-0">
                 <div className="text-sm font-medium truncate flex items-center gap-2">
                   {u.name || u.email}
-                  {!u.active && <span className="status-badge bg-gray-100 text-gray-500">Inactief</span>}
+                  <span className="status-badge bg-gray-100 text-gray-500">Subaccount</span>
+                  {!u.active && <span className="status-badge bg-red-100 text-red-600">Inactief</span>}
                 </div>
                 <div className="text-xs text-gray-400 truncate">{u.email} · {u.role_label || '—'}</div>
-                <div className="text-[11px] text-gray-400 truncate">{permissionSummary(u.permissions)}</div>
+                <div className="text-[11px] text-gray-500 truncate flex items-center gap-1"><Eye className="h-3 w-3 shrink-0" />Ziet: {permissionSummary(u.permissions)}</div>
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 <button onClick={() => setEditing(u)} className="h-7 px-2 rounded-lg text-xs hover:bg-gray-100 text-gray-600">Bewerk</button>
@@ -181,19 +195,25 @@ function UserDialog({
           {/* Rechtenmatrix */}
           <div className="border border-gray-100 rounded-xl p-3 space-y-2">
             <div className="text-xs font-medium text-gray-600">Rechten (handmatig aanpasbaar)</div>
-            {PORTAL_MODULES.map((m) => (
-              <div key={m}>
-                <div className="text-xs font-semibold text-gray-700">{MODULE_LABELS[m]}</div>
-                <div className="flex flex-wrap gap-x-3 gap-y-1 mt-0.5">
-                  {MODULE_ACTIONS[m].map((a) => (
-                    <label key={a} className="flex items-center gap-1 text-[11px] text-gray-600">
-                      <input type="checkbox" checked={perms[m]?.[a] === true} onChange={() => toggle(m, a)} />
-                      {ACTION_LABELS[a] ?? a}
-                    </label>
-                  ))}
+            {PORTAL_MODULES.map((m) => {
+              const live = MODULE_IMPLEMENTED[m]
+              return (
+                <div key={m} className={live ? '' : 'opacity-50'}>
+                  <div className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
+                    {MODULE_LABELS[m]}
+                    {!live && <span className="status-badge bg-gray-100 text-gray-400 text-[9px]">Binnenkort</span>}
+                  </div>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 mt-0.5">
+                    {MODULE_ACTIONS[m].map((a) => (
+                      <label key={a} className={`flex items-center gap-1 text-[11px] ${live ? 'text-gray-600' : 'text-gray-400 cursor-not-allowed'}`}>
+                        <input type="checkbox" disabled={!live} checked={perms[m]?.[a] === true} onChange={() => toggle(m, a)} />
+                        {ACTION_LABELS[a] ?? a}
+                      </label>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
 
           {!isEdit && (

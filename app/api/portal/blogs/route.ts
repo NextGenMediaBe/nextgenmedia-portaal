@@ -21,7 +21,7 @@ export async function PATCH(req: NextRequest) {
     const g = await requirePortalPermission('blogs', 'edit')
     if (!g.ok) return g.response
     const { session } = g
-    const user = { id: session.userId, email: undefined as string | undefined }
+    const user = { id: session.userId, email: (session.email ?? undefined) as string | undefined }
 
     const b = await req.json()
     if (!b.id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })
@@ -84,10 +84,13 @@ export async function PATCH(req: NextRequest) {
     }
 
     const meta = requestMeta(req)
+    const who = session.name || session.email || (session.isOwner ? 'hoofdaccount' : 'subaccount')
     await logAudit({
       action: 'portal.blog.edited', entityType: 'blog', entityId: b.id,
-      summary: 'Blog bewerkt via portaal', actorUserId: session.userId, actorRole: 'client',
-      metadata: { client_id: session.clientId, by_subaccount: !session.isOwner, pushed }, ip: meta.ip, userAgent: meta.userAgent,
+      summary: `Blog bewerkt via portaal door ${who}`,
+      actorUserId: session.userId, actorEmail: session.email, actorRole: session.isOwner ? 'client_owner' : 'client_subaccount',
+      metadata: { client_id: session.clientId, actor_name: session.name, actor_email: session.email, by_subaccount: !session.isOwner, pushed },
+      ip: meta.ip, userAgent: meta.userAgent,
     })
 
     try { revalidatePath('/portal/blogs'); revalidatePath('/admin/blogs') } catch { }
