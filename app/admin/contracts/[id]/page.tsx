@@ -33,7 +33,7 @@ async function getContract(id: string) {
     const isSigned = canonicalStatus(contract.status) === 'getekend'
     const [clientRowResult, pdfUrl, signedPdfStored, signedPdfFallback] = await Promise.all([
       contract.client_id
-        ? admin.from('clients').select('id, company_name').eq('id', contract.client_id).maybeSingle()
+        ? admin.from('clients').select('id, company_name, btw_nummer').eq('id', contract.client_id).maybeSingle()
         : Promise.resolve({ data: null }),
       trySignedUrl(admin, 'contracts', contract.pdf_path),
       isSigned ? trySignedUrl(admin, 'contracts', contract.signed_pdf_path) : Promise.resolve(null),
@@ -44,6 +44,7 @@ async function getContract(id: string) {
       contract,
       clientName: clientRowResult.data?.company_name ?? null,
       clientId: clientRowResult.data?.id ?? null,
+      clientBtw: (clientRowResult.data as { btw_nummer?: string | null } | null)?.btw_nummer ?? null,
       signatures: signatures ?? [],
       events: events ?? [],
       pdfUrl,
@@ -58,7 +59,7 @@ export default async function ContractDetailPage({ params }: { params: { id: str
   const data = await getContract(params.id)
   if (!data) notFound()
 
-  const { contract: c, clientName, clientId, signatures, events, pdfUrl, signedPdfUrl } = data
+  const { contract: c, clientName, clientId, clientBtw, signatures, events, pdfUrl, signedPdfUrl } = data
   const style = statusInfo(c.status)
   const statusKey = canonicalStatus(c.status)
   const isSigned = statusKey === 'getekend'
@@ -155,6 +156,12 @@ export default async function ContractDetailPage({ params }: { params: { id: str
                 <div className="flex justify-between">
                   <span className="text-gray-500">Dienst:</span>
                   <span className="capitalize">{c.service_slug.replace(/-/g, ' ')}</span>
+                </div>
+              )}
+              {clientBtw && (
+                <div className="flex justify-between">
+                  <span className="text-gray-500">BTW:</span>
+                  <span className="font-mono">{clientBtw}</span>
                 </div>
               )}
               {c.signer_email && (

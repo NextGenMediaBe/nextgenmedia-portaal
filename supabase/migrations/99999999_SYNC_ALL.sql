@@ -1221,5 +1221,10 @@ CREATE POLICY "client users self read" ON public.client_users
   FOR SELECT TO authenticated
   USING (auth_user_id = auth.uid());
 
+-- ── Klanten: BTW-nummer ───────────────────────────────────────────────────────
+-- Optioneel; bestaande klanten mogen leeg blijven. Hergebruikt als suggestie in
+-- contracten/facturen/prognose.
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS btw_nummer text;
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.

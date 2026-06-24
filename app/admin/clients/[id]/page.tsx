@@ -144,6 +144,12 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                 {client.website_url.replace(/^https?:\/\//, '')}
               </a>
             )}
+            {client.btw_nummer && (
+              <div className="text-sm">
+                <span className="text-gray-500">BTW:</span>{' '}
+                <span className="font-medium font-mono">{client.btw_nummer}</span>
+              </div>
+            )}
           </div>
 
           {/* Login credentials */}

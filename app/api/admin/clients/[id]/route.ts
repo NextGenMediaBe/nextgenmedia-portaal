@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
 import { logAudit, requestMeta } from '@/lib/audit'
 import { revalidatePath } from 'next/cache'
+import { validateBtw } from '@/lib/btw'
 
 async function requireAdmin(supabase: Awaited<ReturnType<typeof createClient>>) {
   const { data: { user } } = await supabase.auth.getUser()
@@ -27,16 +28,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.niche !== undefined) patch.niche = body.niche || null
     if (body.website_url !== undefined) patch.website_url = body.website_url || null
     if (body.customer_since !== undefined) patch.customer_since = body.customer_since || null
+    if (body.btw_nummer !== undefined) {
+      const v = validateBtw(body.btw_nummer)
+      if (!v.ok) return NextResponse.json({ error: v.error }, { status: 400 })
+      patch.btw_nummer = v.value || null
+    }
 
-    // Update resiliently: drop customer_since if the column doesn't exist yet.
+    // Update resiliently: drop columns that don't exist yet (customer_since / btw_nummer).
     let { error } = await admin.from('clients').update(patch).eq('id', id)
-    if (error && /customer_since/i.test(error.message ?? '')) {
-      delete patch.customer_since
-      if (Object.keys(patch).length > 0) {
-        ({ error } = await admin.from('clients').update(patch).eq('id', id))
-      } else {
-        error = null
-      }
+    while (error) {
+      const col = String(error.message ?? '').match(/'([^']+)' column|column "([^"]+)"/)?.[1]
+        ?? (/customer_since/i.test(error.message ?? '') ? 'customer_since' : /btw_nummer/i.test(error.message ?? '') ? 'btw_nummer' : null)
+      if (col && col in patch) {
+        delete patch[col]
+        if (Object.keys(patch).length === 0) { error = null; break }
+        ;({ error } = await admin.from('clients').update(patch).eq('id', id))
+      } else break
     }
     if (error) throw new Error(error.message)
 
