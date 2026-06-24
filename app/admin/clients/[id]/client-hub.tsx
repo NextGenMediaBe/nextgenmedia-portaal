@@ -6,7 +6,7 @@ import { canonicalStatus } from '@/lib/contract-status'
 
 // Klant als centrale hub: één klikbaar overzicht van alles wat aan deze klant hangt.
 // Alles afgeleid uit bestaande data (geen nieuwe tabellen), met deep-links.
-export async function ClientHub({ clientId }: { clientId: string }) {
+export async function ClientHub({ clientId, btw }: { clientId: string; btw?: string | null }) {
   const admin = createAdminSupabaseClient()
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -49,7 +49,11 @@ export async function ClientHub({ clientId }: { clientId: string }) {
   ]
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
+    <div className="space-y-2">
+      {btw && (
+        <div className="text-xs text-gray-500">BTW: <span className="font-mono font-medium text-gray-700">{btw}</span></div>
+      )}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
       {tiles.map((t, i) => (
         <Link key={i} href={t.href} className="card-base !p-3 hover:ring-2 hover:ring-gray-200 transition-shadow text-center">
           <t.icon className="h-4 w-4 mx-auto text-gray-400 mb-1" />
@@ -57,6 +61,7 @@ export async function ClientHub({ clientId }: { clientId: string }) {
           <div className="text-[11px] text-gray-400 leading-tight">{t.label}</div>
         </Link>
       ))}
+      </div>
     </div>
   )
 }

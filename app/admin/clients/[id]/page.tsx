@@ -127,7 +127,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
       </div>
 
       {/* Centrale hub: klikbaar overzicht van alles wat aan deze klant hangt */}
-      <ClientHub clientId={id} />
+      <ClientHub clientId={id} btw={client.btw_nummer ?? null} />
 
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Left: Info */}
