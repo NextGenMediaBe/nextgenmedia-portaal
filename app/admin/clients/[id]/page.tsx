@@ -10,6 +10,7 @@ import { DeleteClientButton } from './delete-client-button'
 import { PortalAccessCard } from './portal-access-card'
 import { CredentialsCard } from '@/components/credentials-card'
 import { ClientUsers } from './client-users'
+import { ClientHub } from './client-hub'
 import { ClientLifecycleBlock } from './client-lifecycle'
 import { ClientMonths } from './client-months'
 import { ClientTasks } from './client-tasks'
@@ -125,6 +126,9 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
         </div>
       </div>
 
+      {/* Centrale hub: klikbaar overzicht van alles wat aan deze klant hangt */}
+      <ClientHub clientId={id} />
+
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Left: Info */}
         <div className="space-y-4">
@@ -160,7 +164,9 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
           />
 
           {/* Subaccounts & rechten */}
-          <ClientUsers clientId={id} clientName={client.company_name} ownerEmail={client.email ?? null} />
+          <div id="gebruikers" className="scroll-mt-20">
+            <ClientUsers clientId={id} clientName={client.company_name} ownerEmail={client.email ?? null} />
+          </div>
 
           {/* Klant Lifecycle (batch, contract, reviews) */}
           <ClientLifecycleBlock clientId={id} companyName={client.company_name} />
@@ -169,7 +175,9 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
           <ClientMonths clientId={id} />
 
           {/* Klanttaken */}
-          <ClientTasks clientId={id} />
+          <div id="taken" className="scroll-mt-20">
+            <ClientTasks clientId={id} />
+          </div>
 
           {/* Blogs */}
           <ClientBlogs clientId={id} />
