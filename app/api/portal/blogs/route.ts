@@ -4,8 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { slugify } from '@/lib/blog-ai'
 import { publishBlogToFramer, markFramerSync, type FramerClientConfig } from '@/lib/framer'
 import { snapshotBlogVersion, describeChanges } from '@/lib/blog-versions'
-import { requirePortalPermission } from '@/lib/portal-auth'
-import { logAudit, requestMeta } from '@/lib/audit'
+import { requirePortalPermission, logPortalAction } from '@/lib/portal-auth'
 
 // Opslaan pusht (bij gepubliceerde blogs) naar Framer — externe call, kan duren.
 export const maxDuration = 60
@@ -83,15 +82,7 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
-    const meta = requestMeta(req)
-    const who = session.name || session.email || (session.isOwner ? 'hoofdaccount' : 'subaccount')
-    await logAudit({
-      action: 'portal.blog.edited', entityType: 'blog', entityId: b.id,
-      summary: `Blog bewerkt via portaal door ${who}`,
-      actorUserId: session.userId, actorEmail: session.email, actorRole: session.isOwner ? 'client_owner' : 'client_subaccount',
-      metadata: { client_id: session.clientId, actor_name: session.name, actor_email: session.email, by_subaccount: !session.isOwner, pushed },
-      ip: meta.ip, userAgent: meta.userAgent,
-    })
+    await logPortalAction(session, 'portal.blog.edited', { type: 'blog', id: b.id }, { req, meta: { pushed } })
 
     try { revalidatePath('/portal/blogs'); revalidatePath('/admin/blogs') } catch { }
     return NextResponse.json({ ok: true, pushed, pushError })

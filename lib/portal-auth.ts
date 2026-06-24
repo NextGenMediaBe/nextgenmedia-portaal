@@ -3,8 +3,9 @@ import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { redirect } from 'next/navigation'
 import {
-  fullPermissions, can, type Permissions, type PortalModule,
+  fullPermissions, can, MODULE_IMPLEMENTED, type Permissions, type PortalModule,
 } from '@/lib/portal-permissions'
+import { logAudit } from '@/lib/audit'
 
 // Centrale portaal-resolver. Bepaalt voor de ingelogde gebruiker:
 //  - bij welke klant hij hoort (owner of subaccount)
@@ -88,6 +89,10 @@ type GuardErr = { ok: false; response: NextResponse }
  *   // g.session.clientId is veilig te gebruiken
  */
 export async function requirePortalPermission(module?: PortalModule, action = 'view'): Promise<GuardOk | GuardErr> {
+  // Niet-geïmplementeerde module → duidelijke disabled-response (geen losse checks elders nodig).
+  if (module && !MODULE_IMPLEMENTED[module]) {
+    return { ok: false, response: NextResponse.json({ error: 'Deze module is nog niet beschikbaar' }, { status: 404 }) }
+  }
   const session = await resolvePortalSession()
   if (!session) return { ok: false, response: NextResponse.json({ error: 'Niet ingelogd' }, { status: 401 }) }
   if (!session.active) return { ok: false, response: NextResponse.json({ error: 'Account is gedeactiveerd' }, { status: 403 }) }
@@ -99,14 +104,61 @@ export async function requirePortalPermission(module?: PortalModule, action = 'v
 
 /**
  * Page-guard voor portaal-servercomponenten. Redirect naar /login als niet
- * ingelogd/inactief, naar /portal als geen view-recht op de module. Geeft anders
- * de sessie terug (met clientId om data op te halen).
+ * ingelogd/inactief, naar /portal als geen view-recht op de module of als de
+ * module nog niet bestaat. Geeft anders de sessie terug.
  */
 export async function requirePortalView(module: PortalModule): Promise<PortalSession> {
+  if (!MODULE_IMPLEMENTED[module]) redirect('/portal')
   const session = await resolvePortalSession()
   if (!session || !session.active) redirect('/login')
   if (!sessionCan(session, module, 'view')) redirect('/portal')
   return session
+}
+
+/**
+ * Centrale contracttoegang voor het klantportaal (admin valt hier buiten).
+ * Regels: contract moet aan session.clientId gekoppeld zijn + het juiste recht.
+ * De publieke token-flow (externe ontvangers) loopt NIET via deze helper.
+ */
+export function canAccessContract(
+  session: PortalSession | null,
+  contract: { client_id?: string | null },
+  action: 'view' | 'sign' | 'download' = 'view',
+): boolean {
+  if (!session || !session.active) return false
+  if (!contract.client_id || contract.client_id !== session.clientId) return false
+  return sessionCan(session, 'contracts', action)
+}
+
+/**
+ * Eén audit-helper voor alle portaalacties — consistente actor-identiteit.
+ * Vervangt de losse logAudit-blokken in de portal-routes.
+ */
+export async function logPortalAction(
+  session: PortalSession,
+  action: string,
+  entity: { type?: string | null; id?: string | null },
+  opts?: { meta?: Record<string, unknown>; req?: { headers: Headers } },
+): Promise<void> {
+  const kind = session.isOwner ? 'owner' : 'subaccount'
+  const who = session.name || session.email || (session.isOwner ? 'hoofdaccount' : 'subaccount')
+  const h = opts?.req?.headers
+  const ip = h ? (h.get('x-forwarded-for')?.split(',')[0]?.trim() || h.get('x-real-ip') || null) : null
+  const userAgent = h ? (h.get('user-agent') || null) : null
+  await logAudit({
+    action,
+    entityType: entity.type ?? null,
+    entityId: entity.id ?? null,
+    summary: `${action} via portaal door ${who}`,
+    actorUserId: session.userId,
+    actorEmail: session.email,
+    actorRole: session.isOwner ? 'client_owner' : 'client_subaccount',
+    metadata: {
+      actor_name: session.name, actor_email: session.email, auth_user_id: session.userId,
+      client_id: session.clientId, kind, ...(opts?.meta ?? {}),
+    },
+    ip, userAgent,
+  })
 }
 
 /** Best-effort: registreer de laatste login van een subaccount. */

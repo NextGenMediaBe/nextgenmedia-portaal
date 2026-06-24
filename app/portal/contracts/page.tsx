@@ -3,14 +3,15 @@ import { formatDate } from '@/lib/utils'
 import Link from 'next/link'
 import { FileText, CheckCircle2, Download, Eye, Clock } from 'lucide-react'
 import { canonicalStatus, statusInfo } from '@/lib/contract-status'
-import { requirePortalView, sessionCan } from '@/lib/portal-auth'
+import { requirePortalView, canAccessContract } from '@/lib/portal-auth'
 
 export const dynamic = 'force-dynamic'
 
 export default async function PortalContractsPage() {
   const session = await requirePortalView('contracts')
-  const canSign = sessionCan(session, 'contracts', 'sign')
-  const canDownload = sessionCan(session, 'contracts', 'download')
+  // Alle contracten op deze pagina horen bij session.clientId; rechten centraal via canAccessContract.
+  const canSign = canAccessContract(session, { client_id: session.clientId }, 'sign')
+  const canDownload = canAccessContract(session, { client_id: session.clientId }, 'download')
 
   const admin = createAdminSupabaseClient()
 

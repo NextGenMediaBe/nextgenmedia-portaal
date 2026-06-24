@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { notifyClientScriptActivity } from '@/lib/admin-alerts'
-import { requirePortalPermission, sessionCan } from '@/lib/portal-auth'
-import { logAudit, requestMeta } from '@/lib/audit'
+import { requirePortalPermission, sessionCan, logPortalAction } from '@/lib/portal-auth'
 
 export async function POST(req: NextRequest) {
   try {
@@ -43,16 +42,12 @@ export async function POST(req: NextRequest) {
       revalidatePath('/admin/services/social-media')
     } catch { }
 
-    const meta = requestMeta(req)
-    const who = session.name || session.email || (session.isOwner ? 'hoofdaccount' : 'subaccount')
-    await logAudit({
-      action: decision === 'approved' ? 'portal.script.approved' : 'portal.script.changes_requested',
-      entityType: 'social_content_item', entityId: id,
-      summary: `${decision === 'approved' ? 'Script goedgekeurd' : 'Wijziging gevraagd'} via portaal door ${who}`,
-      actorUserId: session.userId, actorEmail: session.email, actorRole: session.isOwner ? 'client_owner' : 'client_subaccount',
-      metadata: { client_id: session.clientId, actor_name: session.name, actor_email: session.email, by_subaccount: !session.isOwner },
-      ip: meta.ip, userAgent: meta.userAgent,
-    })
+    await logPortalAction(
+      session,
+      decision === 'approved' ? 'portal.script.approved' : 'portal.script.changes_requested',
+      { type: 'social_content_item', id },
+      { req, meta: { decision } },
+    )
 
     // Directe interne adminmail met 1-uur bundeling per klant (best-effort).
     await notifyClientScriptActivity(session.clientId)

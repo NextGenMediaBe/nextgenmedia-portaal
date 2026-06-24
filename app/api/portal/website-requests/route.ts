@@ -3,8 +3,7 @@ import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { notifyMaintenanceRequest } from '@/lib/admin-alerts'
-import { requirePortalPermission, type PortalSession } from '@/lib/portal-auth'
-import { logAudit, requestMeta } from '@/lib/audit'
+import { requirePortalPermission, logPortalAction, type PortalSession } from '@/lib/portal-auth'
 
 // Store images in the 'contracts' bucket (always exists, admin service role bypasses RLS)
 // under a webdesign/ prefix so they stay separate from contract PDFs.
@@ -122,15 +121,7 @@ export async function POST(req: NextRequest) {
       revalidatePath('/admin')
     } catch { }
 
-    const meta = requestMeta(req)
-    const who = session.name || session.email || (session.isOwner ? 'hoofdaccount' : 'subaccount')
-    await logAudit({
-      action: 'portal.website_request.created', entityType: 'webdesign_change_request', entityId: inserted.id,
-      summary: `Websiteaanvraag ingediend via portaal door ${who}`,
-      actorUserId: session.userId, actorEmail: session.email, actorRole: session.isOwner ? 'client_owner' : 'client_subaccount',
-      metadata: { client_id: session.clientId, actor_name: session.name, actor_email: session.email, by_subaccount: !session.isOwner },
-      ip: meta.ip, userAgent: meta.userAgent,
-    })
+    await logPortalAction(session, 'portal.website_request.created', { type: 'webdesign_change_request', id: inserted.id }, { req })
 
     // Directe interne adminmail (best-effort, breekt de flow nooit).
     await notifyMaintenanceRequest(inserted.id)

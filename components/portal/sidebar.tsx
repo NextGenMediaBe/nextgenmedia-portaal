@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { useRefresh } from '@/lib/use-refresh'
 import { Logo } from '@/components/logo'
 import { LayoutDashboard, FileText, Calendar, Globe, LogOut, RefreshCcw, Menu, X, ListChecks, Newspaper } from 'lucide-react'
+import { MODULE_IMPLEMENTED, type PortalModule } from '@/lib/portal-permissions'
 
 type NavItem = {
   label: string
@@ -55,6 +56,7 @@ export function PortalSidebar({
 
   const visibleNav = NAV.filter(
     (item) =>
+      (!item.module || MODULE_IMPLEMENTED[item.module as PortalModule]) &&
       (!item.requiresService || activeServices.includes(item.requiresService)) &&
       (!item.requiresBlogs || hasBlogs) &&
       (!item.module || !allowedModules || allowedModules.includes(item.module))

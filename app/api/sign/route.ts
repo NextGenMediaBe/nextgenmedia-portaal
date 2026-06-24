@@ -3,7 +3,7 @@ import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 import { revalidatePath } from 'next/cache'
 import { logContractEvent } from '@/lib/contract-audit'
-import { resolvePortalSession, sessionCan } from '@/lib/portal-auth'
+import { resolvePortalSession, canAccessContract } from '@/lib/portal-auth'
 
 export const maxDuration = 60
 
@@ -43,10 +43,8 @@ export async function POST(req: NextRequest) {
     // mag enkel tekenen met contracts.sign. Externe ontvangers (geen sessie of
     // andere klant) gebruiken de publieke tekenlink en worden niet geblokkeerd.
     const portalSession = await resolvePortalSession()
-    if (portalSession && contract.client_id && portalSession.clientId === contract.client_id) {
-      if (!sessionCan(portalSession, 'contracts', 'sign')) {
-        return NextResponse.json({ error: 'Je hebt geen toestemming om dit contract te ondertekenen.' }, { status: 403 })
-      }
+    if (portalSession && contract.client_id === portalSession.clientId && !canAccessContract(portalSession, contract, 'sign')) {
+      return NextResponse.json({ error: 'Je hebt geen toestemming om dit contract te ondertekenen.' }, { status: 403 })
     }
     // Vervaldatum: verlopen tekenlink mag niet meer ondertekend worden.
     if (contract.expires_at && String(contract.expires_at).slice(0, 10) < new Date().toISOString().slice(0, 10)) {
