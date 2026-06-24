@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { AdminSidebar } from '@/components/admin/sidebar'
 import { AdminTopBar } from '@/components/admin/admin-topbar'
+import { AiAssistant } from '@/components/admin/ai-assistant'
 import { Toaster } from 'sonner'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -27,6 +28,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           {children}
         </div>
       </main>
+      <AiAssistant />
     </div>
   )
 }
