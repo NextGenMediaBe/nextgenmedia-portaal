@@ -7,6 +7,7 @@ import { FramerStatusWidget } from './framer-status-widget'
 import { BlogStatusWidget } from './blog-status-widget'
 import { FinanceWidget } from './finance-widget'
 import { ContractsWidget } from './contracts-widget'
+import { TodayPanel } from './today-panel'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { formatDate, SERVICE_LABELS } from '@/lib/utils'
@@ -237,6 +238,11 @@ export default async function CommandCenter() {
           {today.toLocaleDateString('nl-BE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
         </p>
       </div>
+
+      {/* Vandaag — dagelijkse acties (bovenaan, de werkplek) */}
+      <Suspense fallback={<div className="card-base text-sm text-gray-400">Vandaag laden…</div>}>
+        <TodayPanel />
+      </Suspense>
 
       {/* Quick stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
