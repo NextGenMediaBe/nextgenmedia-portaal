@@ -88,6 +88,7 @@ type Row = {
   amount_excl: number; vat_pct: number; amount_incl: number; status: string; revenue_id: string | null
   billing_date: string; clickup_task_id: string | null
   recurring_start: string | null; recurring_end: string | null; invoice_day: string | null
+  contract_id: string | null; contract_title: string | null
 }
 
 // GET ?month=YYYY-MM → samengevoegde facturen (eenmalig + recurring) + omzet + klanten
@@ -106,6 +107,16 @@ export async function GET(req: NextRequest) {
       admin.from('clients').select('id, company_name').is('archived_at', null).order('company_name'),
     ])
 
+    // Contracttitels voor gekoppelde facturen (best-effort).
+    const contractTitles = new Map<string, string>()
+    try {
+      const cids = Array.from(new Set(((invoices ?? []) as Record<string, unknown>[]).map((i) => i.contract_id).filter(Boolean))) as string[]
+      if (cids.length > 0) {
+        const { data: cts } = await admin.from('contracts').select('id, title').in('id', cids)
+        for (const c of (cts ?? []) as { id: string; title: string }[]) contractTitles.set(c.id, c.title)
+      }
+    } catch { /* kolom kan ontbreken vóór migratie */ }
+
     const rows: Row[] = []
     for (const i of (invoices ?? []) as Record<string, unknown>[]) {
       rows.push({
@@ -115,6 +126,8 @@ export async function GET(req: NextRequest) {
         amount_incl: Number(i.amount_incl), status: normalizeInvoiceStatus(i.status as string), revenue_id: (i.revenue_id ?? null) as string | null,
         billing_date: (i.invoice_date as string | null) ?? lastDayOfMonth(month), clickup_task_id: (i.clickup_task_id ?? null) as string | null,
         recurring_start: null, recurring_end: null, invoice_day: null,
+        contract_id: (i.contract_id ?? null) as string | null,
+        contract_title: i.contract_id ? (contractTitles.get(i.contract_id as string) ?? null) : null,
       })
     }
     const recRow = new Map((recMonths ?? []).map((m: { recurring_id: string; status: string; clickup_task_id: string | null }) => [m.recurring_id, m]))
@@ -128,6 +141,7 @@ export async function GET(req: NextRequest) {
         status: normalizeInvoiceStatus(mr?.status ?? 'te_versturen'), revenue_id: r.revenue_id,
         billing_date: billingDateFor(month, r.invoice_day), clickup_task_id: mr?.clickup_task_id ?? null,
         recurring_start: (r.start_month ?? '').slice(0, 7) || null, recurring_end: r.end_month ? r.end_month.slice(0, 7) : null, invoice_day: r.invoice_day ?? 'last',
+        contract_id: null, contract_title: null,
       })
     }
 
@@ -173,6 +187,7 @@ export async function POST(req: NextRequest) {
         invoice_date: invoiceDate, description: b.description || null,
         amount_excl: excl, vat_pct: vat, amount_incl: incl,
         status, revenue_id: revenueId, created_by: actor.id, clickup_task_id: task.taskId,
+        contract_id: b.contract_id || null,
       })
       // Meteen verstuurd aangemaakt? → taak ook afronden.
       if (status === 'verstuurd' && task.taskId) await completeInvoiceTask(task.taskId)

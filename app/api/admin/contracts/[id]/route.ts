@@ -51,6 +51,24 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       }
       try { revalidatePath(`/admin/contracts/${id}`) } catch { }
       return NextResponse.json({ ok: true, expires_at })
+    } else if (action === 'invoice_settings') {
+      // Facturatie-instellingen op het contract (verwacht aantal / frequentie / bedrag).
+      const patch: Record<string, unknown> = {
+        expected_invoice_count: body.expected_invoice_count != null && body.expected_invoice_count !== '' ? Math.max(0, parseInt(String(body.expected_invoice_count), 10) || 0) : null,
+        invoice_frequency: body.invoice_frequency || null,
+        expected_invoice_amount_excl: body.expected_invoice_amount_excl != null && body.expected_invoice_amount_excl !== '' ? Number(body.expected_invoice_amount_excl) : null,
+      }
+      // Veerkrachtig: laat ontbrekende kolommen vallen vóór migratie.
+      const p = { ...patch }
+      for (let i = 0; i < 4; i++) {
+        const { error } = await admin.from('contracts').update(p).eq('id', id)
+        if (!error) break
+        const col = String(error.message || '').match(/Could not find the '([^']+)' column/)?.[1]
+        if (col && col in p) { delete p[col]; continue }
+        throw new Error(error.message)
+      }
+      try { revalidatePath(`/admin/contracts/${id}`) } catch { }
+      return NextResponse.json({ ok: true })
     } else if (action === 'send') {
       const { error } = await admin
         .from('contracts')

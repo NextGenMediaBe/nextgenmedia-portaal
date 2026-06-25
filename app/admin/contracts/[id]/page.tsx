@@ -10,6 +10,7 @@ import { ContractMailButton } from '@/components/admin/contract-mail-button'
 import { ContractLinkManager } from './contract-link-manager'
 import { ContractPdfPreview } from './contract-pdf-preview'
 import { ContractTimeline } from './contract-timeline'
+import { ContractInvoices } from './contract-invoices'
 import { statusInfo, canonicalStatus } from '@/lib/contract-status'
 import { baseUrl } from '@/lib/email'
 
@@ -172,6 +173,17 @@ export default async function ContractDetailPage({ params }: { params: { id: str
               )}
             </div>
           </div>
+
+          {/* Facturen gekoppeld aan dit contract */}
+          <ContractInvoices
+            contractId={c.id}
+            clientId={clientId}
+            serviceSlug={c.service_slug ?? null}
+            contractTitle={c.title}
+            expectedCount={c.expected_invoice_count ?? null}
+            invoiceFrequency={c.invoice_frequency ?? null}
+            expectedAmountExcl={c.expected_invoice_amount_excl ?? null}
+          />
 
           {/* Sign link — only for unsigned contracts */}
           {!isSigned && statusKey !== 'geannuleerd' && (

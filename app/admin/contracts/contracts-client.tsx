@@ -23,6 +23,10 @@ type Contract = {
   duration_type: string | null
   signer_name: string | null
   signer_email: string | null
+  invoice_count: number
+  invoice_sent: number
+  expected_invoice_count: number | null
+  invoice_state: 'none' | 'partial' | 'full'
   client: { id: string; company_name: string } | null
 }
 
@@ -46,6 +50,7 @@ export function ContractsClient({
   const [filterType, setFilterType] = useState<string>('all')        // contracttype
   const [filterDuration, setFilterDuration] = useState<string>('all') // contractduur-type
   const [filterLinked, setFilterLinked] = useState<string>('all') // all | yes | no
+  const [filterInvoice, setFilterInvoice] = useState<string>('all') // all | none | partial | full
   const [dateFrom, setDateFrom] = useState<string>('')
   const [dateTo, setDateTo] = useState<string>('')
   const [query, setQuery] = useState('')
@@ -66,6 +71,7 @@ export function ContractsClient({
         if (s.filterType) setFilterType(s.filterType)
         if (s.filterDuration) setFilterDuration(s.filterDuration)
         if (s.filterLinked) setFilterLinked(s.filterLinked)
+        if (s.filterInvoice) setFilterInvoice(s.filterInvoice)
         if (s.dateFrom) setDateFrom(s.dateFrom)
         if (s.dateTo) setDateTo(s.dateTo)
       }
@@ -74,9 +80,9 @@ export function ContractsClient({
   }, [])
   useEffect(() => {
     try {
-      localStorage.setItem('ngm.contractFilters', JSON.stringify({ filterClient, filterService, filterStatus, filterTemplate, filterType, filterDuration, filterLinked, dateFrom, dateTo }))
+      localStorage.setItem('ngm.contractFilters', JSON.stringify({ filterClient, filterService, filterStatus, filterTemplate, filterType, filterDuration, filterLinked, filterInvoice, dateFrom, dateTo }))
     } catch { /* negeer */ }
-  }, [filterClient, filterService, filterStatus, filterTemplate, filterType, filterDuration, filterLinked, dateFrom, dateTo])
+  }, [filterClient, filterService, filterStatus, filterTemplate, filterType, filterDuration, filterLinked, filterInvoice, dateFrom, dateTo])
   // Debounce de zoekterm (vlot bij grote lijsten).
   useEffect(() => { const t = setTimeout(() => setDq(query), 200); return () => clearTimeout(t) }, [query])
 
@@ -93,6 +99,7 @@ export function ContractsClient({
       if (filterDuration !== 'all' && (c.duration_type ?? '') !== filterDuration) return false
       if (filterLinked === 'yes' && !c.client_id) return false
       if (filterLinked === 'no' && !!c.client_id) return false
+      if (filterInvoice !== 'all' && c.invoice_state !== filterInvoice) return false
       if (dateFrom && (c.created_at ?? '').slice(0, 10) < dateFrom) return false
       if (dateTo && (c.created_at ?? '').slice(0, 10) > dateTo) return false
       if (q) {
@@ -104,7 +111,7 @@ export function ContractsClient({
       }
       return true
     })
-  }, [initialContracts, filterClient, filterService, filterStatus, filterTemplate, filterType, filterDuration, filterLinked, dateFrom, dateTo, dq, templateName])
+  }, [initialContracts, filterClient, filterService, filterStatus, filterTemplate, filterType, filterDuration, filterLinked, filterInvoice, dateFrom, dateTo, dq, templateName])
 
   // ── Dashboard-cijfers (over alle contracten) ───────────────────────────────
   const stats = useMemo(() => {
@@ -126,7 +133,7 @@ export function ContractsClient({
     [initialContracts],
   )
 
-  const hasActiveFilters = filterClient !== 'all' || filterService !== 'all' || filterStatus !== 'all' || filterTemplate !== 'all' || filterType !== 'all' || filterDuration !== 'all' || filterLinked !== 'all' || dateFrom !== '' || dateTo !== '' || query.trim() !== ''
+  const hasActiveFilters = filterClient !== 'all' || filterService !== 'all' || filterStatus !== 'all' || filterTemplate !== 'all' || filterType !== 'all' || filterDuration !== 'all' || filterLinked !== 'all' || filterInvoice !== 'all' || dateFrom !== '' || dateTo !== '' || query.trim() !== ''
 
   const clearFilters = () => {
     setFilterClient('all')
@@ -136,6 +143,7 @@ export function ContractsClient({
     setFilterType('all')
     setFilterDuration('all')
     setFilterLinked('all')
+    setFilterInvoice('all')
     setDateFrom('')
     setDateTo('')
     setQuery('')
@@ -292,6 +300,15 @@ export function ContractsClient({
             </select>
           </div>
           <div>
+            <label className="block text-xs text-gray-500 mb-1">Facturatie</label>
+            <select className={`${sel} w-full`} value={filterInvoice} onChange={(e) => setFilterInvoice(e.target.value)}>
+              <option value="all">Alle</option>
+              <option value="none">Zonder facturen</option>
+              <option value="partial">Deels gefactureerd</option>
+              <option value="full">Volledig gefactureerd</option>
+            </select>
+          </div>
+          <div>
             <label className="block text-xs text-gray-500 mb-1">Aangemaakt vanaf</label>
             <input type="date" className={`${sel} w-full`} value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
           </div>
@@ -326,6 +343,7 @@ export function ContractsClient({
                 <th className="table-th">Klant</th>
                 <th className="table-th">Dienst</th>
                 <th className="table-th">Status</th>
+                <th className="table-th">Facturen</th>
                 <th className="table-th">Datum</th>
                 <th className="table-th">Acties</th>
               </tr>
@@ -360,6 +378,16 @@ export function ContractsClient({
                       <span className={`status-badge ${style.cls}`}>
                         {style.label}
                       </span>
+                    </td>
+                    <td className="table-td">
+                      {c.invoice_count === 0 ? (
+                        <span className="text-xs text-gray-300">—</span>
+                      ) : (
+                        <span className={`inline-flex items-center gap-1.5 text-xs ${c.invoice_state === 'full' ? 'text-green-600' : 'text-amber-600'}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${c.invoice_state === 'full' ? 'bg-green-500' : 'bg-amber-500'}`} />
+                          {c.invoice_sent}{c.expected_invoice_count ? `/${c.expected_invoice_count}` : `/${c.invoice_count}`}
+                        </span>
+                      )}
                     </td>
                     <td className="table-td text-gray-500">
                       {c.signed_at

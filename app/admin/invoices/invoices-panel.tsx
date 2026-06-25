@@ -16,6 +16,7 @@ type Row = {
   amount_excl: number; vat_pct: number; amount_incl: number; status: string; revenue_id: string | null
   billing_date: string; clickup_task_id: string | null
   recurring_start: string | null; recurring_end: string | null; invoice_day: string | null
+  contract_id?: string | null; contract_title?: string | null
 }
 type ClientOpt = { id: string; company_name: string }
 type Summary = { omzetExcl: number; linkedExcl: number; verschil: number; pct: number }
@@ -52,7 +53,7 @@ export function InvoicesPanel() {
   const [busy, setBusy] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [clickupEnabled, setClickupEnabled] = useState(false)
-  const [fClient, setFClient] = useState(''); const [fService, setFService] = useState(''); const [fStatus, setFStatus] = useState(''); const [fType, setFType] = useState(''); const [fLinked, setFLinked] = useState('')
+  const [fClient, setFClient] = useState(''); const [fService, setFService] = useState(''); const [fStatus, setFStatus] = useState(''); const [fType, setFType] = useState(''); const [fLinked, setFLinked] = useState(''); const [fContract, setFContract] = useState('')
 
   // Performance: enkel de geopende maand laden; bij maandwissel opnieuw.
   const load = useCallback(async () => {
@@ -74,7 +75,8 @@ export function InvoicesPanel() {
     (!fService || r.service_slug === fService) &&
     (!fStatus || r.status === fStatus) &&
     (!fType || r.kind === fType) &&
-    (!fLinked || (fLinked === 'linked' ? !!r.revenue_id : !r.revenue_id))
+    (!fLinked || (fLinked === 'linked' ? !!r.revenue_id : !r.revenue_id)) &&
+    (!fContract || (fContract === 'with' ? !!r.contract_id : !r.contract_id))
   )
 
   // Maandtotalen over ALLE rijen (niet de filter) — voor de bovenste kaarten + balk.
@@ -176,6 +178,7 @@ export function InvoicesPanel() {
         <select value={fService} onChange={(e) => setFService(e.target.value)} className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"><option value="">Alle diensten</option>{SERVICE_OPTS.filter(Boolean).map((s) => <option key={s} value={s}>{svcLabel(s)}</option>)}</select>
         <select value={fType} onChange={(e) => setFType(e.target.value)} className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"><option value="">Alle types</option><option value="eenmalig">Eenmalig</option><option value="recurring">Recurring</option></select>
         <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"><option value="">Alle statussen</option>{INVOICE_STATUSES.map((s) => <option key={s} value={s}>{INVOICE_STATUS_LABEL[s]}</option>)}</select>
+        <select value={fContract} onChange={(e) => setFContract(e.target.value)} className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"><option value="">Alle (contract)</option><option value="with">Met contract</option><option value="without">Zonder contract</option></select>
         <select value={fLinked} onChange={(e) => setFLinked(e.target.value)} className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"><option value="">Gekoppeld + niet</option><option value="linked">Gekoppeld</option><option value="unlinked">Niet gekoppeld</option></select>
         <span className="text-xs text-gray-400">{filtered.length} factuur/facturen</span>
       </div>
@@ -208,6 +211,7 @@ export function InvoicesPanel() {
                       <span>{svcLabel(r.service_slug)}</span>
                       <span>· {formatEuro(r.amount_excl)} excl · {formatEuro(r.amount_incl)} incl</span>
                       {r.description && <span>· {r.description}</span>}
+                      {r.contract_title && <span className="text-gray-500">· 📄 {r.contract_title}</span>}
                     </div>
                     {/* Recurring-visualisatie */}
                     {r.kind === 'recurring' && r.recurring_start && (

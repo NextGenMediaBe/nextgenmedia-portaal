@@ -1224,6 +1224,14 @@ CREATE POLICY "client users self read" ON public.client_users
 -- ── Contracten: contractduur-type (naast bestaande contract_type) ─────────────
 ALTER TABLE public.contracts ADD COLUMN IF NOT EXISTS duration_type text;
 
+-- ── Contract ↔ facturen koppeling (additief) ──────────────────────────────────
+ALTER TABLE public.contracts
+  ADD COLUMN IF NOT EXISTS expected_invoice_count       integer,
+  ADD COLUMN IF NOT EXISTS invoice_frequency            text,
+  ADD COLUMN IF NOT EXISTS expected_invoice_amount_excl numeric;
+ALTER TABLE public.invoices ADD COLUMN IF NOT EXISTS contract_id uuid REFERENCES public.contracts(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_invoices_contract ON public.invoices (contract_id);
+
 -- ── Klanten: BTW-nummer ───────────────────────────────────────────────────────
 -- Optioneel; bestaande klanten mogen leeg blijven. Hergebruikt als suggestie in
 -- contracten/facturen/prognose.
