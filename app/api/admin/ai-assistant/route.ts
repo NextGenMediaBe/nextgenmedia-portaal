@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { buildAiSnapshot } from '@/lib/ai-context'
+import { toolsForPrompt, AI_TOOLS } from '@/lib/ai-tools'
 
 export const maxDuration = 60
 
@@ -23,41 +24,39 @@ export async function POST(req: NextRequest) {
     if (!Array.isArray(messages) || messages.length === 0) return NextResponse.json({ error: 'Geen vraag' }, { status: 400 })
 
     const snapshot = await buildAiSnapshot()
-    // Compacte clientregels (token-zuinig).
+    // Compacte clientregels incl. id zodat de AID de juiste client_id kan invullen.
     const clientLines = snapshot.clients.map((c) =>
-      `${c.name} | contracten:${c.contracts} getekend:${c.signed} | prognose:${c.forecast ? 'ja' : 'nee'} | framer:${c.framer ? 'ja' : 'nee'} | diensten:${c.services.join(',') || '-'}`
+      `[${c.id}] ${c.name} | contracten:${c.contracts} getekend:${c.signed} | prognose:${c.forecast ? 'ja' : 'nee'} | framer:${c.framer ? 'ja' : 'nee'} | diensten:${c.services.join(',') || '-'}`
     ).join('\n')
 
     const system = `Je bent "NextGen AI", de assistent in het interne agency-platform van NextGenMedia (admin).
-Je hebt READ-ONLY toegang tot onderstaande momentopname. Je voert NOOIT zelf acties uit.
-Wanneer de gebruiker iets wil aanmaken/versturen, geef je een kort voorstel + de juiste deep-link als actie; de mens bevestigt door te klikken.
+Je kan vragen beantwoorden, samenvatten, EN acties voorbereiden die de admin daarna bevestigt en jij uitvoert via tools.
 
-Wees maximaal behulpzaam. Weiger NOOIT normale vragen of aanmaak-/zoek-/samenvat-verzoeken (klant, factuur, contract, blog, prognose, taak). Bij een aanmaakvraag: geef een kort voorstel + de juiste deep-link als actie (de mens bevestigt door te klikken). Enkel destructieve acties (verwijderen/annuleren/overschrijven) weiger je en verwijs je naar de module met expliciete bevestiging.
+WERKWIJZE:
+- Eenvoudige vraag/samenvatting → vul "answer".
+- Ontbreekt info om een tool correct te vullen (bv. welke klant) → vul "needs_input" met je vraag; geef GEEN plan.
+- Wil de gebruiker iets aanmaken/wijzigen/koppelen → maak een "plan": een lijst tool-stappen met exacte params. Toon ze; de admin bevestigt en pas dan voer je uit. Gok nooit een client_id — kies enkel ids uit de momentopname hieronder.
+- Meerdere acties = meerdere stappen in volgorde.
+- Destructieve tools ([DESTRUCTIEF]) plan je enkel als de gebruiker dat expliciet vraagt; de admin moet extra typen "VERWIJDEREN".
 
-Antwoord altijd in het Nederlands, kort en concreet. Geef UITSLUITEND geldige JSON terug:
-{"answer": "<bondig antwoord>", "actions": [{"label": "<knoptekst>", "href": "<deep-link>"}]}
-"actions" is optioneel (leeg laten als er geen actie nodig is).
+Beschikbare tools (params met * zijn verplicht):
+${toolsForPrompt()}
 
-Geldige deep-links (gebruik enkel deze patronen):
-- /admin/clients/new (nieuwe klant)
-- /admin/clients/<id> (klantdetail/hub)
-- /admin/contracts/new (nieuw contract)
-- /admin/contracts (contracten)
-- /admin/invoices (facturen)
-- /admin/revenue/omzet (prognose)
-- /admin/blog-calendar (blogs)
+Geef UITSLUITEND geldige JSON terug:
+{"answer": "<tekst of leeg>", "needs_input": "<vraag of leeg>", "plan": [{"tool": "<naam>", "params": { ... }, "summary": "<korte NL-omschrijving>"}]}
+Laat velden leeg/weg die niet van toepassing zijn. Antwoord in het Nederlands, kort.
 
 Momentopname (${snapshot.generatedAt}):
 Totaal klanten: ${snapshot.totals.clients} | facturen te versturen: ${snapshot.totals.invoicesToSend} | contracten op te volgen: ${snapshot.totals.contractsToFollowUp}
-Klanten:
+Klanten ([id] naam | …):
 ${clientLines}`
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({
-        model: MODEL(), max_tokens: 1500, system,
-        messages: messages.slice(-8).map((m) => ({ role: m.role, content: String(m.content).slice(0, 4000) })),
+        model: MODEL(), max_tokens: 2000, system,
+        messages: messages.slice(-10).map((m) => ({ role: m.role, content: String(m.content).slice(0, 4000) })),
       }),
     })
     const json = await res.json().catch(() => null)
@@ -65,16 +64,25 @@ ${clientLines}`
 
     const text: string = (json?.content ?? []).map((b: { text?: string }) => b.text ?? '').join('')
     const start = text.indexOf('{'), end = text.lastIndexOf('}')
-    let parsed: { answer?: string; actions?: { label: string; href: string }[] } = {}
+    let parsed: { answer?: string; needs_input?: string; plan?: { tool: string; params: Record<string, unknown>; summary?: string }[] } = {}
     try { parsed = JSON.parse(text.slice(start, end + 1)) } catch { parsed = { answer: text } }
 
-    // Saneer acties: enkel interne deep-links toelaten.
-    const actions = (parsed.actions ?? [])
-      .filter((a) => a && typeof a.href === 'string' && a.href.startsWith('/admin/'))
-      .slice(0, 4)
-      .map((a) => ({ label: String(a.label || 'Openen').slice(0, 60), href: a.href }))
+    // Saneer plan: enkel bestaande tools; markeer destructief.
+    const validNames = new Set(AI_TOOLS.map((t) => t.name))
+    const plan = (parsed.plan ?? [])
+      .filter((step) => step && validNames.has(step.tool))
+      .slice(0, 8)
+      .map((step) => {
+        const tool = AI_TOOLS.find((t) => t.name === step.tool)!
+        return { tool: step.tool, params: step.params ?? {}, summary: String(step.summary || tool.summary(step.params ?? {})).slice(0, 160), label: tool.label, destructive: !!tool.destructive }
+      })
+    const hasDestructive = plan.some((p) => p.destructive)
 
-    return NextResponse.json({ answer: parsed.answer || 'Geen antwoord.', actions })
+    return NextResponse.json({
+      answer: parsed.answer || (plan.length ? '' : 'Geen antwoord.'),
+      needs_input: parsed.needs_input || null,
+      plan, hasDestructive,
+    })
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
   }
