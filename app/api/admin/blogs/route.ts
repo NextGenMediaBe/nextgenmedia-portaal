@@ -3,7 +3,7 @@ import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { generateBlogsForAccount, sendBlogReviewMail, BLOG_ACCOUNT_COLS, type BlogAccount } from '@/lib/blog-generate'
 import { generateBlog, slugify } from '@/lib/blog-ai'
-import { findStockImage } from '@/lib/blog-image'
+import { findStockImage, stockImageConfigured } from '@/lib/blog-image'
 import { publishApprovedBlog, type AccountFramer, type BlogRow } from '@/lib/blog-publish'
 import { snapshotBlogVersion, describeChanges } from '@/lib/blog-versions'
 
@@ -58,7 +58,12 @@ export async function POST(req: NextRequest) {
       if (!blog) return NextResponse.json({ error: 'Blog niet gevonden' }, { status: 404 })
       const query = (b.query?.trim()) || (Array.isArray(blog.tags) && blog.tags.length ? blog.tags.join(' ') : '') || blog.titel
       const url = await findStockImage(query, { random: true })
-      if (!url) return NextResponse.json({ error: 'Geen foto gevonden. Staat PEXELS_API_KEY ingesteld?' }, { status: 400 })
+      if (!url) {
+        const msg = stockImageConfigured()
+          ? `Geen foto gevonden voor "${query}". Probeer een andere zoekterm.`
+          : 'Geen stockfoto-provider geconfigureerd. Stel PEXELS_API_KEY en/of UNSPLASH_ACCESS_KEY in.'
+        return NextResponse.json({ error: msg }, { status: 400 })
+      }
       return NextResponse.json({ url })
     }
 
