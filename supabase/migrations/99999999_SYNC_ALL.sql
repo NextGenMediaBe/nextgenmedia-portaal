@@ -1221,6 +1221,9 @@ CREATE POLICY "client users self read" ON public.client_users
   FOR SELECT TO authenticated
   USING (auth_user_id = auth.uid());
 
+-- ── Contracten: contractduur-type (naast bestaande contract_type) ─────────────
+ALTER TABLE public.contracts ADD COLUMN IF NOT EXISTS duration_type text;
+
 -- ── Klanten: BTW-nummer ───────────────────────────────────────────────────────
 -- Optioneel; bestaande klanten mogen leeg blijven. Hergebruikt als suggestie in
 -- contracten/facturen/prognose.

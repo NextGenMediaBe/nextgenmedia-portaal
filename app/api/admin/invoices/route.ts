@@ -46,8 +46,9 @@ async function linkOrCreateForecast(admin: Admin, p: {
     } else {
       insert.type = 'one_time'; insert.amount = p.amount_excl; insert.transaction_month = `${p.month}-01`
     }
-    const { data, error } = await admin.from('revenue_entries').insert(insert).select('id').single()
-    return error ? null : (data.id as string)
+    // Veerkrachtig: laat ontbrekende (niet-gemigreerde) kolommen vallen zodat de
+    // prognose ALTIJD wordt aangemaakt (anders kreeg je een factuur zonder prognose).
+    return await safeInsertId(admin, 'revenue_entries', insert)
   } catch { return null }
 }
 
@@ -175,8 +176,12 @@ export async function POST(req: NextRequest) {
       })
       // Meteen verstuurd aangemaakt? → taak ook afronden.
       if (status === 'verstuurd' && task.taskId) await completeInvoiceTask(task.taskId)
-      try { revalidatePath('/admin/invoices') } catch { }
-      return NextResponse.json({ id, warning: task.assigneeFound ? null : `ClickUp-gebruiker "${INVOICE_ASSIGNEE_NAME}" niet gevonden — taak zonder verantwoordelijke aangemaakt.` })
+      // Ook prognose/omzet + klant-hub verversen zodat een auto-aangemaakte prognose direct zichtbaar is.
+      try {
+        revalidatePath('/admin/invoices'); revalidatePath('/admin/revenue/omzet'); revalidatePath('/admin/revenue')
+        if (b.client_id) revalidatePath(`/admin/clients/${b.client_id}`)
+      } catch { }
+      return NextResponse.json({ id, revenue_id: revenueId, warning: task.assigneeFound ? null : `ClickUp-gebruiker "${INVOICE_ASSIGNEE_NAME}" niet gevonden — taak zonder verantwoordelijke aangemaakt.` })
     }
 
     // Recurring factuur-definitie
@@ -192,8 +197,11 @@ export async function POST(req: NextRequest) {
         amount_excl: excl, vat_pct: vat, amount_incl: inclFromExcl(excl, vat),
         active: b.active !== false, revenue_id: revenueId, invoice_day: invoiceDay, created_by: actor.id,
       })
-      try { revalidatePath('/admin/invoices') } catch { }
-      return NextResponse.json({ id })
+      try {
+        revalidatePath('/admin/invoices'); revalidatePath('/admin/revenue/omzet'); revalidatePath('/admin/revenue')
+        if (b.client_id) revalidatePath(`/admin/clients/${b.client_id}`)
+      } catch { }
+      return NextResponse.json({ id, revenue_id: revenueId })
     }
 
     // Status zetten (werkt voor beide types; recurring per maand)

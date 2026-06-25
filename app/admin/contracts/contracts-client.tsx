@@ -4,7 +4,7 @@ import { useMemo, useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Plus, FileText, Filter as FilterIcon, X, Search, Bell } from 'lucide-react'
 import { formatDate, SERVICE_LABELS } from '@/lib/utils'
-import { statusInfo, canonicalStatus, STATUS_FILTER_OPTIONS, followUp, averageSignDays } from '@/lib/contract-status'
+import { statusInfo, canonicalStatus, STATUS_FILTER_OPTIONS, followUp, averageSignDays, CONTRACT_TYPES, DURATION_TYPES } from '@/lib/contract-status'
 import { ContractTabs } from './contract-tabs'
 
 type Contract = {
@@ -19,6 +19,8 @@ type Contract = {
   access_token: string
   client_id: string | null
   template_id: string | null
+  contract_type: string | null
+  duration_type: string | null
   signer_name: string | null
   signer_email: string | null
   client: { id: string; company_name: string } | null
@@ -41,6 +43,8 @@ export function ContractsClient({
   const [filterService, setFilterService] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<string>(initialStatus)
   const [filterTemplate, setFilterTemplate] = useState<string>('all')
+  const [filterType, setFilterType] = useState<string>('all')        // contracttype
+  const [filterDuration, setFilterDuration] = useState<string>('all') // contractduur-type
   const [filterLinked, setFilterLinked] = useState<string>('all') // all | yes | no
   const [dateFrom, setDateFrom] = useState<string>('')
   const [dateTo, setDateTo] = useState<string>('')
@@ -59,6 +63,8 @@ export function ContractsClient({
         if (s.filterService) setFilterService(s.filterService)
         if (s.filterStatus && initialStatus === 'all') setFilterStatus(s.filterStatus)
         if (s.filterTemplate) setFilterTemplate(s.filterTemplate)
+        if (s.filterType) setFilterType(s.filterType)
+        if (s.filterDuration) setFilterDuration(s.filterDuration)
         if (s.filterLinked) setFilterLinked(s.filterLinked)
         if (s.dateFrom) setDateFrom(s.dateFrom)
         if (s.dateTo) setDateTo(s.dateTo)
@@ -68,9 +74,9 @@ export function ContractsClient({
   }, [])
   useEffect(() => {
     try {
-      localStorage.setItem('ngm.contractFilters', JSON.stringify({ filterClient, filterService, filterStatus, filterTemplate, filterLinked, dateFrom, dateTo }))
+      localStorage.setItem('ngm.contractFilters', JSON.stringify({ filterClient, filterService, filterStatus, filterTemplate, filterType, filterDuration, filterLinked, dateFrom, dateTo }))
     } catch { /* negeer */ }
-  }, [filterClient, filterService, filterStatus, filterTemplate, filterLinked, dateFrom, dateTo])
+  }, [filterClient, filterService, filterStatus, filterTemplate, filterType, filterDuration, filterLinked, dateFrom, dateTo])
   // Debounce de zoekterm (vlot bij grote lijsten).
   useEffect(() => { const t = setTimeout(() => setDq(query), 200); return () => clearTimeout(t) }, [query])
 
@@ -83,6 +89,8 @@ export function ContractsClient({
       if (filterTemplate !== 'all') {
         if (filterTemplate === 'none' ? !!c.template_id : c.template_id !== filterTemplate) return false
       }
+      if (filterType !== 'all' && (c.contract_type ?? '') !== filterType) return false
+      if (filterDuration !== 'all' && (c.duration_type ?? '') !== filterDuration) return false
       if (filterLinked === 'yes' && !c.client_id) return false
       if (filterLinked === 'no' && !!c.client_id) return false
       if (dateFrom && (c.created_at ?? '').slice(0, 10) < dateFrom) return false
@@ -96,7 +104,7 @@ export function ContractsClient({
       }
       return true
     })
-  }, [initialContracts, filterClient, filterService, filterStatus, filterTemplate, filterLinked, dateFrom, dateTo, dq, templateName])
+  }, [initialContracts, filterClient, filterService, filterStatus, filterTemplate, filterType, filterDuration, filterLinked, dateFrom, dateTo, dq, templateName])
 
   // ── Dashboard-cijfers (over alle contracten) ───────────────────────────────
   const stats = useMemo(() => {
@@ -118,13 +126,15 @@ export function ContractsClient({
     [initialContracts],
   )
 
-  const hasActiveFilters = filterClient !== 'all' || filterService !== 'all' || filterStatus !== 'all' || filterTemplate !== 'all' || filterLinked !== 'all' || dateFrom !== '' || dateTo !== '' || query.trim() !== ''
+  const hasActiveFilters = filterClient !== 'all' || filterService !== 'all' || filterStatus !== 'all' || filterTemplate !== 'all' || filterType !== 'all' || filterDuration !== 'all' || filterLinked !== 'all' || dateFrom !== '' || dateTo !== '' || query.trim() !== ''
 
   const clearFilters = () => {
     setFilterClient('all')
     setFilterService('all')
     setFilterStatus('all')
     setFilterTemplate('all')
+    setFilterType('all')
+    setFilterDuration('all')
     setFilterLinked('all')
     setDateFrom('')
     setDateTo('')
@@ -257,6 +267,20 @@ export function ContractsClient({
               {templates.map((t) => (
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Contracttype</label>
+            <select className={`${sel} w-full`} value={filterType} onChange={(e) => setFilterType(e.target.value)}>
+              <option value="all">Alle types</option>
+              {CONTRACT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Contractduur</label>
+            <select className={`${sel} w-full`} value={filterDuration} onChange={(e) => setFilterDuration(e.target.value)}>
+              <option value="all">Alle duurtypes</option>
+              {DURATION_TYPES.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
             </select>
           </div>
           <div>

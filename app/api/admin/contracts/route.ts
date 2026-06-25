@@ -17,6 +17,8 @@ export async function POST(req: NextRequest) {
     const pdf = formData.get('pdf') as File | null
     const client_id = formData.get('client_id') as string
     const title = formData.get('title') as string
+    const contract_type = (formData.get('contract_type') as string | null) || null
+    const duration_type = (formData.get('duration_type') as string | null) || null
     const service_slug = formData.get('service_slug') as string | null
     const signer_name = formData.get('signer_name') as string | null
     const signer_email = formData.get('signer_email') as string | null
@@ -33,12 +35,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'PDF en titel zijn verplicht' }, { status: 400 })
     }
 
-    // Derive start/end dates from start month + duration
+    // Aantal maanden afleiden uit het contractduur-type (eenmalig/onbepaald = geen einddatum).
+    const PRESET_MONTHS: Record<string, number> = { maandelijks: 1, '3m': 3, '6m': 6, '12m': 12 }
+    const months = duration_type === 'aangepast'
+      ? parseInt(durationMonths ?? '0', 10)
+      : (PRESET_MONTHS[duration_type ?? ''] ?? 0)
+
+    // Derive start/end dates. Eenmalig/onbepaalde duur → geen verplichte looptijd.
     let startDate: string | null = null
     let endDate: string | null = null
-    if (startMonth) {
+    if (duration_type !== 'eenmalig' && startMonth) {
       startDate = `${startMonth.slice(0, 7)}-01`
-      const months = parseInt(durationMonths ?? '0', 10)
       if (months > 0) {
         const d = new Date(startDate + 'T00:00:00Z')
         d.setUTCMonth(d.getUTCMonth() + months)
@@ -56,6 +63,8 @@ export async function POST(req: NextRequest) {
       {
         client_id: client_id || null,
         title,
+        contract_type,
+        duration_type,
         created_by: user.id,
         service_slug: service_slug || null,
         status: alreadySigned ? 'signed' : 'draft',

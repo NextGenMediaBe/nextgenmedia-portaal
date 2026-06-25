@@ -47,11 +47,10 @@ export function AiAssistant() {
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-full bg-gray-900 text-white pl-3 pr-4 py-3 shadow-lg hover:bg-black transition-colors"
-          style={{ borderBottom: '3px solid #fff848' }}
+          className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-full bg-gray-900 text-white pl-3.5 pr-4 py-2.5 shadow-md hover:bg-black transition-colors"
         >
-          <Sparkles className="h-5 w-5 text-[#fff848]" />
-          <span className="text-sm font-semibold">NextGen AI</span>
+          <Sparkles className="h-4 w-4" />
+          <span className="text-sm font-medium">NextGen AI</span>
         </button>
       )}
 

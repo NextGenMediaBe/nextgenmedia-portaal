@@ -114,6 +114,36 @@ export function averageSignDays(contracts: Array<{ status: string | null; sent_a
   return Math.round((spans.reduce((a, b) => a + b, 0) / spans.length) * 10) / 10
 }
 
+/** Contracttypes (verplicht bij aanmaken). */
+export const CONTRACT_TYPES = [
+  'Klantcontract',
+  'Websitecontract',
+  'Social Media contract',
+  'Brandingcontract',
+  'Foto/videografiecontract',
+  'Partnercontract',
+  'Onderaannemerscontract',
+  'Freelancecontract',
+  'Samenwerkingsovereenkomst',
+  'NDA / geheimhouding',
+  'Overige',
+] as const
+
+/** Contractduur-types. */
+export const DURATION_TYPES: { value: string; label: string; months?: number }[] = [
+  { value: 'eenmalig', label: 'Eenmalig' },
+  { value: 'maandelijks', label: 'Maandelijks', months: 1 },
+  { value: '3m', label: '3 maanden', months: 3 },
+  { value: '6m', label: '6 maanden', months: 6 },
+  { value: '12m', label: '12 maanden', months: 12 },
+  { value: 'onbepaald', label: 'Onbepaalde duur' },
+  { value: 'aangepast', label: 'Aangepast' },
+]
+
+export function durationLabel(value: string | null | undefined): string {
+  return DURATION_TYPES.find((d) => d.value === value)?.label ?? '—'
+}
+
 /** Contracttemplate-categorieën (vaste lijst). */
 export const TEMPLATE_CATEGORIES = [
   'Social Media pakket 1',

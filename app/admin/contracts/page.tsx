@@ -31,6 +31,8 @@ async function getContracts() {
     access_token: c.access_token,
     client_id: c.client_id ?? null,
     template_id: c.template_id ?? null,
+    contract_type: c.contract_type ?? null,
+    duration_type: c.duration_type ?? null,
     signer_name: c.signer_name ?? null,
     signer_email: c.signer_email ?? null,
     client: clientMap.get(c.client_id) ?? null,
@@ -59,6 +61,8 @@ export default async function ContractsPage({ searchParams }: { searchParams: Pr
         access_token: string
         client_id: string | null
         template_id: string | null
+        contract_type: string | null
+        duration_type: string | null
         signer_name: string | null
         signer_email: string | null
         client: { id: string; company_name: string } | null

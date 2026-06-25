@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { ChevronLeft, Loader2, Upload } from 'lucide-react'
 import { readJson, fileTooBig, MAX_UPLOAD_MB } from '@/lib/upload'
+import { CONTRACT_TYPES, DURATION_TYPES } from '@/lib/contract-status'
 
 export default function NewContractPage() {
   const [loading, setLoading] = useState(false)
@@ -15,6 +16,8 @@ export default function NewContractPage() {
   const [form, setForm] = useState({
     client_id: '',
     title: '',
+    contract_type: '',
+    duration_type: '12m',
     service_slug: '',
     signer_name: '',
     signer_email: '',
@@ -35,6 +38,7 @@ export default function NewContractPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!file) { setError('Selecteer een PDF-bestand'); return }
+    if (!form.contract_type) { setError('Contracttype is verplicht'); return }
     if (fileTooBig(file)) { setError(`PDF te groot — max ${MAX_UPLOAD_MB} MB. Comprimeer het bestand en probeer opnieuw.`); return }
     setLoading(true)
     setError(null)
@@ -44,6 +48,8 @@ export default function NewContractPage() {
       fd.append('pdf', file)
       fd.append('client_id', form.client_id)
       fd.append('title', form.title)
+      fd.append('contract_type', form.contract_type)
+      fd.append('duration_type', form.duration_type)
       fd.append('service_slug', form.service_slug)
       fd.append('signer_name', form.signer_name)
       fd.append('signer_email', form.signer_email)
@@ -92,6 +98,13 @@ export default function NewContractPage() {
           <input required className={inp} value={form.title} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))} placeholder="Social Media Contract 2025" />
         </div>
         <div>
+          <label className={lbl}>Contracttype *</label>
+          <select required className={inp} value={form.contract_type} onChange={(e) => setForm((p) => ({ ...p, contract_type: e.target.value }))}>
+            <option value="">— Selecteer type —</option>
+            {CONTRACT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div>
           <label className={lbl}>Dienst (voor portaaltoegang)</label>
           <select className={inp} value={form.service_slug} onChange={(e) => setForm((p) => ({ ...p, service_slug: e.target.value }))}>
             <option value="">— Geen koppeling —</option>
@@ -115,20 +128,28 @@ export default function NewContractPage() {
           </div>
         </div>
 
-        {/* Contract looptijd */}
+        {/* Contractduur */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className={lbl}>Startmaand contract</label>
-            <input type="month" className={inp} value={form.start_month} onChange={(e) => setForm((p) => ({ ...p, start_month: e.target.value }))} />
-          </div>
-          <div>
-            <label className={lbl}>Looptijd</label>
-            <select className={inp} value={form.duration_months} onChange={(e) => setForm((p) => ({ ...p, duration_months: e.target.value }))}>
-              {[1, 3, 6, 12, 18, 24, 36].map((m) => (
-                <option key={m} value={String(m)}>{m} maanden</option>
-              ))}
+            <label className={lbl}>Contractduur</label>
+            <select className={inp} value={form.duration_type} onChange={(e) => setForm((p) => ({ ...p, duration_type: e.target.value }))}>
+              {DURATION_TYPES.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
             </select>
           </div>
+          {/* Startmaand enkel relevant als er een looptijd is (niet bij eenmalig) */}
+          {form.duration_type !== 'eenmalig' && (
+            <div>
+              <label className={lbl}>Startmaand</label>
+              <input type="month" className={inp} value={form.start_month} onChange={(e) => setForm((p) => ({ ...p, start_month: e.target.value }))} />
+            </div>
+          )}
+          {/* Aangepast: optioneel aantal maanden */}
+          {form.duration_type === 'aangepast' && (
+            <div>
+              <label className={lbl}>Aantal maanden (optioneel)</label>
+              <input type="number" min="0" className={inp} value={form.duration_months} onChange={(e) => setForm((p) => ({ ...p, duration_months: e.target.value }))} placeholder="bv. 18" />
+            </div>
+          )}
         </div>
 
         {/* Reeds getekend toggle */}
