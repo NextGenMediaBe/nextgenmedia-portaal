@@ -3,7 +3,8 @@
 import { useState, useCallback, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { ContentCalendar, type SocialContentItem, type SocialContentStatus } from '@/components/calendar/content-calendar'
-import { Plus, X, Loader2, Sparkles, CheckSquare, Trash2, AlertTriangle } from 'lucide-react'
+import { Plus, X, Loader2, Sparkles, CheckSquare, Trash2, AlertTriangle, Clapperboard } from 'lucide-react'
+import Link from 'next/link'
 import { GenerateDialog } from './generate-dialog'
 import { ClickUpSyncControl } from '@/components/admin/clickup-sync-control'
 import { ShootBriefings } from '@/components/admin/shoot-briefings'
@@ -301,6 +302,7 @@ export function SocialMediaAdmin({
               <>
                 <SendMailButton clientId={selectedClient} kind="scripts" label="Verstuur mail" />
                 <SendMailButton clientId={selectedClient} kind="shoot" label="Verstuur uitnodiging" />
+                <Link href="/admin/services/social-media/shoot-overview" className="btn-secondary"><Clapperboard className="h-4 w-4" />Shoot-overzicht</Link>
                 <button
                   onClick={() => setSelectMode(true)}
                   className="btn-secondary"
