@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
       safe(admin.from('invoices').select('id, description, status, client_id, amount_incl').or(`description.ilike.${like}`).limit(L)),
       safe(admin.from('revenue_entries').select('id, title, client_id').ilike('title', like).limit(L)),
       safe(admin.from('client_tasks').select('id, title, client_id, status').ilike('title', like).limit(L)),
-      safe(admin.from('partners').select('id, name').ilike('name', like).limit(L)),
+      safe(admin.from('freelancers').select('id, name').ilike('name', like).limit(L)),
     ]) as [
       { id: string; company_name: string; btw_nummer?: string | null }[],
       { id: string; title: string; signer_name?: string | null; signer_email?: string | null }[],

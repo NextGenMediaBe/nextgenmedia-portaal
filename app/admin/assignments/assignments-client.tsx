@@ -5,9 +5,10 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   Plus, X, Loader2, Briefcase, ArrowDownLeft, ArrowUpRight,
-  Check, Inbox, Send, Pencil, Trash2, HandCoins,
+  Check, Inbox, Send, Pencil, Trash2, HandCoins, RefreshCw, CheckCircle2,
 } from 'lucide-react'
 import { formatDate, formatEuro } from '@/lib/utils'
+import { toast } from 'sonner'
 
 type Assignment = {
   id: string
@@ -24,6 +25,8 @@ type Assignment = {
   created_at: string
   origin: 'admin' | 'partner'
   deal_type?: string
+  clickup_task_id?: string | null
+  clickup_assignee?: string | null
   freelancers: { id: string; name: string; email: string } | null
   clients: { id: string; company_name: string } | null
 }
@@ -365,6 +368,64 @@ function AssignmentCard({
           <span className="text-xs text-gray-400">Geen acties meer mogelijk</span>
         )}
       </div>
+
+      {/* ClickUp-sync (opdracht → ClickUp, AI-naammatching voor toewijzing) */}
+      <ClickupSync assignmentId={a.id} synced={!!a.clickup_task_id} assignee={a.clickup_assignee ?? null} />
+    </div>
+  )
+}
+
+function ClickupSync({ assignmentId, synced, assignee }: { assignmentId: string; synced: boolean; assignee: string | null }) {
+  const [preview, setPreview] = useState<null | { partnerName: string | null; match: { name: string; method: string; confidence: number } | null; configured: boolean }>(null)
+  const [loading, setLoading] = useState(false)
+  const [done, setDone] = useState(synced ? assignee : null)
+
+  const openPreview = async () => {
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/admin/assignments/${assignmentId}/clickup-sync`)
+      const j = await res.json()
+      if (!res.ok) throw new Error(j.error)
+      if (!j.configured) { toast.error('ClickUp niet geconfigureerd (CLICKUP_API_KEY ontbreekt).'); return }
+      setPreview({ partnerName: j.partnerName, match: j.match, configured: true })
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Mislukt') } finally { setLoading(false) }
+  }
+
+  const sync = async () => {
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/admin/assignments/${assignmentId}/clickup-sync`, { method: 'POST' })
+      const j = await res.json()
+      if (!res.ok) throw new Error(j.error)
+      setDone(j.match?.name ?? 'niet toegewezen')
+      setPreview(null)
+      toast.success(j.warning ? `Gesynct — ${j.warning}` : `Gesynct naar ClickUp${j.match ? ` · toegewezen aan ${j.match.name}` : ''}`)
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Mislukt') } finally { setLoading(false) }
+  }
+
+  return (
+    <div className="mt-2 pt-2 border-t border-gray-50 flex items-center gap-2 flex-wrap text-xs">
+      {done ? (
+        <span className="inline-flex items-center gap-1 text-green-600"><CheckCircle2 className="h-3.5 w-3.5" />In ClickUp{done && done !== 'niet toegewezen' ? ` · ${done}` : ''}</span>
+      ) : (
+        <span className="text-gray-400">Nog niet in ClickUp</span>
+      )}
+      {!preview ? (
+        <button onClick={openPreview} disabled={loading} className="btn-secondary text-xs py-1 ml-auto">
+          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          {done ? 'Opnieuw syncen' : 'Sync ClickUp'}
+        </button>
+      ) : (
+        <div className="ml-auto flex items-center gap-2 flex-wrap">
+          <span className="text-gray-500">
+            {preview.match
+              ? <>Toewijzen aan <b>{preview.match.name}</b> <span className="text-gray-400">({preview.match.method}, {Math.round(preview.match.confidence * 100)}%)</span></>
+              : <span className="text-amber-600">Geen partner-match in ClickUp{preview.partnerName ? ` voor "${preview.partnerName}"` : ''}</span>}
+          </span>
+          <button onClick={sync} disabled={loading} className="btn-primary text-xs py-1">{loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}Bevestig sync</button>
+          <button onClick={() => setPreview(null)} className="btn-secondary text-xs py-1">Annuleer</button>
+        </div>
+      )}
     </div>
   )
 }

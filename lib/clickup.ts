@@ -405,3 +405,67 @@ export const INVOICE_ASSIGNEE_NAME = INVOICE_ASSIGNEE
 export async function completeInvoiceTask(taskId: string): Promise<void> {
   try { await clickupJson(`/task/${taskId}`, { method: 'PUT', body: JSON.stringify({ status: STATUS_DONE }) }) } catch { /* best-effort */ }
 }
+
+// ── Opdrachten (partner-assignments) → ClickUp ───────────────────────────────
+const ASSIGNMENT_LIST_NAME = 'Opdrachten'
+
+export type ClickupMember = { id: number; username: string; email: string }
+
+/** Alle ClickUp-leden (voor naam-matching, o.a. via AI). */
+export async function listClickupMembers(): Promise<ClickupMember[]> {
+  if (!clickupConfigured()) return []
+  try {
+    const { teams } = await clickupJson<{ teams: Array<{ members: Array<{ user: CuMemberUser }> }> }>(`/team`)
+    const out: ClickupMember[] = []
+    const seen = new Set<number>()
+    for (const t of teams ?? []) for (const m of t.members ?? []) {
+      const u = m.user
+      if (u?.id == null || seen.has(u.id)) continue
+      seen.add(u.id)
+      out.push({ id: u.id, username: (u.username ?? '').trim(), email: (u.email ?? '').trim() })
+    }
+    return out
+  } catch { return [] }
+}
+
+async function findOrCreateAssignmentList(): Promise<string | null> {
+  try {
+    const { lists } = await clickupJson<{ lists: CuList[] }>(`/space/${CLICKUP_SPACE_ID}/list`)
+    const existing = (lists ?? []).find((l) => l.name.trim().toLowerCase() === ASSIGNMENT_LIST_NAME.toLowerCase())
+    if (existing) return existing.id
+    const created = await clickupJson<CuList>(`/space/${CLICKUP_SPACE_ID}/list`, { method: 'POST', body: JSON.stringify({ name: ASSIGNMENT_LIST_NAME }) })
+    return created.id
+  } catch { return null }
+}
+
+export type AssignmentTaskInput = {
+  title: string; description?: string | null; clientName?: string | null
+  roles?: string[]; budget?: number | null; deadline?: string | null; assigneeId?: number | null
+}
+export type AssignmentTaskResult = { taskId: string | null; ok: boolean; error?: string }
+
+/** Maakt (of werkt bij) de opdracht-taak in de lijst "Opdrachten". Best-effort. */
+export async function upsertAssignmentTask(input: AssignmentTaskInput, existingTaskId?: string | null): Promise<AssignmentTaskResult> {
+  if (!clickupConfigured()) return { taskId: existingTaskId ?? null, ok: false, error: 'ClickUp niet geconfigureerd' }
+  try {
+    const desc = [
+      input.clientName ? `Klant: ${input.clientName}` : null,
+      input.roles?.length ? `Rollen: ${input.roles.join(', ')}` : null,
+      input.budget != null ? `Budget: € ${Number(input.budget).toFixed(2)}` : null,
+      input.description ? `\n${input.description}` : null,
+    ].filter(Boolean).join('\n')
+    const body: Record<string, unknown> = { name: input.title, description: desc }
+    if (input.assigneeId != null) body.assignees = existingTaskId ? { add: [input.assigneeId] } : [input.assigneeId]
+    if (input.deadline) { const d = Date.parse(`${input.deadline}T12:00:00Z`); if (!Number.isNaN(d)) body.due_date = d }
+
+    if (existingTaskId) {
+      await clickupJson(`/task/${existingTaskId}`, { method: 'PUT', body: JSON.stringify(body) })
+      return { taskId: existingTaskId, ok: true }
+    }
+    const listId = await findOrCreateAssignmentList()
+    if (!listId) return { taskId: null, ok: false, error: 'Lijst "Opdrachten" niet gevonden' }
+    body.status = STATUS_NEW
+    const task = await clickupJson<{ id: string }>(`/list/${listId}/task`, { method: 'POST', body: JSON.stringify(body) })
+    return { taskId: task.id, ok: true }
+  } catch (e) { return { taskId: existingTaskId ?? null, ok: false, error: e instanceof Error ? e.message : 'ClickUp-fout' } }
+}

@@ -1232,6 +1232,12 @@ ALTER TABLE public.contracts
 ALTER TABLE public.invoices ADD COLUMN IF NOT EXISTS contract_id uuid REFERENCES public.contracts(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_invoices_contract ON public.invoices (contract_id);
 
+-- ── Opdrachten ↔ ClickUp-sync (additief) ──────────────────────────────────────
+ALTER TABLE public.freelancer_assignments
+  ADD COLUMN IF NOT EXISTS clickup_task_id   text,
+  ADD COLUMN IF NOT EXISTS clickup_assignee  text,
+  ADD COLUMN IF NOT EXISTS clickup_synced_at timestamptz;
+
 -- ── Klanten: BTW-nummer ───────────────────────────────────────────────────────
 -- Optioneel; bestaande klanten mogen leeg blijven. Hergebruikt als suggestie in
 -- contracten/facturen/prognose.
