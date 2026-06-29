@@ -2,9 +2,10 @@ export const dynamic = 'force-dynamic'
 
 import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { formatEuro, formatDate, normalizeDirection } from '@/lib/utils'
-import { Briefcase, CheckCircle2, Clock, AlertCircle, TrendingUp, Plus, ArrowDownLeft, ArrowUpRight, Wallet } from 'lucide-react'
+import { formatEuro, formatDate } from '@/lib/utils'
+import { Briefcase, CheckCircle2, Clock, AlertCircle, TrendingUp, Plus, ArrowDownLeft, ArrowUpRight, Wallet, HandCoins, Layers } from 'lucide-react'
 import Link from 'next/link'
+import { computePartnerFinance, type LedgerRow, type PaymentRow, type DealRow, type SaleRow } from '@/lib/partner-finance'
 
 export default async function PartnerDashboard() {
   const supabase = await createClient()
@@ -35,27 +36,26 @@ export default async function PartnerDashboard() {
     clientMap = new Map((clients ?? []).map((c) => [c.id, c.company_name]))
   }
 
-  // Real money balance: obligations (non-cancelled ledger) minus approved
-  // payments. select('*') so the direction column is included regardless of schema.
-  const [{ data: ledgerRows }, { data: paymentRows }] = await Promise.all([
+  // Partner-boekhouding via DE centrale bron (computePartnerFinance) zodat het
+  // partnerdashboard EXACT dezelfde commissie-, onderaannemings- en saldocijfers
+  // toont als de admin-detailpagina en het settlements-overzicht.
+  const [{ data: ledgerRows }, { data: paymentRows }, { data: dealRows }, { data: saleRows }] = await Promise.all([
     admin.from('partner_ledger_entries').select('*').eq('freelancer_id', partner.id),
-    admin.from('partner_payments').select('direction, amount, status').eq('freelancer_id', partner.id),
+    admin.from('partner_payments').select('*').eq('freelancer_id', partner.id),
+    admin.from('partner_commission_deals').select('*').eq('freelancer_id', partner.id),
+    admin.from('partner_commission_sales').select('*').eq('freelancer_id', partner.id),
   ])
-  const ledger = (ledgerRows ?? []) as Array<{ status: string; amount: number; direction?: string | null }>
-  const paymentsRaw = (paymentRows ?? []) as Array<{ direction: string; amount: number; status: string }>
-  const live = ledger.filter((l) => l.status !== 'cancelled')
-  const approvedPay = paymentsRaw.filter((p) => p.status === 'approved')
-  // From the partner's perspective: we_pay_partner = they RECEIVE (green),
-  // partner_pays_us = they PAY (red).
-  const grossReceive = live.filter((l) => normalizeDirection(l.direction, l.amount) === 'we_pay_partner').reduce((s, l) => s + Math.abs(Number(l.amount)), 0)
-  const grossPay = live.filter((l) => normalizeDirection(l.direction, l.amount) === 'partner_pays_us').reduce((s, l) => s + Math.abs(Number(l.amount)), 0)
-  const paidReceive = approvedPay.filter((p) => p.direction === 'we_pay_partner').reduce((s, p) => s + Math.abs(Number(p.amount)), 0)
-  const paidPay = approvedPay.filter((p) => p.direction === 'partner_pays_us').reduce((s, p) => s + Math.abs(Number(p.amount)), 0)
-  const toReceive = Math.max(0, grossReceive - paidReceive)
-  const toPay = Math.max(0, grossPay - paidPay)
-  const net = toReceive - toPay            // positief = partner ontvangt netto
-  // Lifetime received = approved payments NextGenMedia made to the partner
-  const lifetimeReceived = paidReceive
+  const fin = computePartnerFinance({
+    ledger: (ledgerRows ?? []) as LedgerRow[],
+    payments: (paymentRows ?? []) as PaymentRow[],
+    deals: (dealRows ?? []) as DealRow[],
+    sales: (saleRows ?? []) as SaleRow[],
+  })
+  // Vanuit het standpunt van de partner: ontvangen = wij betalen partner.
+  const toReceive = fin.openToPartner
+  const toPay = fin.openByPartner
+  const net = fin.openToPartner - fin.openByPartner   // positief = partner ontvangt netto
+  const lifetimeReceived = fin.paidToPartner
 
   const all = (assignments ?? []).map((a) => ({
     ...a,
@@ -156,6 +156,27 @@ export default async function PartnerDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Commissie & onderaanneming — zelfde bron als de admin */}
+      {(fin.commissionPartnerEarned > 0 || fin.subToPartnerTotal > 0 || fin.subByPartnerTotal > 0) && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="card-base">
+            <h2 className="font-semibold text-gray-900 flex items-center gap-2 mb-3"><HandCoins className="h-4 w-4 text-[#c5b800]" />Commissie (doorverwijzingen)</h2>
+            <div className="space-y-1.5 text-sm">
+              <div className="flex justify-between"><span className="text-gray-500">Door u aangebrachte klanten</span><span className="font-medium">{fin.clientsPartnerReferred}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Omzet uit die klanten</span><span className="font-medium">{formatEuro(fin.revenuePartnerReferred)}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Uw commissie</span><span className="font-bold text-green-600">{formatEuro(fin.commissionPartnerEarned)}</span></div>
+            </div>
+          </div>
+          <div className="card-base">
+            <h2 className="font-semibold text-gray-900 flex items-center gap-2 mb-3"><Layers className="h-4 w-4 text-purple-500" />Onderaanneming</h2>
+            <div className="space-y-1.5 text-sm">
+              <div className="flex justify-between"><span className="text-gray-500">Werk voor ons ({fin.subToPartnerCount})</span><span className="font-bold text-green-600">{formatEuro(fin.subToPartnerTotal)}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">Werk dat wij voor u deden ({fin.subByPartnerCount})</span><span className="font-bold text-red-600">{formatEuro(fin.subByPartnerTotal)}</span></div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Active & Open assignments */}
       <div className="card-base">
