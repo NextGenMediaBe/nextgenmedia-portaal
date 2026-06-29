@@ -44,6 +44,7 @@ const NAV = [
     children: [
       { label: 'Onboarding Info', href: '/admin/onboarding',   icon: ClipboardList },
       { label: 'Maandplanning',   href: '/admin/maandplanning', icon: CalendarDays },
+      { label: 'Voorwaarden',     href: '/admin/voorwaarden',   icon: FileText },
     ],
   },
 ]

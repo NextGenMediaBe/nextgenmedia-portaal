@@ -1243,5 +1243,27 @@ ALTER TABLE public.freelancer_assignments
 -- contracten/facturen/prognose.
 ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS btw_nummer text;
 
+-- ── Voorwaarden / akkoorden (per-dashboard zichtbaar via rollen) ──────────────
+CREATE TABLE IF NOT EXISTS public.terms (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  title       text NOT NULL,
+  content     text,
+  audiences   text[] NOT NULL DEFAULT '{}',   -- subset van admin|client|partner
+  active      boolean NOT NULL DEFAULT true,
+  created_by  uuid,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.terms ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "terms admin all"   ON public.terms;
+DROP POLICY IF EXISTS "terms read active" ON public.terms;
+CREATE POLICY "terms admin all" ON public.terms
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+-- Ingelogde gebruikers mogen actieve voorwaarden lezen (audience-filtering gebeurt in code).
+CREATE POLICY "terms read active" ON public.terms
+  FOR SELECT TO authenticated USING (active = true);
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.

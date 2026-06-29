@@ -6,6 +6,7 @@ import { formatEuro, formatDate } from '@/lib/utils'
 import { Briefcase, CheckCircle2, Clock, AlertCircle, TrendingUp, Plus, ArrowDownLeft, ArrowUpRight, Wallet, HandCoins, Layers } from 'lucide-react'
 import Link from 'next/link'
 import { computePartnerFinance, type LedgerRow, type PaymentRow, type DealRow, type SaleRow } from '@/lib/partner-finance'
+import { TermsCard } from '@/components/terms-card'
 
 export default async function PartnerDashboard() {
   const supabase = await createClient()
@@ -56,6 +57,13 @@ export default async function PartnerDashboard() {
   const toPay = fin.openByPartner
   const net = fin.openToPartner - fin.openByPartner   // positief = partner ontvangt netto
   const lifetimeReceived = fin.paidToPartner
+
+  // Actieve voorwaarden voor het partnerportaal (best-effort).
+  let terms: { id: string; title: string; content: string | null }[] = []
+  try {
+    const { data } = await admin.from('terms').select('id, title, content').eq('active', true).contains('audiences', ['partner'])
+    terms = data ?? []
+  } catch { terms = [] }
 
   const all = (assignments ?? []).map((a) => ({
     ...a,
@@ -241,6 +249,8 @@ export default async function PartnerDashboard() {
           Wil je uw tarieven aanpassen? Neem contact op met NextGenMedia.
         </p>
       </div>
+
+      <TermsCard terms={terms} />
     </div>
   )
 }
