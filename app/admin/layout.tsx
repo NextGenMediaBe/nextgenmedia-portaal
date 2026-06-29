@@ -16,12 +16,25 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     .eq('user_id', user.id)
     .maybeSingle()
 
-  if (roleData?.role !== 'admin') redirect('/login')
+  const role = roleData?.role
+  if (role !== 'admin' && role !== 'employee') redirect('/login')
+
+  // Werknemer = enkel toegestane modules in de sidebar (admin = alles → undefined).
+  let allowedModules: string[] | undefined
+  if (role === 'employee') {
+    const { data: staff } = await supabase
+      .from('staff_members')
+      .select('active, permissions')
+      .eq('auth_user_id', user.id)
+      .maybeSingle()
+    if (staff?.active === false) redirect('/login')
+    allowedModules = Array.isArray(staff?.permissions) ? (staff!.permissions as string[]) : []
+  }
 
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Toaster richColors position="top-right" />
-      <AdminSidebar />
+      <AdminSidebar allowedModules={allowedModules} isEmployee={role === 'employee'} />
       <main className="flex-1 min-w-0 md:ml-[var(--sidebar-width)] min-h-screen">
         <div className="max-w-[1400px] mx-auto px-4 pt-16 pb-8 md:pt-6 md:px-6 lg:px-8">
           <AdminTopBar />

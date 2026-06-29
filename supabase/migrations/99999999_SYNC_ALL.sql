@@ -1265,5 +1265,30 @@ CREATE POLICY "terms admin all" ON public.terms
 CREATE POLICY "terms read active" ON public.terms
   FOR SELECT TO authenticated USING (active = true);
 
+-- ── Interne werknemers (rol 'employee') met per-module zichtbaarheid ──────────
+CREATE TABLE IF NOT EXISTS public.staff_members (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  auth_user_id  uuid,
+  name          text,
+  email         text,
+  active        boolean NOT NULL DEFAULT true,
+  permissions   text[] NOT NULL DEFAULT '{}',   -- toegestane admin-modules
+  created_by    uuid,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_at    timestamptz NOT NULL DEFAULT now(),
+  last_login_at timestamptz
+);
+CREATE UNIQUE INDEX IF NOT EXISTS staff_members_auth_user_id_key ON public.staff_members(auth_user_id) WHERE auth_user_id IS NOT NULL;
+ALTER TABLE public.staff_members ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "staff admin all"  ON public.staff_members;
+DROP POLICY IF EXISTS "staff self read"  ON public.staff_members;
+CREATE POLICY "staff admin all" ON public.staff_members
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+-- Werknemer mag zijn eigen rij lezen (nodig voor de module-check in de resolver).
+CREATE POLICY "staff self read" ON public.staff_members
+  FOR SELECT TO authenticated USING (auth_user_id = auth.uid());
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.

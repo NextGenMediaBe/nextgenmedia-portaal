@@ -7,46 +7,48 @@ import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, Users, FileText, UserSquare2, ArrowLeftRight, TrendingUp,
   LogOut, ChevronDown, Globe, Calendar, Briefcase, RefreshCcw, Menu, X,
-  Info, ClipboardList, CalendarDays, ShoppingCart, Mail, Receipt, Newspaper, Rocket,
+  Info, ClipboardList, CalendarDays, ShoppingCart, Mail, Receipt, Newspaper, Rocket, UserCog,
 } from 'lucide-react'
+import { canSeeModule } from '@/lib/staff'
 import { useState } from 'react'
 import { useRefresh } from '@/lib/use-refresh'
 import { Logo } from '@/components/logo'
 
 const NAV = [
   { label: 'Command Center', href: '/admin', icon: LayoutDashboard, exact: true },
-  { label: 'Klanten',        href: '/admin/clients',              icon: Users },
-  { label: 'Contracten',     href: '/admin/contracts',            icon: FileText },
+  { label: 'Klanten',        href: '/admin/clients',              icon: Users, module: 'clients' },
+  { label: 'Contracten',     href: '/admin/contracts',            icon: FileText, module: 'contracts' },
   {
-    label: 'Diensten', href: '/admin/services', icon: Briefcase,
+    label: 'Diensten', href: '/admin/services', icon: Briefcase, module: 'content',
     children: [
       { label: 'Social Media', href: '/admin/services/social-media', icon: Calendar },
       { label: 'Website',      href: '/admin/services/website',      icon: Globe },
     ],
   },
   {
-    label: 'Blogs', href: '/admin/blog-calendar', icon: Newspaper,
+    label: 'Blogs', href: '/admin/blog-calendar', icon: Newspaper, module: 'blogs',
     children: [
       { label: 'Projecten', href: '/admin/blogaccounts',  icon: Newspaper },
       { label: 'Kalender',  href: '/admin/blog-calendar', icon: CalendarDays },
     ],
   },
-  { label: 'Partners',    href: '/admin/partners',     icon: UserSquare2 },
-  { label: 'Opdrachten',  href: '/admin/assignments',  icon: Briefcase },
-  { label: 'Settlements', href: '/admin/settlements',  icon: ArrowLeftRight },
-  { label: 'Prognose',    href: '/admin/revenue/omzet', icon: TrendingUp },
-  { label: 'Facturen',    href: '/admin/invoices',     icon: Receipt },
-  { label: 'Vesting',     href: '/admin/vesting',      icon: Rocket },
-  { label: 'Aankopen',    href: '/admin/purchases',    icon: ShoppingCart },
-  { label: 'E-mailcenter', href: '/admin/email', icon: Mail },
+  { label: 'Partners',    href: '/admin/partners',     icon: UserSquare2, module: 'partners' },
+  { label: 'Opdrachten',  href: '/admin/assignments',  icon: Briefcase, module: 'assignments' },
+  { label: 'Settlements', href: '/admin/settlements',  icon: ArrowLeftRight, module: 'settlements' },
+  { label: 'Prognose',    href: '/admin/revenue/omzet', icon: TrendingUp, module: 'finance' },
+  { label: 'Facturen',    href: '/admin/invoices',     icon: Receipt, module: 'invoices' },
+  { label: 'Vesting',     href: '/admin/vesting',      icon: Rocket, module: 'vesting' },
+  { label: 'Aankopen',    href: '/admin/purchases',    icon: ShoppingCart, module: 'purchases' },
+  { label: 'E-mailcenter', href: '/admin/email', icon: Mail, module: 'email' },
   {
-    label: 'Informatief', href: '/admin/informatief', icon: Info,
+    label: 'Informatief', href: '/admin/informatief', icon: Info, module: 'info',
     children: [
       { label: 'Onboarding Info', href: '/admin/onboarding',   icon: ClipboardList },
       { label: 'Maandplanning',   href: '/admin/maandplanning', icon: CalendarDays },
       { label: 'Voorwaarden',     href: '/admin/voorwaarden',   icon: FileText },
     ],
   },
+  { label: 'Werknemers',  href: '/admin/werknemers',   icon: UserCog, adminOnly: true },
 ]
 
 function NavItem({
@@ -54,7 +56,7 @@ function NavItem({
   depth = 0,
   onNavigate,
 }: {
-  item: typeof NAV[0]
+  item: typeof NAV[number]
   depth?: number
   onNavigate: () => void
 }) {
@@ -109,10 +111,18 @@ function NavItem({
   )
 }
 
-export function AdminSidebar() {
+export function AdminSidebar({ allowedModules, isEmployee = false }: { allowedModules?: string[]; isEmployee?: boolean } = {}) {
   const router = useRouter()
   const { refresh, spinning } = useRefresh()
   const [mobileOpen, setMobileOpen] = useState(false)
+
+  // Werknemer ziet enkel toegestane modules; admin (allowedModules undefined) ziet alles.
+  const visibleNav = NAV.filter((item) => {
+    if ('adminOnly' in item && item.adminOnly && isEmployee) return false
+    const moduleKey = 'module' in item ? (item.module as string | undefined) : undefined
+    if (!moduleKey || !allowedModules) return true
+    return canSeeModule(allowedModules, moduleKey)
+  })
 
   const handleLogout = async () => {
     const supabase = createClient()
@@ -180,7 +190,7 @@ export function AdminSidebar() {
 
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-          {NAV.map((item) => (
+          {visibleNav.map((item) => (
             <NavItem key={item.href} item={item} onNavigate={closeMobile} />
           ))}
         </nav>
