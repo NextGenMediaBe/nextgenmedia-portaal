@@ -23,7 +23,7 @@ export const ADMIN_MODULES: AdminModule[] = [
   { key: 'vesting',     label: 'Vesting',              prefixes: ['/admin/vesting'] },
   { key: 'purchases',   label: 'Aankopen',             prefixes: ['/admin/purchases'] },
   { key: 'email',       label: 'E-mailcenter',         prefixes: ['/admin/email'] },
-  { key: 'info',        label: 'Informatief',          prefixes: ['/admin/informatief', '/admin/onboarding', '/admin/maandplanning', '/admin/voorwaarden'] },
+  { key: 'info',        label: 'Informatief',          prefixes: ['/admin/informatief', '/admin/onboarding', '/admin/maandplanning'] },
 ]
 
 /** Module-key voor een /admin-pad (langste prefix wint), of null = niet gegate. */

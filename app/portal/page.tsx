@@ -6,7 +6,6 @@ import { formatDate, SERVICE_LABELS, daysUntil } from '@/lib/utils'
 import Link from 'next/link'
 import { Calendar, FileText, Globe, Clock, ArrowRight } from 'lucide-react'
 import { resolvePortalSession, sessionCan } from '@/lib/portal-auth'
-import { TermsCard } from '@/components/terms-card'
 
 export default async function PortalDashboard() {
   const session = await resolvePortalSession()
@@ -50,13 +49,6 @@ export default async function PortalDashboard() {
   ])
 
   const pendingScripts = pendingScriptsCount ?? 0
-
-  // Actieve voorwaarden voor het klantportaal (best-effort).
-  let terms: { id: string; title: string; content: string | null }[] = []
-  try {
-    const { data } = await admin.from('terms').select('id, title, content').eq('active', true).contains('audiences', ['client'])
-    terms = data ?? []
-  } catch { terms = [] }
 
   const services = (clientServicesRaw ?? []).filter((s: { active: boolean }) => s.active) as Array<{
     id: string
@@ -211,8 +203,6 @@ export default async function PortalDashboard() {
           </div>
         </div>
       )}
-
-      <TermsCard terms={terms} />
     </div>
   )
 }
