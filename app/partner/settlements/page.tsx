@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { formatEuro, formatDate, normalizeDirection } from '@/lib/utils'
+import { computePartnerFinance, type LedgerRow, type PaymentRow } from '@/lib/partner-finance'
 import { ArrowLeftRight, TrendingUp, TrendingDown, Wallet } from 'lucide-react'
 import { PartnerPaymentForm } from './payment-form'
 
@@ -36,15 +37,11 @@ export default async function PartnerSettlementsPage() {
   const payments = (paymentRows ?? []) as PaymentT[]
 
   const live = ledger.filter((l) => l.status !== 'cancelled')
-  const grossReceive = live.filter((l) => normalizeDirection(l.direction, l.amount) === 'we_pay_partner').reduce((s, l) => s + Math.abs(l.amount), 0)
-  const grossPay = live.filter((l) => normalizeDirection(l.direction, l.amount) === 'partner_pays_us').reduce((s, l) => s + Math.abs(l.amount), 0)
-  const approved = payments.filter((p) => p.status === 'approved')
-  const paidReceive = approved.filter((p) => p.direction === 'we_pay_partner').reduce((s, p) => s + Math.abs(p.amount), 0)
-  const paidPay = approved.filter((p) => p.direction === 'partner_pays_us').reduce((s, p) => s + Math.abs(p.amount), 0)
-
-  const toReceive = grossReceive - paidReceive   // u ontvangt nog
-  const toPay = grossPay - paidPay               // u betaalt nog
-  const net = toReceive - toPay
+  // KPI's via DE centrale bron (zelfde cijfers als admin + partnerdashboard).
+  const fin = computePartnerFinance({ ledger: ledger as LedgerRow[], payments: payments as PaymentRow[], deals: [], sales: [] })
+  const toReceive = fin.openToPartner   // u ontvangt nog
+  const toPay = fin.openByPartner       // u betaalt nog
+  const net = toReceive - toPay         // standpunt partner: + = u ontvangt
 
   return (
     <div className="space-y-6 animate-fade-in">
