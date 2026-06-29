@@ -2,7 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { formatEuro, SERVICE_LABELS, SERVICE_SLUGS } from '@/lib/utils'
 import { TrendingUp, Repeat2, ArrowUpRight, Activity } from 'lucide-react'
-import { loadCore, readPeriodParams, MONTHS } from '@/lib/finance-data'
+import { loadCore, readPeriodParams, periodRange, MONTHS } from '@/lib/finance-data'
 import { revActive, toMonthly, type RevenueEntry } from '@/lib/finance'
 import { Kpi } from '../kpi'
 import { OmzetCharts } from '../omzet-charts'
@@ -21,8 +21,16 @@ function entryYearValue(e: RevenueEntry, year: number): number {
 }
 
 export default async function OmzetPage({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
-  const { year } = readPeriodParams(await searchParams)
+  const { year, period, quarter, month } = readPeriodParams(await searchParams)
   const c = await loadCore(year)
+
+  // KPI's volgen de gekozen periode (maand/kwartaal/boekjaar) i.p.v. altijd het hele jaar.
+  const [aMi, bMi] = periodRange(period, quarter, month)
+  const slice = c.monthly.slice(aMi, bMi + 1)
+  const omzetPeriod = slice.reduce((s, m) => s + m.omzet, 0)
+  const omzetRecPeriod = slice.reduce((s, m) => s + m.omzetRec, 0)
+  const omzetOnePeriod = slice.reduce((s, m) => s + m.omzetOne, 0)
+  const periodLabel = period === 'fy' ? `boekjaar ${year}` : period === 'quarter' ? `Q${quarter} ${year}` : `${MONTHS[month - 1]} ${year}`
 
   // Vorig boekjaar voor groei
   let prevOmzet = 0
@@ -51,9 +59,9 @@ export default async function OmzetPage({ searchParams }: { searchParams: Promis
       <p className="text-xs text-gray-500 -mt-2">Prognose = verwachte omzet. Dit is geen effectieve facturatie — facturen beheer je onder <b>Facturen</b>.</p>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Kpi label={`Totale prognose ${year}`} value={formatEuro(c.omzetFY)} color="text-green-600" Icon={TrendingUp} />
-        <Kpi label="Recurring prognose" value={formatEuro(c.omzetRecFY)} sub={`Per maand nu: ${formatEuro(c.mrr)}`} color="text-green-600" Icon={Repeat2} />
-        <Kpi label="Eenmalige prognose" value={formatEuro(c.omzetOneFY)} color="text-blue-600" Icon={ArrowUpRight} />
+        <Kpi label={`Prognose ${periodLabel}`} value={formatEuro(omzetPeriod)} sub={period !== 'fy' ? `Boekjaar: ${formatEuro(c.omzetFY)}` : undefined} color="text-green-600" Icon={TrendingUp} />
+        <Kpi label="Recurring prognose" value={formatEuro(omzetRecPeriod)} sub={`Per maand nu: ${formatEuro(c.mrr)}`} color="text-green-600" Icon={Repeat2} />
+        <Kpi label="Eenmalige prognose" value={formatEuro(omzetOnePeriod)} color="text-blue-600" Icon={ArrowUpRight} />
         <Kpi label="Groei" value={`${growth >= 0 ? '+' : ''}${growth.toFixed(1)}%`} sub={`t.o.v. ${year - 1}`} color={growth >= 0 ? 'text-green-600' : 'text-red-600'} Icon={Activity} />
       </div>
 

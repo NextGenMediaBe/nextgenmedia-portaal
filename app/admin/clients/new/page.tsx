@@ -39,6 +39,7 @@ export default function NewClientPage() {
     password: '',
     niche: '',
     website_url: '',
+    btw_nummer: '',
     services: [] as string[],
     platforms: [] as string[],
     posts_per_month: '0',
@@ -102,6 +103,7 @@ export default function NewClientPage() {
           password: form.password,
           niche: form.niche,
           website_url: form.website_url,
+          btw_nummer: form.btw_nummer,
           services: form.services,
           platforms: form.platforms,
           posts_per_month: parseInt(form.posts_per_month) || 0,
@@ -164,6 +166,11 @@ export default function NewClientPage() {
               <label className={lbl}>Website URL</label>
               <input className={inp} type="url" value={form.website_url}
                 onChange={e => setForm(p => ({ ...p, website_url: e.target.value }))} placeholder="https://bedrijf.be" />
+            </div>
+            <div>
+              <label className={lbl}>BTW-nummer</label>
+              <input className={inp} value={form.btw_nummer}
+                onChange={e => setForm(p => ({ ...p, btw_nummer: e.target.value }))} placeholder="BE0123456789" />
             </div>
           </div>
         </div>
