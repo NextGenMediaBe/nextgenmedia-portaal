@@ -39,6 +39,10 @@ export function SignatureZoneEditor({
   const [fields, setFields] = useState<Field[]>(initialFields)
   const [analyzing, setAnalyzing] = useState(false)
   const [savingFields, setSavingFields] = useState(false)
+  // Gedeeld met de PDF-editor: huidige zichtbare pagina + geselecteerd veld.
+  // Nieuwe velden landen op de zichtbare pagina en worden meteen geselecteerd.
+  const [page, setPage] = useState(1)
+  const [selected, setSelected] = useState<number | null>(null)
 
   const analyze = async () => {
     setAnalyzing(true)
@@ -51,23 +55,35 @@ export function SignatureZoneEditor({
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Analyse mislukt') } finally { setAnalyzing(false) }
   }
   const setF = (i: number, patch: Partial<Field>) => setFields((fs) => fs.map((f, idx) => idx === i ? { ...f, ...patch } : f))
-  // Nieuw veld onder het laatste veld plaatsen zodat het niet overlapt.
-  const nextY = (fs: Field[]) => Math.min(90, (fs.length ? Math.max(...fs.map((f) => f.y)) : 30) + 6)
-  const addField = () => setFields((fs) => [...fs, { label: 'Nieuw veld', type: 'text', page_number: 1, x: 10, y: nextY(fs), width: 180, height: 22, required: false }])
-  const delField = (i: number) => setFields((fs) => fs.filter((_, idx) => idx !== i))
+  // Volgende vrije y op de gegeven pagina, zodat nieuwe velden niet overlappen.
+  const nextY = (fs: Field[], p: number) => {
+    const onPage = fs.filter((f) => (f.page_number || 1) === p)
+    return Math.min(90, (onPage.length ? Math.max(...onPage.map((f) => f.y)) : 14) + 6)
+  }
+  // Nieuw veld verschijnt meteen op de ZICHTBARE pagina + wordt geselecteerd,
+  // zodat je het direct op de PDF kunt verslepen (DocuSign-stijl).
+  const addField = () => {
+    setSelected(fields.length)
+    setFields((fs) => [...fs, { label: 'Nieuw veld', type: 'text', page_number: page, x: 10, y: nextY(fs, page), width: 180, height: 22, required: false }])
+  }
+  const delField = (i: number) => {
+    setFields((fs) => fs.filter((_, idx) => idx !== i))
+    setSelected((s) => (s === i ? null : s !== null && s > i ? s - 1 : s))
+  }
   const addBlock = (blockId: string) => {
     const block = CONTRACT_BLOCKS.find((b) => b.id === blockId)
     if (!block) return
+    setSelected(fields.length)
     setFields((fs) => {
       const out = [...fs]
-      let y = nextY(fs)
+      let y = nextY(fs, page)
       for (const bf of block.fields) {
-        out.push({ label: bf.label, type: bf.type, page_number: 1, x: 10, y, width: 180, height: 22, required: !!bf.required, placeholder: bf.placeholder })
+        out.push({ label: bf.label, type: bf.type, page_number: page, x: 10, y, width: 180, height: 22, required: !!bf.required, placeholder: bf.placeholder })
         y = Math.min(92, y + 6)
       }
       return out
     })
-    toast.success(`Blok "${block.name}" toegevoegd (${block.fields.length} velden).`)
+    toast.success(`Blok "${block.name}" toegevoegd (${block.fields.length} velden) op pagina ${page}.`)
   }
   const saveAll = async () => {
     await Promise.all([saveFields(), handleSave()])
@@ -127,7 +143,7 @@ export function SignatureZoneEditor({
 
       <div className="grid lg:grid-cols-2 gap-6">
         {/* Drag & drop PDF-editor */}
-        <FieldOverlayEditor pdfUrl={pdfUrl} fields={fields} setFields={setFields} zone={zone} setZone={setZone} />
+        <FieldOverlayEditor pdfUrl={pdfUrl} fields={fields} setFields={setFields} zone={zone} setZone={setZone} page={page} setPage={setPage} selected={selected} setSelected={setSelected} />
 
         {/* Veldenlijst (labels, types, verplicht) — posities komen van het slepen */}
         <div className="card-base h-fit">
@@ -143,13 +159,17 @@ export function SignatureZoneEditor({
               {fields.map((f, i) => {
                 const lowConf = typeof f.confidence === 'number' && f.confidence < 0.6
                 return (
-                <div key={i} className="space-y-1">
+                <div
+                  key={i}
+                  onClick={() => { setSelected(i); setPage(f.page_number || 1) }}
+                  className={`space-y-1 rounded-lg p-1.5 -m-1.5 cursor-pointer transition-colors ${selected === i ? 'bg-blue-50 ring-1 ring-blue-300' : 'hover:bg-gray-50'}`}
+                >
                   <div className="grid grid-cols-12 gap-2 items-center">
                     <input className="col-span-12 sm:col-span-5 px-2 py-1.5 text-xs border border-gray-200 rounded-lg" value={f.label} onChange={(e) => setF(i, { label: e.target.value })} placeholder="Label" />
                     <select className="col-span-5 sm:col-span-3 px-2 py-1.5 text-xs border border-gray-200 rounded-lg" value={f.type} onChange={(e) => setF(i, { type: e.target.value })}>{FIELD_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select>
                     <input type="number" min="1" title="Pagina" className="col-span-3 sm:col-span-1 px-2 py-1.5 text-xs border border-gray-200 rounded-lg" value={f.page_number} onChange={(e) => setF(i, { page_number: Math.max(1, Number(e.target.value)) })} />
                     <label className="col-span-3 sm:col-span-2 text-[11px] text-gray-600 flex items-center gap-1"><input type="checkbox" checked={f.required} onChange={(e) => setF(i, { required: e.target.checked })} />verpl.</label>
-                    <button onClick={() => delField(i)} className="col-span-1 h-7 w-7 flex items-center justify-center rounded-lg hover:bg-red-50 text-red-400 justify-self-end" title="Verwijderen"><Trash2 className="h-3.5 w-3.5" /></button>
+                    <button onClick={(e) => { e.stopPropagation(); delField(i) }} className="col-span-1 h-7 w-7 flex items-center justify-center rounded-lg hover:bg-red-50 text-red-400 justify-self-end" title="Verwijderen"><Trash2 className="h-3.5 w-3.5" /></button>
                   </div>
                   {lowConf && <div className="text-[10px] text-amber-600 pl-1">⚠ Lage zekerheid — controle aanbevolen</div>}
                 </div>

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { GripVertical, Loader2 } from 'lucide-react'
+import { GripVertical, Loader2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { FIELD_FONT_PT } from '@/lib/contract-render'
 
 // Echte WYSIWYG drag & drop editor: de PDF-pagina wordt met pdf.js naar een canvas
@@ -25,16 +25,19 @@ function loadPdfjs() {
 }
 
 export function FieldOverlayEditor({
-  pdfUrl, fields, setFields, zone, setZone,
+  pdfUrl, fields, setFields, zone, setZone, page, setPage, selected, setSelected,
 }: {
   pdfUrl: string | null
   fields: Field[]
   setFields: (updater: (f: Field[]) => Field[]) => void
   zone: Zone
   setZone: (updater: (z: Zone) => Zone) => void
+  page: number
+  setPage: (p: number) => void
+  selected: number | null
+  setSelected: (i: number | null) => void
 }) {
-  const [page, setPage] = useState(1)
-  const [selected, setSelected] = useState<number | null>(null)
+  const [numPages, setNumPages] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Echte paginamaten (punten) + weergaveschaal (px per punt).
@@ -47,6 +50,8 @@ export function FieldOverlayEditor({
   const drag = useRef<null | { kind: 'field' | 'zone'; index: number; mode: 'move' | 'resize'; startX: number; startY: number; orig: { x: number; y: number; w: number; h: number } }>(null)
 
   const maxPage = Math.max(1, zone.sig_page, ...fields.map((f) => f.page_number || 1))
+  // Navigeer over álle PDF-pagina's (numPages), ook waar nog geen velden staan.
+  const totalPages = Math.max(maxPage, numPages)
   const scale = pageDims.wPx / pageDims.wPt // px per punt
 
   // Render de gekozen pagina naar het canvas op de breedte van de container.
@@ -59,6 +64,7 @@ export function FieldOverlayEditor({
         pdfDocRef.current = await pdfjs.getDocument({ url: pdfUrl }).promise
       }
       const doc = pdfDocRef.current
+      setNumPages(doc.numPages)
       const pageNum = Math.min(page, doc.numPages)
       const pdfPage = await doc.getPage(pageNum)
       const vp1 = pdfPage.getViewport({ scale: 1 }) // punten
@@ -138,12 +144,28 @@ export function FieldOverlayEditor({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-1.5 text-xs">
+        <div className="flex items-center gap-1.5 text-xs flex-wrap">
+          <button
+            onClick={() => setPage(Math.max(1, page - 1))}
+            disabled={page <= 1}
+            className="h-7 px-2 rounded-lg text-xs font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-0.5"
+            title="Vorige pagina"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />Vorige
+          </button>
           <span className="text-gray-500">Pagina:</span>
-          {Array.from({ length: maxPage }, (_, i) => i + 1).map((p) => (
+          {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
             <button key={p} onClick={() => setPage(p)} className={`h-7 w-7 rounded-lg text-xs font-medium ${p === page ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>{p}</button>
           ))}
-          <button onClick={() => setPage(maxPage + 1)} className="h-7 px-2 rounded-lg text-xs border border-dashed border-gray-300 text-gray-500 hover:bg-gray-50">+ pagina</button>
+          <button onClick={() => setPage(totalPages + 1)} className="h-7 px-2 rounded-lg text-xs border border-dashed border-gray-300 text-gray-500 hover:bg-gray-50">+ pagina</button>
+          <button
+            onClick={() => setPage(Math.min(totalPages, page + 1))}
+            disabled={page >= totalPages}
+            className="h-7 px-2 rounded-lg text-xs font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-0.5"
+            title="Volgende pagina"
+          >
+            Volgende<ChevronRight className="h-3.5 w-3.5" />
+          </button>
         </div>
         <p className="text-[11px] text-gray-400">Sleep om te verplaatsen · hoekje rechtsonder om te vergroten · exact zoals op de PDF</p>
       </div>
