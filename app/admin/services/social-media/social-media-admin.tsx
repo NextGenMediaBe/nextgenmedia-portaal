@@ -3,7 +3,7 @@
 import { useState, useCallback, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { ContentCalendar, type SocialContentItem, type SocialContentStatus } from '@/components/calendar/content-calendar'
-import { Plus, X, Loader2, Sparkles, CheckSquare, Trash2, AlertTriangle, Clapperboard } from 'lucide-react'
+import { Plus, X, Loader2, Sparkles, CheckSquare, Trash2, AlertTriangle, Clapperboard, CalendarRange, ArrowRight } from 'lucide-react'
 import Link from 'next/link'
 import { GenerateDialog } from './generate-dialog'
 import { ClickUpSyncControl } from '@/components/admin/clickup-sync-control'
@@ -187,6 +187,14 @@ export function SocialMediaAdmin({
   const [bulkDeleteInput, setBulkDeleteInput] = useState('')
   const [bulkDeleting, setBulkDeleting] = useState(false)
 
+  // Maand verzetten (hele maand content van X → Y)
+  const thisMonth = () => new Date().toISOString().slice(0, 7)
+  const nextMonthStr = () => { const d = new Date(); d.setMonth(d.getMonth() + 1); return d.toISOString().slice(0, 7) }
+  const [shiftOpen, setShiftOpen] = useState(false)
+  const [shiftFrom, setShiftFrom] = useState(thisMonth)
+  const [shiftTo, setShiftTo] = useState(nextMonthStr)
+  const [shifting, setShifting] = useState(false)
+
   const toggleSelected = (id: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev)
@@ -223,6 +231,32 @@ export function SocialMediaAdmin({
       alert(err instanceof Error ? err.message : 'Fout bij bulk verwijderen')
     } finally {
       setBulkDeleting(false)
+    }
+  }
+
+  const monthLabel = (ym: string) => {
+    const [y, m] = ym.split('-').map(Number)
+    if (!y || !m) return ym
+    return new Date(y, m - 1, 1).toLocaleDateString('nl-BE', { month: 'long', year: 'numeric' })
+  }
+
+  const doShift = async () => {
+    if (shiftFrom === shiftTo) return
+    setShifting(true)
+    try {
+      const res = await fetch('/api/admin/social-content/shift-month', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: selectedClient, from: shiftFrom, to: shiftTo }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error)
+      await loadItems(selectedClient)
+      setShiftOpen(false)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Fout bij verzetten')
+    } finally {
+      setShifting(false)
     }
   }
 
@@ -303,6 +337,14 @@ export function SocialMediaAdmin({
                 <SendMailButton clientId={selectedClient} kind="scripts" label="Verstuur mail" />
                 <SendMailButton clientId={selectedClient} kind="shoot" label="Verstuur uitnodiging" />
                 <Link href="/admin/services/social-media/shoot-overview" className="btn-secondary"><Clapperboard className="h-4 w-4" />Shoot-overzicht</Link>
+                <button
+                  onClick={() => { setShiftFrom(thisMonth()); setShiftTo(nextMonthStr()); setShiftOpen(true) }}
+                  className="btn-secondary"
+                  title="Een hele maand content verzetten naar een andere maand"
+                >
+                  <CalendarRange className="h-4 w-4" />
+                  Verzetten
+                </button>
                 <button
                   onClick={() => setSelectMode(true)}
                   className="btn-secondary"
@@ -487,6 +529,83 @@ export function SocialMediaAdmin({
                   Annuleer
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Maand verzetten modal */}
+      {shiftOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90dvh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b border-gray-100">
+              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                <CalendarRange className="h-5 w-5 text-gray-700" />
+                Content verzetten
+              </h3>
+              <button onClick={() => setShiftOpen(false)} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-gray-100">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-gray-500">
+                Verzet alle content van één maand naar een andere maand. De dag van de maand blijft behouden.
+              </p>
+              <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Van</label>
+                  <input
+                    type="month"
+                    value={shiftFrom}
+                    onChange={(e) => setShiftFrom(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#fff848]/50 focus:border-[#fff848]"
+                  />
+                </div>
+                <ArrowRight className="h-4 w-4 text-gray-400 mb-2.5" />
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Naar</label>
+                  <input
+                    type="month"
+                    value={shiftTo}
+                    onChange={(e) => setShiftTo(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#fff848]/50 focus:border-[#fff848]"
+                  />
+                </div>
+              </div>
+
+              {(() => {
+                const count = clientItems.filter((it) => (it.planned_date ?? '').slice(0, 7) === shiftFrom).length
+                const sameMonth = shiftFrom === shiftTo
+                return (
+                  <>
+                    <div className={`rounded-xl p-4 border text-sm ${
+                      sameMonth ? 'bg-amber-50 border-amber-200 text-amber-800'
+                      : count === 0 ? 'bg-gray-50 border-gray-200 text-gray-500'
+                      : 'bg-[#fff848]/10 border-[#fff848] text-gray-800'
+                    }`}>
+                      {sameMonth ? (
+                        'Kies een verschillende bron- en doelmaand.'
+                      ) : count === 0 ? (
+                        <>Geen content gevonden in <b className="capitalize">{monthLabel(shiftFrom)}</b>.</>
+                      ) : (
+                        <><b>{count}</b> {count === 1 ? 'item' : 'items'} van <b className="capitalize">{monthLabel(shiftFrom)}</b> worden verzet naar <b className="capitalize">{monthLabel(shiftTo)}</b>.</>
+                      )}
+                    </div>
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={doShift}
+                        disabled={shifting || sameMonth || count === 0}
+                        className="btn-primary flex-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {shifting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarRange className="h-4 w-4" />}
+                        Verzetten
+                      </button>
+                      <button onClick={() => setShiftOpen(false)} className="btn-secondary">Annuleer</button>
+                    </div>
+                  </>
+                )
+              })()}
             </div>
           </div>
         </div>
