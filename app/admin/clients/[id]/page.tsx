@@ -1,28 +1,49 @@
 export const dynamic = 'force-dynamic'
 
 import { notFound, redirect } from 'next/navigation'
-import { createAdminSupabaseClient, createClient } from '@/lib/supabase/server'
+import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { formatDate, formatEuro, SERVICE_LABELS, daysUntil } from '@/lib/utils'
 import Link from 'next/link'
 import { ChevronLeft, Globe, Calendar, FileText } from 'lucide-react'
 import { ClientEditForm } from './client-edit-form'
 import { DeleteClientButton } from './delete-client-button'
 import { PortalAccessCard } from './portal-access-card'
+import { CredentialsCard } from '@/components/credentials-card'
+import { ClientUsers } from './client-users'
+import { ClientHub } from './client-hub'
+import { ClientLifecycleBlock } from './client-lifecycle'
+import { ClientMonths } from './client-months'
+import { ClientTasks } from './client-tasks'
+import { ClientBlogs } from './client-blogs'
 
 async function getClient(id: string) {
-  try {
-    const admin = createAdminSupabaseClient()
-    const [{ data: client }, { data: services }, { data: contracts }, { data: scontracts }] = await Promise.all([
-      admin.from('clients').select('*').eq('id', id).maybeSingle(),
-      admin.from('client_services').select('*').eq('client_id', id),
-      admin.from('contracts').select('id, title, status, service_slug, signed_at, sent_at, created_at').eq('client_id', id).order('created_at', { ascending: false }),
-      admin.from('service_contracts').select('*').eq('client_id', id),
-    ])
-    return { client, services: services ?? [], contracts: contracts ?? [], scontracts: scontracts ?? [] }
-  } catch {
-    const supabase = await createClient()
-    const { data: client } = await supabase.from('clients').select('*').eq('id', id).maybeSingle()
-    return { client, services: [], contracts: [], scontracts: [] }
+  const admin = createAdminSupabaseClient()
+
+  // Fetch the client first — this alone decides 404 vs render.
+  // select('*') so a missing column can never turn into a silent null result.
+  const { data: client } = await admin
+    .from('clients')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle()
+
+  if (!client) {
+    return { client: null, services: [], contracts: [], scontracts: [] }
+  }
+
+  // Secondary data — Supabase resolves with { data, error }, never throws,
+  // so a missing table/column just yields null (page still renders).
+  const [{ data: services }, { data: contracts }, { data: scontracts }] = await Promise.all([
+    admin.from('client_services').select('*').eq('client_id', id),
+    admin.from('contracts').select('*').eq('client_id', id).order('created_at', { ascending: false }),
+    admin.from('service_contracts').select('*').eq('client_id', id),
+  ])
+
+  return {
+    client,
+    services: services ?? [],
+    contracts: contracts ?? [],
+    scontracts: scontracts ?? [],
   }
 }
 
@@ -90,7 +111,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
           <h1 className="text-2xl font-bold truncate">{client.company_name}</h1>
           {client.niche && <p className="text-sm text-gray-500">{client.niche}</p>}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {hasSocial && (
             <Link href={`/admin/services/social-media?client=${id}`} className="btn-secondary">
               <Calendar className="h-4 w-4" />
@@ -104,6 +125,9 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
           <DeleteClientButton clientId={id} companyName={client.company_name} />
         </div>
       </div>
+
+      {/* Centrale hub: klikbaar overzicht van alles wat aan deze klant hangt */}
+      <ClientHub clientId={id} btw={client.btw_nummer ?? null} />
 
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Left: Info */}
@@ -124,7 +148,39 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                 {client.website_url.replace(/^https?:\/\//, '')}
               </a>
             )}
+            {client.btw_nummer && (
+              <div className="text-sm">
+                <span className="text-gray-500">BTW:</span>{' '}
+                <span className="font-medium font-mono">{client.btw_nummer}</span>
+              </div>
+            )}
           </div>
+
+          {/* Login credentials */}
+          <CredentialsCard
+            endpoint={`/api/admin/clients/${id}/credentials`}
+            email={client.email ?? null}
+            storedPassword={(client.login_password ?? null) as string | null}
+          />
+
+          {/* Subaccounts & rechten */}
+          <div id="gebruikers" className="scroll-mt-20">
+            <ClientUsers clientId={id} clientName={client.company_name} ownerEmail={client.email ?? null} />
+          </div>
+
+          {/* Klant Lifecycle (batch, contract, reviews) */}
+          <ClientLifecycleBlock clientId={id} companyName={client.company_name} />
+
+          {/* Gepland in maanden */}
+          <ClientMonths clientId={id} />
+
+          {/* Klanttaken */}
+          <div id="taken" className="scroll-mt-20">
+            <ClientTasks clientId={id} />
+          </div>
+
+          {/* Blogs */}
+          <ClientBlogs clientId={id} />
 
           {/* Revenue */}
           <div className="card-base space-y-3">
@@ -284,7 +340,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                     Kalender openen
                   </Link>
                 </div>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="text-center p-3 bg-gray-50 rounded-lg">
                     <div className="text-2xl font-bold">{cfg.posts ?? 0}</div>
                     <div className="text-xs text-gray-500 mt-1">Posts/maand</div>

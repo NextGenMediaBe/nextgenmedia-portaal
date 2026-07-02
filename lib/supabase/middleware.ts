@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { pathToModule, canSeeModule } from '@/lib/staff'
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
@@ -62,8 +63,32 @@ export async function updateSession(request: NextRequest) {
   const role = roleData?.role as string | undefined
 
   // Role-based routing
-  if (path.startsWith('/admin') && role !== 'admin') {
-    return NextResponse.redirect(new URL('/login', request.url))
+  if (path.startsWith('/admin')) {
+    // Admin = volledige toegang. Werknemer = enkel toegestane modules.
+    if (role === 'admin') {
+      // ok
+    } else if (role === 'employee') {
+      // Werknemersbeheer is altijd admin-only.
+      if (path.startsWith('/admin/werknemers')) {
+        return NextResponse.redirect(new URL('/admin', request.url))
+      }
+      const moduleKey = pathToModule(path)
+      if (moduleKey) {
+        const { data: staff } = await supabase
+          .from('staff_members')
+          .select('active, permissions')
+          .eq('auth_user_id', user.id)
+          .maybeSingle()
+        const active = staff?.active !== false
+        const perms = Array.isArray(staff?.permissions) ? (staff!.permissions as string[]) : []
+        if (!active) return NextResponse.redirect(new URL('/login', request.url))
+        if (!canSeeModule(perms, moduleKey)) {
+          return NextResponse.redirect(new URL('/admin', request.url))
+        }
+      }
+    } else {
+      return NextResponse.redirect(new URL('/login', request.url))
+    }
   }
   if (path.startsWith('/portal') && role !== 'client') {
     return NextResponse.redirect(new URL('/login', request.url))

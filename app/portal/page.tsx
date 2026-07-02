@@ -1,23 +1,20 @@
 export const dynamic = 'force-dynamic'
 
-import { createClient } from '@/lib/supabase/server'
+import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { formatDate, SERVICE_LABELS, daysUntil } from '@/lib/utils'
 import Link from 'next/link'
 import { Calendar, FileText, Globe, Clock, ArrowRight } from 'lucide-react'
+import { resolvePortalSession, sessionCan } from '@/lib/portal-auth'
 
 export default async function PortalDashboard() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
+  const session = await resolvePortalSession()
+  if (!session || !session.active) redirect('/login')
+  const clientId = session.clientId
 
-  // Fetch client record first (no FK joins — use separate queries)
-  const { data: client } = await supabase
-    .from('clients')
-    .select('id, company_name, owner_user_id')
-    .eq('owner_user_id', user.id)
-    .maybeSingle()
-
+  const admin = createAdminSupabaseClient()
+  const { data: client } = await admin
+    .from('clients').select('id, company_name').eq('id', clientId).maybeSingle()
   if (!client) {
     return (
       <div className="text-center py-20 text-gray-400">
@@ -25,30 +22,33 @@ export default async function PortalDashboard() {
       </div>
     )
   }
+  const canContracts = sessionCan(session, 'contracts', 'view')
+  const canSign = sessionCan(session, 'contracts', 'sign')
 
   // Separate parallel queries — avoids PostgREST FK join failures
   const [
     { data: clientServicesRaw },
     { data: serviceContractsRaw },
     { data: contractsRaw },
-    { data: pendingScripts },
+    { count: pendingScriptsCount },
   ] = await Promise.all([
-    supabase.from('client_services').select('*').eq('client_id', client.id),
-    supabase.from('service_contracts').select('*').eq('client_id', client.id),
-    supabase
+    admin.from('client_services').select('*').eq('client_id', clientId),
+    admin.from('service_contracts').select('*').eq('client_id', clientId),
+    admin
       .from('contracts')
       .select('id, title, status, signed_at, sent_at, access_token')
-      .eq('client_id', client.id)
+      .eq('client_id', clientId)
       .order('created_at', { ascending: false })
       .limit(5),
-    supabase
+    // Exacte telling van scripts die op goedkeuring wachten (geen limiet).
+    admin
       .from('social_content_items')
-      .select('id, title, platform, planned_date, status')
-      .eq('client_id', client.id)
-      .eq('status', 'ready_for_review')
-      .order('planned_date', { ascending: true })
-      .limit(5),
+      .select('id', { count: 'exact', head: true })
+      .eq('client_id', clientId)
+      .eq('status', 'ready_for_review'),
   ])
+
+  const pendingScripts = pendingScriptsCount ?? 0
 
   const services = (clientServicesRaw ?? []).filter((s: { active: boolean }) => s.active) as Array<{
     id: string
@@ -65,7 +65,7 @@ export default async function PortalDashboard() {
 
   const hasSocial = services.some((s) => s.service_slug === 'social-media')
   const hasWebdesign = services.some((s) => s.service_slug === 'webdesign')
-  const pendingContracts = contracts.filter((c) => ['sent', 'viewed'].includes(c.status))
+  const pendingContracts = canContracts ? contracts.filter((c) => ['sent', 'viewed'].includes(c.status)) : []
 
   // Social media contract config (posts/reels/stories come from service_contracts.config)
   const socialSC = serviceContracts.find((sc) => sc.service_slug === 'social-media')
@@ -80,12 +80,12 @@ export default async function PortalDashboard() {
       </div>
 
       {/* Alerts */}
-      {(pendingContracts.length > 0 || (pendingScripts?.length ?? 0) > 0) && (
+      {(pendingContracts.length > 0 || pendingScripts > 0) && (
         <div className="space-y-2">
           {pendingContracts.map((c) => (
             <Link
               key={c.id}
-              href={`/sign/${c.access_token}`}
+              href={canSign ? `/sign/${c.access_token}` : '/portal/contracts'}
               className="flex items-center justify-between p-4 bg-[#fff848]/10 border border-[#fff848] rounded-xl"
             >
               <div className="flex items-center gap-3">
@@ -98,7 +98,7 @@ export default async function PortalDashboard() {
               <span className="btn-primary text-xs">Ondertekenen</span>
             </Link>
           ))}
-          {(pendingScripts?.length ?? 0) > 0 && (
+          {pendingScripts > 0 && (
             <Link
               href="/portal/social-media"
               className="flex items-center justify-between p-4 bg-amber-50 border border-amber-200 rounded-xl"
@@ -107,7 +107,7 @@ export default async function PortalDashboard() {
                 <Clock className="h-5 w-5 text-amber-600" />
                 <div>
                   <div className="font-medium text-sm text-amber-800">
-                    {pendingScripts?.length} scripts wachten op goedkeuring
+                    {pendingScripts} {pendingScripts === 1 ? 'script wacht' : 'scripts wachten'} op goedkeuring
                   </div>
                   <div className="text-xs text-amber-600">Bekijk en keur goed in de contentkalender</div>
                 </div>

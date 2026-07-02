@@ -72,3 +72,58 @@ export async function trySignedUrl(admin: SupabaseClient<any>, bucket: string, p
     return null
   }
 }
+
+/**
+ * Insert a row, automatically dropping any column the live schema doesn't have.
+ * PostgREST reports a missing column as code PGRST204 with the column name in the
+ * message. We strip that column and retry, so a write succeeds regardless of which
+ * migrations have been applied. Returns the same shape as a normal insert().select().
+ *
+ * Pass `required` to guarantee certain keys are never dropped (if one of those is
+ * missing the error is surfaced instead of silently swallowed).
+ */
+export async function insertResilient(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  admin: SupabaseClient<any>,
+  table: string,
+  payload: Record<string, unknown>,
+  options?: { select?: string; required?: string[] },
+): Promise<{ data: Record<string, unknown> | null; error: { message: string } | null }> {
+  const selectCols = options?.select ?? 'id'
+  const required = new Set(options?.required ?? [])
+  const working = { ...payload }
+  const maxAttempts = Object.keys(working).length + 1
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const { data, error } = await admin
+      .from(table)
+      .insert(working)
+      .select(selectCols)
+      .single()
+
+    if (!error) return { data: (data as unknown) as Record<string, unknown>, error: null }
+
+    // Detect "column X does not exist" / schema-cache miss
+    const code = (error as { code?: string }).code
+    const msg = error.message ?? ''
+    const isMissingColumn =
+      code === 'PGRST204' ||
+      code === '42703' ||
+      /could not find the '.*' column|column .* does not exist/i.test(msg)
+
+    if (!isMissingColumn) return { data: null, error }
+
+    // Extract the offending column name from the message
+    const match = msg.match(/'([^']+)' column/i) || msg.match(/column "?([a-z0-9_]+)"?/i)
+    const badCol = match?.[1]
+
+    if (!badCol || !(badCol in working) || required.has(badCol)) {
+      // Can't recover — surface the error
+      return { data: null, error }
+    }
+
+    delete working[badCol]
+  }
+
+  return { data: null, error: { message: 'Insert mislukt na meerdere pogingen' } }
+}

@@ -39,6 +39,7 @@ export default function NewClientPage() {
     password: '',
     niche: '',
     website_url: '',
+    btw_nummer: '',
     services: [] as string[],
     platforms: [] as string[],
     posts_per_month: '0',
@@ -102,6 +103,7 @@ export default function NewClientPage() {
           password: form.password,
           niche: form.niche,
           website_url: form.website_url,
+          btw_nummer: form.btw_nummer,
           services: form.services,
           platforms: form.platforms,
           posts_per_month: parseInt(form.posts_per_month) || 0,
@@ -142,7 +144,7 @@ export default function NewClientPage() {
         {/* Bedrijfsgegevens */}
         <div className="card-base space-y-4">
           <h2 className="font-semibold text-gray-900">Bedrijfsgegevens</h2>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className={lbl}>Bedrijfsnaam *</label>
               <input required className={inp} value={form.company_name}
@@ -154,7 +156,7 @@ export default function NewClientPage() {
                 onChange={e => setForm(p => ({ ...p, contact_name: e.target.value }))} placeholder="Jan Janssen" />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className={lbl}>Niche</label>
               <input className={inp} value={form.niche}
@@ -165,13 +167,18 @@ export default function NewClientPage() {
               <input className={inp} type="url" value={form.website_url}
                 onChange={e => setForm(p => ({ ...p, website_url: e.target.value }))} placeholder="https://bedrijf.be" />
             </div>
+            <div>
+              <label className={lbl}>BTW-nummer</label>
+              <input className={inp} value={form.btw_nummer}
+                onChange={e => setForm(p => ({ ...p, btw_nummer: e.target.value }))} placeholder="BE0123456789" />
+            </div>
           </div>
         </div>
 
         {/* Accounttoegang */}
         <div className="card-base space-y-4">
           <h2 className="font-semibold text-gray-900">Accounttoegang</h2>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className={lbl}>E-mailadres *</label>
               <input required type="email" className={inp} value={form.email}
@@ -228,7 +235,7 @@ export default function NewClientPage() {
                     </div>
 
                     {/* Startmaand + Duur */}
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className={lbl}>Startmaand</label>
                         <input
@@ -264,7 +271,7 @@ export default function NewClientPage() {
                     {/* Social Media settings */}
                     {slug === 'social-media' && (
                       <div className="space-y-3 border-t border-gray-100 pt-3">
-                        <div className="grid grid-cols-3 gap-3">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                           <div>
                             <label className={lbl}>Posts/maand</label>
                             <input type="number" min="0" max="60" className={inp} value={form.posts_per_month}

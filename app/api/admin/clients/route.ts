@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
+import { validateBtw } from '@/lib/btw'
 
 const ServiceCfgSchema = z.object({
   start_month: z.string(),                          // YYYY-MM
@@ -15,6 +16,7 @@ const CreateClientSchema = z.object({
   password: z.string().min(8).max(72),
   niche: z.string().max(120).optional().or(z.literal('')),
   website_url: z.string().max(300).optional().or(z.literal('')),
+  btw_nummer: z.string().max(20).optional().or(z.literal('')),
   services: z.array(z.string()).min(1),
   platforms: z.array(z.string()).optional().default([]),
   posts_per_month: z.number().int().min(0).max(60).optional().default(0),
@@ -54,6 +56,10 @@ export async function POST(req: NextRequest) {
     const data = CreateClientSchema.parse(body)
     const admin = createAdminSupabaseClient()
 
+    // BTW valideren (optioneel).
+    const btw = validateBtw(data.btw_nummer)
+    if (!btw.ok) return NextResponse.json({ error: btw.error }, { status: 400 })
+
     // Helper: get per-service config with fallback
     const today = new Date()
     const defaultMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
@@ -92,6 +98,13 @@ export async function POST(req: NextRequest) {
       await admin.auth.admin.deleteUser(newUserId)
       throw new Error(`Klant aanmaken mislukt: ${clientErr?.message}`)
     }
+
+    // Store the admin-chosen password so it can be viewed later (best effort —
+    // ignored if the login_password column isn't migrated yet).
+    try { await admin.from('clients').update({ login_password: data.password }).eq('id', client.id) } catch { }
+
+    // BTW-nummer (best effort — kolom kan nog ontbreken vóór migratie).
+    if (btw.value) { try { await admin.from('clients').update({ btw_nummer: btw.value }).eq('id', client.id) } catch { } }
 
     // Create client_services — active: false by default.
     // Portal access is granted separately by admin AFTER the client signs the contract.
