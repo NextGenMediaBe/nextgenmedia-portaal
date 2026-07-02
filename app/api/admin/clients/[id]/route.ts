@@ -3,6 +3,10 @@ import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
 import { logAudit, requestMeta } from '@/lib/audit'
 import { revalidatePath } from 'next/cache'
 import { validateBtw } from '@/lib/btw'
+import { clickupConfigured, deleteList } from '@/lib/clickup'
+
+// Klant-verwijdering ruimt ook storage, auth en (best-effort) ClickUp op.
+export const maxDuration = 60
 
 async function requireAdmin(supabase: Awaited<ReturnType<typeof createClient>>) {
   const { data: { user } } = await supabase.auth.getUser()
@@ -141,7 +145,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     // Verify the confirmed name matches
     const { data: client } = await admin
       .from('clients')
-      .select('company_name, owner_user_id')
+      .select('company_name, owner_user_id, clickup_list_id')
       .eq('id', id)
       .maybeSingle()
 
@@ -175,6 +179,13 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       admin.from('social_content_items').delete().eq('client_id', id),
       admin.from('webdesign_change_requests').delete().eq('client_id', id),
     ])
+
+    // 3b. ClickUp: verwijder de volledige CONTENTKALENDER-lijst van deze klant
+    //     (spiegelt de verwijdering — alle gesyncte taken verdwijnen in één call).
+    //     Best-effort: mag de klant-verwijdering nooit blokkeren.
+    if (clickupConfigured() && client.clickup_list_id) {
+      try { await deleteList(client.clickup_list_id as string) } catch { }
+    }
 
     // 4. Delete client record (cascades: client_services, service_contracts, revenue_entries)
     const { error: clientErr } = await admin.from('clients').delete().eq('id', id)

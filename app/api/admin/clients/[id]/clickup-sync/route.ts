@@ -8,6 +8,7 @@ import {
   findTaskByNameAndDate,
   createTask,
   updateTask,
+  deleteTask,
   buildTaskTitle,
   channelOptionId,
   captionOptionId,
@@ -150,7 +151,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       .order('planned_date', { ascending: true })
     const items = (itemsRaw ?? []) as ContentItem[]
 
-    const summary = { total: items.length, created: 0, updated: 0, skipped: 0, failed: 0, fieldLimited: 0 }
+    const summary = { total: items.length, created: 0, updated: 0, skipped: 0, failed: 0, fieldLimited: 0, deleted: 0 }
     const errors: Array<{ id: string; title: string; error: string }> = []
 
     // Tijdsbudget per call zodat de serverless-functie nooit time-out: items die
@@ -259,12 +260,32 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
     }
 
+    // ── Reconciliatie: spiegel de verwijderingen ─────────────────────────────
+    // Enkel wanneer ALLE items in deze run verwerkt zijn (done): dan bevat
+    // `claimed` élk task-id dat nog een app-item heeft. Taken in de lijst die
+    // daar niet in zitten, horen bij content die in de app verwijderd is →
+    // verwijderen. Taken met dezelfde naam+datum zijn eerder al geadopteerd,
+    // dus enkel echte wezen sneuvelen. Loopt cleanup uit het tijdsbudget, dan
+    // done=false → de client roept opnieuw en we maken het af (convergeert).
+    if (done && items.length > 0) {
+      const orphans = existingTasks.filter((t) => !claimed.has(t.id))
+      const CLEANUP_BUDGET_MS = 14000
+      for (const t of orphans) {
+        if (Date.now() - startedAt > CLEANUP_BUDGET_MS) { done = false; break }
+        try {
+          const ok = await deleteTask(t.id)
+          if (ok) summary.deleted++
+          else summary.failed++
+        } catch { summary.failed++ }
+      }
+    }
+
     const meta = requestMeta(req)
     await logAudit({
       action: 'client.clickup_sync.run',
       entityType: 'client',
       entityId: id,
-      summary: `ClickUp-sync ${client.company_name}: ${summary.created} nieuw, ${summary.updated} bijgewerkt, ${summary.skipped} ongewijzigd, ${summary.failed} mislukt`,
+      summary: `ClickUp-sync ${client.company_name}: ${summary.created} nieuw, ${summary.updated} bijgewerkt, ${summary.skipped} ongewijzigd, ${summary.deleted} verwijderd, ${summary.failed} mislukt`,
       actorUserId: actor.id, actorEmail: actor.email ?? null, actorRole: 'admin',
       metadata: { ...summary }, ip: meta.ip, userAgent: meta.userAgent,
     })

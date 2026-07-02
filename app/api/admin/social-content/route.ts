@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { clickupConfigured, deleteTask } from '@/lib/clickup'
+
+// Bulk-verwijderen kan meerdere (gethrottelde) ClickUp-calls vergen.
+export const maxDuration = 60
 
 async function assertAdmin() {
   const supabase = await createClient()
@@ -90,35 +94,45 @@ export async function DELETE(req: NextRequest) {
     await assertAdmin()
     const admin = createAdminSupabaseClient()
 
-    // Two modes:
-    //  - single delete: ?id=<uuid>
-    //  - bulk delete:   POST body { ids: ["uuid", ...] }
-    const id = req.nextUrl.searchParams.get('id')
+    // Twee modi:
+    //  - enkel: ?id=<uuid>
+    //  - bulk:  body { ids: ["uuid", ...] }
+    const singleId = req.nextUrl.searchParams.get('id')
 
-    // Try to parse body for bulk delete (gracefully handle empty body for single mode)
-    let ids: string[] | null = null
+    let bodyIds: string[] | null = null
     try {
       const body = await req.json().catch(() => null)
       if (body && Array.isArray(body.ids) && body.ids.length > 0) {
-        ids = body.ids.filter((v: unknown): v is string => typeof v === 'string')
+        bodyIds = body.ids.filter((v: unknown): v is string => typeof v === 'string')
       }
-    } catch { /* no body — single delete via query param */ }
+    } catch { /* geen body — enkel-delete via query param */ }
 
-    if (ids && ids.length > 0) {
-      const { error } = await admin.from('social_content_items').delete().in('id', ids)
-      if (error) throw new Error(error.message)
+    const targetIds = bodyIds && bodyIds.length > 0 ? bodyIds : singleId ? [singleId] : []
+    if (targetIds.length === 0) return NextResponse.json({ error: 'Geen ID(s)' }, { status: 400 })
 
+    // Spiegelt de contentkalender: als een item hier verwijderd wordt, verwijderen
+    // we ook de gekoppelde ClickUp-taak. Best-effort per taak — een mislukte
+    // ClickUp-delete mag de app-verwijdering nooit blokkeren.
+    let clickupDeleted = 0
+    let clickupFailed = 0
+    if (clickupConfigured()) {
       try {
-        revalidatePath('/admin/services/social-media')
-        revalidatePath('/portal/social-media')
-      } catch { }
-
-      return NextResponse.json({ ok: true, deleted: ids.length })
+        const { data: rows } = await admin
+          .from('social_content_items')
+          .select('clickup_task_id')
+          .in('id', targetIds)
+        const taskIds = (rows ?? [])
+          .map((r) => r.clickup_task_id as string | null)
+          .filter((v): v is string => !!v)
+        for (const t of taskIds) {
+          const ok = await deleteTask(t)
+          if (ok) clickupDeleted++
+          else clickupFailed++
+        }
+      } catch { /* kolom mogelijk niet gemigreerd — negeren, app-delete gaat door */ }
     }
 
-    if (!id) return NextResponse.json({ error: 'Geen ID(s)' }, { status: 400 })
-
-    const { error } = await admin.from('social_content_items').delete().eq('id', id)
+    const { error } = await admin.from('social_content_items').delete().in('id', targetIds)
     if (error) throw new Error(error.message)
 
     try {
@@ -126,7 +140,7 @@ export async function DELETE(req: NextRequest) {
       revalidatePath('/portal/social-media')
     } catch { }
 
-    return NextResponse.json({ ok: true, deleted: 1 })
+    return NextResponse.json({ ok: true, deleted: targetIds.length, clickupDeleted, clickupFailed })
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
   }

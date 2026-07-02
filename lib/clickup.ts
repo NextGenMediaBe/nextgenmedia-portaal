@@ -330,6 +330,36 @@ export async function updateTask(taskId: string, f: TaskFields): Promise<TaskRes
   return { id: taskId, fieldsBlocked: 0 }
 }
 
+/**
+ * Verwijder een taak in ClickUp (spiegelt een verwijdering in de app).
+ * Een reeds verwijderde/onbestaande taak is GEEN fout — dan is het doel al bereikt.
+ * Geeft true als de taak weg is (of al weg was), false bij een echte API-fout.
+ */
+export async function deleteTask(taskId: string): Promise<boolean> {
+  try {
+    await clickupJson(`/task/${taskId}`, { method: 'DELETE' })
+    return true
+  } catch (e) {
+    if (isTaskGone(e) || isNotFound(e)) return true // al weg = prima
+    return false
+  }
+}
+
+/**
+ * Verwijder een volledige lijst in ClickUp (bv. de CONTENTKALENDER-lijst wanneer
+ * een klant definitief verwijderd wordt) — in één call, incl. alle taken erin.
+ * Best-effort: een reeds verwijderde lijst is geen fout.
+ */
+export async function deleteList(listId: string): Promise<boolean> {
+  try {
+    await clickupJson(`/list/${listId}`, { method: 'DELETE' })
+    return true
+  } catch (e) {
+    if (isNotFound(e)) return true
+    return false
+  }
+}
+
 // ── Facturen → ClickUp (best-effort, breekt nooit de facturatie-flow) ─────────
 // Bij het aanmaken van een factuur wordt een taak "Factuur versturen — [Klant]"
 // gemaakt en toegewezen aan Bram Rekken; bij status 'verstuurd' → Completed.

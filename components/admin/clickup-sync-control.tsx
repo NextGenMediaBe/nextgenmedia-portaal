@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { RefreshCw, Loader2, Check, AlertTriangle } from 'lucide-react'
 
 type Status = { configured: boolean; enabled: boolean; linked: boolean; syncedCount: number }
-type Totals = { total: number; created: number; updated: number; skipped: number; failed: number; fieldLimited: number }
+type Totals = { total: number; created: number; updated: number; skipped: number; failed: number; fieldLimited: number; deleted: number }
 type SyncResult = { summary: Totals; errors: Array<{ id: string; title: string; error: string }> }
 
 /** Lees een Response veilig: parse JSON, of geef een nette fout bij niet-JSON
@@ -59,7 +59,7 @@ export function ClickUpSyncControl({ clientId }: { clientId: string }) {
     setSyncing(true); setError(null); setResult(null); setProgress('Synchroniseren…')
     // Cumulatief over de batches (de server werkt in tijdsbudgetten en kan
     // 'done: false' teruggeven; dan lopen we automatisch door).
-    const acc: Totals = { total: 0, created: 0, updated: 0, skipped: 0, failed: 0, fieldLimited: 0 }
+    const acc: Totals = { total: 0, created: 0, updated: 0, skipped: 0, failed: 0, fieldLimited: 0, deleted: 0 }
     const allErrors: SyncResult['errors'] = []
     try {
       for (let i = 0; i < 120; i++) {
@@ -72,6 +72,7 @@ export function ClickUpSyncControl({ clientId }: { clientId: string }) {
         acc.updated += s.updated
         acc.failed += s.failed
         acc.fieldLimited += s.fieldLimited ?? 0
+        acc.deleted += s.deleted ?? 0
         acc.skipped = s.skipped
         if (Array.isArray(data.errors)) allErrors.push(...data.errors)
         setProgress(`Synchroniseren… ${acc.created + acc.updated} verwerkt`)
@@ -145,6 +146,7 @@ export function ClickUpSyncControl({ clientId }: { clientId: string }) {
           <div className="flex items-center gap-1.5 font-medium text-gray-700">
             <Check className="h-3.5 w-3.5 text-green-600" />
             Sync klaar — {result.summary.created} nieuw · {result.summary.updated} bijgewerkt · {result.summary.skipped} ongewijzigd
+            {result.summary.deleted > 0 && <span> · {result.summary.deleted} verwijderd</span>}
             {result.summary.failed > 0 && <span className="text-red-600"> · {result.summary.failed} mislukt</span>}
           </div>
           {result.summary.fieldLimited > 0 && (
