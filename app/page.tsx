@@ -14,7 +14,10 @@ export default async function Home() {
     .maybeSingle()
 
   const role = roleData?.role
-  if (role === 'admin') redirect('/admin')
+  // Werknemers (rol 'employee') horen — net als admins — in het admin-portaal.
+  // Zonder deze case viel een werknemer door naar /login → login stuurt terug
+  // naar '/' → oneindige refresh-loop (nooit ingelogd geraken).
+  if (role === 'admin' || role === 'employee') redirect('/admin')
   if (role === 'client') redirect('/portal')
   if (role === 'freelancer') redirect('/partner')
 
