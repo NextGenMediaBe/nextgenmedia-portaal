@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
 
 export default async function Home() {
   const supabase = await createClient()
@@ -7,7 +7,10 @@ export default async function Home() {
 
   if (!user) redirect('/login')
 
-  const { data: roleData } = await supabase
+  // Rol via service-role (bypasst de restrictive user_roles-RLS die niet-admins
+  // hun eigen rol laat lezen → anders login-loop voor werknemers/klanten).
+  const admin = createAdminSupabaseClient()
+  const { data: roleData } = await admin
     .from('user_roles')
     .select('role')
     .eq('user_id', user.id)

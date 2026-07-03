@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
 import { AdminSidebar } from '@/components/admin/sidebar'
 import { AdminTopBar } from '@/components/admin/admin-topbar'
 import { AiAssistant } from '@/components/admin/ai-assistant'
@@ -10,7 +10,10 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: roleData } = await supabase
+  // Rol + rechten via service-role lezen (bypasst de restrictive user_roles-RLS;
+  // een werknemer kan zijn eigen rol anders niet lezen → login-loop).
+  const admin = createAdminSupabaseClient()
+  const { data: roleData } = await admin
     .from('user_roles')
     .select('role')
     .eq('user_id', user.id)
@@ -22,7 +25,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // Werknemer = enkel toegestane modules in de sidebar (admin = alles → undefined).
   let allowedModules: string[] | undefined
   if (role === 'employee') {
-    const { data: staff } = await supabase
+    const { data: staff } = await admin
       .from('staff_members')
       .select('active, permissions')
       .eq('auth_user_id', user.id)

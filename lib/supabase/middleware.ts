@@ -1,6 +1,17 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { pathToModule, canSeeModule } from '@/lib/staff'
+import { createAdminSupabaseClient } from '@/lib/supabase/server'
+
+// Rol/rechten worden via de service-role client gelezen (bypasst RLS). Reden:
+// user_roles heeft een RESTRICTIVE admin-only policy, waardoor een niet-admin
+// zijn EIGEN rol-rij niet via de user-sessie kan lezen → role undefined →
+// redirect-loop bij inloggen (werknemers). De service-role lezing is
+// betrouwbaar en is sowieso het primaire beveiligingsmodel van dit platform.
+// Valt terug op de user-client als de service-role key ontbreekt.
+function roleReader(fallback: ReturnType<typeof createServerClient>) {
+  try { return createAdminSupabaseClient() } catch { return fallback }
+}
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
@@ -52,8 +63,9 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // Fetch role
-  const { data: roleData } = await supabase
+  // Fetch role (via service-role — zie roleReader hierboven)
+  const db = roleReader(supabase)
+  const { data: roleData } = await db
     .from('user_roles')
     .select('role')
     .eq('user_id', user.id)
@@ -74,7 +86,7 @@ export async function updateSession(request: NextRequest) {
       }
       const moduleKey = pathToModule(path)
       if (moduleKey) {
-        const { data: staff } = await supabase
+        const { data: staff } = await db
           .from('staff_members')
           .select('active, permissions')
           .eq('auth_user_id', user.id)

@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { PartnerSidebar } from '@/components/partner/sidebar'
 
@@ -7,11 +7,14 @@ export default async function PartnerLayout({ children }: { children: React.Reac
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: roleData } = await supabase
+  // Rol via service-role (bypasst de restrictive user_roles-RLS die niet-admins
+  // hun eigen rol laat lezen → anders login-loop voor partners).
+  const admin = createAdminSupabaseClient()
+  const { data: roleData } = await admin
     .from('user_roles').select('role').eq('user_id', user.id).maybeSingle()
   if (roleData?.role !== 'freelancer') redirect('/login')
 
-  const { data: partner } = await supabase
+  const { data: partner } = await admin
     .from('freelancers').select('name').eq('user_id', user.id).maybeSingle()
 
   return (
