@@ -48,6 +48,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 export function MetricoolClient() {
   const [configured, setConfigured] = useState<boolean | null>(null)
+  const [migrated, setMigrated] = useState(true)
   const [clients, setClients] = useState<ClientRow[]>([])
   const [brands, setBrands] = useState<Brand[]>([])
   const [selectedClients, setSelectedClients] = useState<Set<string>>(new Set()) // leeg = alle gekoppelde
@@ -65,6 +66,7 @@ export function MetricoolClient() {
       const res = await fetch('/api/admin/metricool/brands')
       const j = await res.json()
       setConfigured(!!j.configured)
+      setMigrated(j.migrated !== false)
       setClients(j.clients ?? [])
       setBrands(j.brands ?? [])
     } catch { setConfigured(false) }
@@ -250,6 +252,7 @@ export function MetricoolClient() {
         <LinkDialog
           clients={clients}
           brands={brands}
+          migrated={migrated}
           onClose={() => setLinkOpen(false)}
           onChanged={loadBrands}
         />
@@ -325,9 +328,9 @@ function PreviewPanel({ post, onClose }: { post: Post | null; onClose: () => voi
 }
 
 function LinkDialog({
-  clients, brands, onClose, onChanged,
+  clients, brands, migrated, onClose, onChanged,
 }: {
-  clients: ClientRow[]; brands: Brand[]; onClose: () => void; onChanged: () => void
+  clients: ClientRow[]; brands: Brand[]; migrated: boolean; onClose: () => void; onChanged: () => void
 }) {
   const [saving, setSaving] = useState<string | null>(null)
   const setLink = async (client: ClientRow, blogId: string) => {
@@ -349,13 +352,19 @@ function LinkDialog({
           <button onClick={onClose} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-gray-100"><X className="h-4 w-4" /></button>
         </div>
         <div className="p-5 overflow-y-auto space-y-2">
+          {!migrated && (
+            <div className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              De databasekolommen ontbreken nog. Draai de migratie <code className="font-mono">99999999_SYNC_ALL.sql</code> in Supabase; daarna kun je koppelingen opslaan.
+            </div>
+          )}
           {brands.length === 0 && <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">Geen Metricool-merken gevonden. Controleer de API-sleutel.</div>}
+          {clients.length === 0 && <div className="text-sm text-gray-500 px-1 py-2">Geen klanten gevonden.</div>}
           {clients.map((c) => (
             <div key={c.id} className="flex items-center gap-2">
               <div className="flex-1 min-w-0 text-sm font-medium truncate">{c.company_name}</div>
               <select
                 value={c.metricool_blog_id ?? ''}
-                disabled={saving === c.id}
+                disabled={saving === c.id || !migrated}
                 onChange={(e) => setLink(c, e.target.value)}
                 className="w-52 px-2 py-1.5 text-xs border border-gray-200 rounded-lg"
               >
