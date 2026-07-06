@@ -14,50 +14,91 @@ import { useState } from 'react'
 import { useRefresh } from '@/lib/use-refresh'
 import { Logo } from '@/components/logo'
 
-const NAV = [
-  { label: 'Command Center', href: '/admin', icon: LayoutDashboard, exact: true },
-  { label: 'Klanten',        href: '/admin/clients',              icon: Users, module: 'clients' },
-  { label: 'Contracten',     href: '/admin/contracts',            icon: FileText, module: 'contracts' },
+type NavChild = { label: string; href: string; icon: React.ElementType }
+type NavEntry = {
+  label: string
+  href: string
+  icon: React.ElementType
+  exact?: boolean
+  module?: string
+  adminOnly?: boolean
+  children?: NavChild[]
+}
+type NavSection = { title?: string; items: NavEntry[] }
+
+// Gegroepeerd per thema zodat de zijbalk overzichtelijk blijft. Volgorde binnen
+// een sectie = werkvolgorde. Gating (module/adminOnly) blijft per item behouden.
+const SECTIONS: NavSection[] = [
   {
-    label: 'Diensten', href: '/admin/services', icon: Briefcase, module: 'content',
-    children: [
-      { label: 'Social Media', href: '/admin/services/social-media', icon: Calendar },
-      { label: 'Website',      href: '/admin/services/website',      icon: Globe },
+    items: [
+      { label: 'Command Center', href: '/admin', icon: LayoutDashboard, exact: true },
     ],
   },
-  { label: 'Metricool',   href: '/admin/metricool',    icon: CalendarClock, module: 'metricool' },
   {
-    label: 'Blogs', href: '/admin/blog-calendar', icon: Newspaper, module: 'blogs',
-    children: [
-      { label: 'Projecten', href: '/admin/blogaccounts',  icon: Newspaper },
-      { label: 'Kalender',  href: '/admin/blog-calendar', icon: CalendarDays },
+    title: 'Klanten & content',
+    items: [
+      { label: 'Klanten',    href: '/admin/clients',   icon: Users, module: 'clients' },
+      { label: 'Contracten', href: '/admin/contracts', icon: FileText, module: 'contracts' },
+      {
+        label: 'Diensten', href: '/admin/services', icon: Briefcase, module: 'content',
+        children: [
+          { label: 'Social Media', href: '/admin/services/social-media', icon: Calendar },
+          { label: 'Website',      href: '/admin/services/website',      icon: Globe },
+        ],
+      },
+      { label: 'Metricool', href: '/admin/metricool', icon: CalendarClock, module: 'metricool' },
+      {
+        label: 'Blogs', href: '/admin/blog-calendar', icon: Newspaper, module: 'blogs',
+        children: [
+          { label: 'Projecten', href: '/admin/blogaccounts',  icon: Newspaper },
+          { label: 'Kalender',  href: '/admin/blog-calendar', icon: CalendarDays },
+        ],
+      },
     ],
   },
-  { label: 'Partners',    href: '/admin/partners',     icon: UserSquare2, module: 'partners' },
-  { label: 'Opdrachten',  href: '/admin/assignments',  icon: Briefcase, module: 'assignments' },
-  { label: 'Settlements', href: '/admin/settlements',  icon: ArrowLeftRight, module: 'settlements' },
-  { label: 'Prognose',    href: '/admin/revenue/omzet', icon: TrendingUp, module: 'finance' },
-  { label: 'Facturen',    href: '/admin/invoices',     icon: Receipt, module: 'invoices' },
-  { label: 'Vesting',     href: '/admin/vesting',      icon: Rocket, module: 'vesting' },
-  { label: 'Aankopen',    href: '/admin/purchases',    icon: ShoppingCart, module: 'purchases' },
-  { label: 'E-mailcenter', href: '/admin/email', icon: Mail, module: 'email' },
   {
-    label: 'Informatief', href: '/admin/informatief', icon: Info, module: 'info',
-    children: [
-      { label: 'Onboarding Info', href: '/admin/onboarding',   icon: ClipboardList },
-      { label: 'Maandplanning',   href: '/admin/maandplanning', icon: CalendarDays },
+    title: 'Partners',
+    items: [
+      { label: 'Partners',    href: '/admin/partners',    icon: UserSquare2, module: 'partners' },
+      { label: 'Opdrachten',  href: '/admin/assignments', icon: Briefcase, module: 'assignments' },
+      { label: 'Settlements', href: '/admin/settlements', icon: ArrowLeftRight, module: 'settlements' },
     ],
   },
-  { label: 'Werknemers',  href: '/admin/werknemers',   icon: UserCog, adminOnly: true },
+  {
+    title: 'Financieel',
+    items: [
+      { label: 'Prognose', href: '/admin/revenue/omzet', icon: TrendingUp, module: 'finance' },
+      { label: 'Facturen', href: '/admin/invoices',      icon: Receipt, module: 'invoices' },
+      { label: 'Vesting',  href: '/admin/vesting',       icon: Rocket, module: 'vesting' },
+      { label: 'Aankopen', href: '/admin/purchases',     icon: ShoppingCart, module: 'purchases' },
+    ],
+  },
+  {
+    title: 'Overig',
+    items: [
+      { label: 'E-mailcenter', href: '/admin/email', icon: Mail, module: 'email' },
+      {
+        label: 'Informatief', href: '/admin/informatief', icon: Info, module: 'info',
+        children: [
+          { label: 'Onboarding Info', href: '/admin/onboarding',   icon: ClipboardList },
+          { label: 'Maandplanning',   href: '/admin/maandplanning', icon: CalendarDays },
+        ],
+      },
+    ],
+  },
+  {
+    title: 'Beheer',
+    items: [
+      { label: 'Werknemers', href: '/admin/werknemers', icon: UserCog, adminOnly: true },
+    ],
+  },
 ]
 
 function NavItem({
   item,
-  depth = 0,
   onNavigate,
 }: {
-  item: typeof NAV[number]
-  depth?: number
+  item: NavEntry
   onNavigate: () => void
 }) {
   const pathname = usePathname()
@@ -117,12 +158,14 @@ export function AdminSidebar({ allowedModules, isEmployee = false }: { allowedMo
   const [mobileOpen, setMobileOpen] = useState(false)
 
   // Werknemer ziet enkel toegestane modules; admin (allowedModules undefined) ziet alles.
-  const visibleNav = NAV.filter((item) => {
-    if ('adminOnly' in item && item.adminOnly && isEmployee) return false
-    const moduleKey = 'module' in item ? (item.module as string | undefined) : undefined
-    if (!moduleKey || !allowedModules) return true
-    return canSeeModule(allowedModules, moduleKey)
-  })
+  const canSee = (item: NavEntry) => {
+    if (item.adminOnly && isEmployee) return false
+    if (!item.module || !allowedModules) return true
+    return canSeeModule(allowedModules, item.module)
+  }
+  const visibleSections = SECTIONS
+    .map((s) => ({ title: s.title, items: s.items.filter(canSee) }))
+    .filter((s) => s.items.length > 0)
 
   const handleLogout = async () => {
     const supabase = createClient()
@@ -189,9 +232,20 @@ export function AdminSidebar({ allowedModules, isEmployee = false }: { allowedMo
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-          {visibleNav.map((item) => (
-            <NavItem key={item.href} item={item} onNavigate={closeMobile} />
+        <nav className="flex-1 px-3 py-4 overflow-y-auto">
+          {visibleSections.map((section, si) => (
+            <div key={section.title ?? `sec-${si}`} className={si > 0 ? 'mt-4' : ''}>
+              {section.title && (
+                <div className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                  {section.title}
+                </div>
+              )}
+              <div className="space-y-0.5">
+                {section.items.map((item) => (
+                  <NavItem key={item.href} item={item} onNavigate={closeMobile} />
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
 
