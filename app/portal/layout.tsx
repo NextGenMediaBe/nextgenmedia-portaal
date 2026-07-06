@@ -17,6 +17,14 @@ export default async function PortalLayout({ children }: { children: React.React
   const { data: client } = await admin
     .from('clients').select('id, company_name').eq('id', session.clientId).maybeSingle()
 
+  // Metricool-koppeling apart + best-effort (kolom kan ontbreken vóór migratie).
+  let hasMetricool = false
+  try {
+    const { data: mc } = await admin
+      .from('clients').select('metricool_blog_id').eq('id', session.clientId).maybeSingle()
+    hasMetricool = !!(mc as { metricool_blog_id?: string | null } | null)?.metricool_blog_id
+  } catch { hasMetricool = false }
+
   // Actieve diensten + blogs (gating naast rechten).
   let activeServices: string[] = []
   let hasBlogs = false
@@ -36,6 +44,7 @@ export default async function PortalLayout({ children }: { children: React.React
         companyName={client?.company_name ?? 'Klantenportaal'}
         activeServices={activeServices}
         hasBlogs={hasBlogs}
+        hasMetricool={hasMetricool}
         allowedModules={allowedModules}
       />
       <main className="flex-1 min-w-0 md:ml-[var(--sidebar-width)] min-h-screen">

@@ -2,12 +2,13 @@
 // platform (contracten, social media, website, blogs, taken, bestanden).
 // Pure module — geen server-only imports, veilig in client- én servercomponenten.
 
-export const PORTAL_MODULES = ['social_media', 'website', 'contracts', 'blogs', 'tasks', 'files'] as const
+export const PORTAL_MODULES = ['social_media', 'metricool', 'website', 'contracts', 'blogs', 'tasks', 'files'] as const
 export type PortalModule = (typeof PORTAL_MODULES)[number]
 
 // Acties per module (de "actie-rechten").
 export const MODULE_ACTIONS: Record<PortalModule, string[]> = {
   social_media: ['view', 'feedback', 'approve_scripts'],
+  metricool:    ['view'],
   website:      ['view', 'request_maintenance'],
   contracts:    ['view', 'sign', 'download'],
   blogs:        ['view', 'edit'],
@@ -17,6 +18,7 @@ export const MODULE_ACTIONS: Record<PortalModule, string[]> = {
 
 export const MODULE_LABELS: Record<PortalModule, string> = {
   social_media: 'Social Media',
+  metricool:    'Metricool',
   website:      'Website',
   contracts:    'Contracten',
   blogs:        'Blogs',
@@ -25,9 +27,11 @@ export const MODULE_LABELS: Record<PortalModule, string> = {
 }
 
 // Welke modules hebben een werkende pagina/route. 'files' bestaat nog niet —
-// niet misleidend tonen alsof het al werkt.
+// niet misleidend tonen alsof het al werkt. 'metricool' toont enkel als de klant
+// óók aan een Metricool-merk gekoppeld is (gating in layout/nav).
 export const MODULE_IMPLEMENTED: Record<PortalModule, boolean> = {
   social_media: true,
+  metricool:    true,
   website:      true,
   contracts:    true,
   blogs:        true,
@@ -75,7 +79,7 @@ export type PresetKey = 'eigenaar' | 'marketing' | 'website' | 'financieel' | 'r
 
 export const PRESETS: { key: PresetKey; label: string; description: string; permissions: () => Permissions }[] = [
   { key: 'eigenaar',   label: 'Eigenaar',          description: 'Alle rechten',                       permissions: fullPermissions },
-  { key: 'marketing',  label: 'Marketing',         description: 'Social Media + Blogs + Taken',        permissions: () => only(['social_media', 'blogs', 'tasks']) },
+  { key: 'marketing',  label: 'Marketing',         description: 'Social Media + Metricool + Blogs + Taken', permissions: () => only(['social_media', 'metricool', 'blogs', 'tasks']) },
   { key: 'website',    label: 'Websitebeheerder',  description: 'Website + Taken + Bestanden',         permissions: () => only(['website', 'tasks', 'files']) },
   { key: 'financieel', label: 'Financieel',        description: 'Contracten bekijken + downloaden',    permissions: () => ({ contracts: { view: true, sign: false, download: true } }) },
   { key: 'readonly',   label: 'Alleen lezen',      description: 'Alles bekijken, niets aanpassen',     permissions: viewOnly },

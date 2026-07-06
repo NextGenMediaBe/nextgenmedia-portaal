@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { useRefresh } from '@/lib/use-refresh'
 import { Logo } from '@/components/logo'
-import { LayoutDashboard, FileText, Calendar, Globe, LogOut, RefreshCcw, Menu, X, ListChecks, Newspaper } from 'lucide-react'
+import { LayoutDashboard, FileText, Calendar, Globe, LogOut, RefreshCcw, Menu, X, ListChecks, Newspaper, CalendarClock } from 'lucide-react'
 import { MODULE_IMPLEMENTED, type PortalModule } from '@/lib/portal-permissions'
 
 type NavItem = {
@@ -17,6 +17,7 @@ type NavItem = {
   exact?: boolean
   requiresService?: string
   requiresBlogs?: boolean
+  requiresMetricool?: boolean
   module?: string
 }
 
@@ -25,6 +26,7 @@ const NAV: NavItem[] = [
   { label: 'Contracten',   href: '/portal/contracts',     icon: FileText,  module: 'contracts' },
   { label: 'Taken',        href: '/portal/tasks',         icon: ListChecks, module: 'tasks' },
   { label: 'Social Media', href: '/portal/social-media',  icon: Calendar, requiresService: 'social-media', module: 'social_media' },
+  { label: 'Metricool',    href: '/portal/metricool',     icon: CalendarClock, requiresMetricool: true, module: 'metricool' },
   { label: 'Website',      href: '/portal/website',       icon: Globe,    requiresService: 'webdesign', module: 'website' },
   { label: 'Blogs',        href: '/portal/blogs',         icon: Newspaper, requiresBlogs: true, module: 'blogs' },
 ]
@@ -33,11 +35,13 @@ export function PortalSidebar({
   companyName,
   activeServices = [],
   hasBlogs = false,
+  hasMetricool = false,
   allowedModules,
 }: {
   companyName: string
   activeServices?: string[]
   hasBlogs?: boolean
+  hasMetricool?: boolean
   /** Modules met view-recht. Undefined = alles tonen (owner/backward compat). */
   allowedModules?: string[]
 }) {
@@ -59,6 +63,7 @@ export function PortalSidebar({
       (!item.module || MODULE_IMPLEMENTED[item.module as PortalModule]) &&
       (!item.requiresService || activeServices.includes(item.requiresService)) &&
       (!item.requiresBlogs || hasBlogs) &&
+      (!item.requiresMetricool || hasMetricool) &&
       (!item.module || !allowedModules || allowedModules.includes(item.module))
   )
 
