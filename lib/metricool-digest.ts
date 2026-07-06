@@ -17,10 +17,12 @@ export function brusselsDateHour(): { date: string; hour: number } {
   return { date: `${get('year')}-${get('month')}-${get('day')}`, hour: Number(hourRaw === '24' ? '0' : hourRaw) }
 }
 
-function fmtTime(iso: string | null): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleTimeString('nl-BE', { timeZone: 'Europe/Brussels', hour: '2-digit', minute: '2-digit' })
+// datetime is een naïeve Brusselse wall-clock string ("YYYY-MM-DDTHH:mm:ss") —
+// tijd zuiver uit de componenten halen, geen tijdzone-conversie.
+function fmtTime(dt: string | null): string {
+  if (!dt) return '—'
+  const m = dt.match(/T(\d{2}):(\d{2})/)
+  return m ? `${m[1]}:${m[2]}` : '—'
 }
 
 export type DigestResult = { ok: boolean; sent: boolean; clients: number; posts: number; date: string; reason?: string; error?: string }

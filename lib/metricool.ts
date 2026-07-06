@@ -126,18 +126,40 @@ function pickMedia(raw: any): MetricoolMedia[] {
       }
     }
   }
+  // Video's: gebruik de aparte thumbnail (poster) indien aanwezig.
+  const thumb = typeof raw?.videoThumbnailUrl === 'string' ? raw.videoThumbnailUrl : null
+  if (thumb) for (const m of out) if (m.type === 'video' && !m.thumbnail) m.thumbnail = thumb
   // Dedup op url
   const seen = new Set<string>()
   return out.filter((m) => (seen.has(m.url) ? false : (seen.add(m.url), true)))
 }
 
+// Metricool geeft de tijd als naïeve wall-clock in publicationDate.timezone
+// (meestal Europe/Brussels). We bewaren die string ONGEWIJZIGD — géén UTC-
+// conversie — zodat 15:00 ook echt 15:00 blijft. UI + mail behandelen 'm als
+// Brusselse tijd (de kijkers zitten in België).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function pickDatetime(raw: any): string | null {
-  const d = raw?.publicationDate?.dateTime ?? raw?.publicationDate ?? raw?.date ?? raw?.datetime ?? raw?.scheduledDate ?? raw?.publishDate
+  const pd = raw?.publicationDate
+  const d = (pd && typeof pd === 'object' ? pd.dateTime : pd) ?? raw?.date ?? raw?.datetime ?? raw?.scheduledDate ?? raw?.publishDate
   if (!d) return null
-  const s = String(d)
-  const parsed = Date.parse(s)
-  return Number.isNaN(parsed) ? s : new Date(parsed).toISOString()
+  return String(d).slice(0, 19)   // "YYYY-MM-DDTHH:mm:ss" (naïef)
+}
+
+/** Status afleiden: draft-vlag + providers[].status (geen top-level status-veld). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function pickStatus(raw: any): string {
+  if (raw?.draft === true) return 'draft'
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const provs: any[] = Array.isArray(raw?.providers) ? raw.providers : []
+  const statuses = provs.map((p) => String(p?.status ?? '').toUpperCase()).filter(Boolean)
+  if (statuses.length) {
+    if (statuses.every((s) => ['PUBLISHED', 'OK', 'DONE', 'SENT'].includes(s))) return 'published'
+    if (statuses.some((s) => ['ERROR', 'FAILED', 'REJECTED'].includes(s))) return 'error'
+    return 'scheduled'
+  }
+  const top = String(raw?.status ?? raw?.state ?? '').toLowerCase()
+  return top || (raw?.published ? 'published' : 'scheduled')
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -166,7 +188,7 @@ export function normalizePost(raw: any, blogId: string): MetricoolPost {
     datetime: pickDatetime(raw),
     networks: pickNetworks(raw),
     text: String(raw?.text ?? raw?.content ?? raw?.caption ?? raw?.message ?? '').trim(),
-    status: String(raw?.status ?? raw?.state ?? (raw?.published ? 'published' : 'scheduled')).toLowerCase(),
+    status: pickStatus(raw),
     media: pickMedia(raw),
     permalink: raw?.permalink ?? raw?.link ?? raw?.url ?? null,
   }
@@ -175,12 +197,8 @@ export function normalizePost(raw: any, blogId: string): MetricoolPost {
 /** Kandidaat-endpoints voor geplande posts (eerste die een lijst geeft wint). */
 function postCandidates(blogId: string, start: string, end: string): Array<{ path: string; query: Record<string, string> }> {
   const q = { blogId, start, end, timezone: 'Europe/Brussels' }
-  return [
-    { path: '/v2/scheduler/posts', query: q },
-    { path: '/scheduler/posts', query: q },
-    { path: '/v2/planner/posts', query: q },
-    { path: '/planner/posts', query: q },
-  ]
+  // Bevestigd via /diag: enkel /v2/scheduler/posts werkt (de rest gaf 404).
+  return [{ path: '/v2/scheduler/posts', query: q }]
 }
 
 /** yyyy-MM-dd → volledige dag; Metricool verwacht meestal 'yyyy-MM-ddTHH:mm:ss'. */

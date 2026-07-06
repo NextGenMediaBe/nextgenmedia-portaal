@@ -27,11 +27,36 @@ function startOfMonthGrid(d: Date): Date {
   const dow = (first.getDay() + 6) % 7
   return new Date(first.getFullYear(), first.getMonth(), 1 - dow)
 }
-export function timeLabel(iso: string | null): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  return d.toLocaleTimeString('nl-BE', { hour: '2-digit', minute: '2-digit' })
+// Datum/tijd komen als naïeve Brusselse wall-clock strings ("YYYY-MM-DDTHH:mm:ss").
+// We renderen ze zuiver uit de string-componenten → geen tijdzone-verschuiving,
+// ongeacht de tijdzone van de kijker.
+export function timeLabel(dt: string | null): string {
+  if (!dt) return ''
+  const m = dt.match(/T(\d{2}):(\d{2})/)
+  return m ? `${m[1]}:${m[2]}` : ''
+}
+function dayKeyOf(dt: string): string { return dt.slice(0, 10) }
+function longDateOf(dt: string): string {
+  const [y, mo, d] = dt.slice(0, 10).split('-').map(Number)
+  if (!y || !mo || !d) return dt.slice(0, 10)
+  return new Date(y, mo - 1, d, 12).toLocaleDateString('nl-BE', { weekday: 'long', day: 'numeric', month: 'long' })
+}
+function fullDateTimeOf(dt: string): string {
+  const [y, mo, d] = dt.slice(0, 10).split('-').map(Number)
+  if (!y || !mo || !d) return dt
+  const label = new Date(y, mo - 1, d, 12).toLocaleDateString('nl-BE', { weekday: 'short', day: 'numeric', month: 'short' })
+  return `${label} ${timeLabel(dt)}`
+}
+function brusselsToday(): string {
+  const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Brussels', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date())
+  const g = (t: string) => p.find((x) => x.type === t)?.value ?? ''
+  return `${g('year')}-${g('month')}-${g('day')}`
+}
+function brusselsNowNaive(): string {
+  const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Brussels', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(new Date())
+  const g = (t: string) => p.find((x) => x.type === t)?.value ?? '00'
+  const h = g('hour') === '24' ? '00' : g('hour')
+  return `${g('year')}-${g('month')}-${g('day')}T${h}:${g('minute')}:${g('second')}`
 }
 
 const STATUS_STYLE: Record<string, string> = {
@@ -74,7 +99,7 @@ export function MetricoolCalendarView({
     const m = new Map<string, MetricoolCalPost[]>()
     for (const p of posts) {
       if (!p.datetime) continue
-      const key = ymd(new Date(p.datetime))
+      const key = dayKeyOf(p.datetime)
       const list = m.get(key) ?? []
       list.push(p); m.set(key, list)
     }
@@ -83,8 +108,8 @@ export function MetricoolCalendarView({
   }, [posts])
 
   const nextPost = useMemo(() => {
-    const now = Date.now()
-    return posts.filter((p) => p.datetime && new Date(p.datetime).getTime() >= now)
+    const now = brusselsNowNaive()
+    return posts.filter((p) => p.datetime && p.datetime >= now)
       .sort((a, b) => (a.datetime ?? '').localeCompare(b.datetime ?? ''))[0] ?? null
   }, [posts])
 
@@ -94,7 +119,7 @@ export function MetricoolCalendarView({
   }, [cursor])
 
   const title = cursor.toLocaleDateString('nl-BE', { month: 'long', year: 'numeric' })
-  const today = ymd(new Date())
+  const today = brusselsToday()
 
   return (
     <div className="space-y-4">
@@ -104,7 +129,7 @@ export function MetricoolCalendarView({
           <div className="text-sm">
             <span className="text-gray-500">Volgende post:</span>{' '}
             {showClientName && <><b>{nextPost.clientName}</b> — </>}
-            {nextPost.datetime && new Date(nextPost.datetime).toLocaleDateString('nl-BE', { weekday: 'long', day: 'numeric', month: 'long' })}
+            {nextPost.datetime && longDateOf(nextPost.datetime)}
             {' '}om <b>{timeLabel(nextPost.datetime)}</b>
             {nextPost.networks.length > 0 && <span className="text-gray-400"> · {nextPost.networks.join(', ')}</span>}
           </div>
@@ -183,7 +208,7 @@ function PreviewPanel({ post, showClientName, onClose }: { post: MetricoolCalPos
           {showClientName && <h3 className="font-semibold text-gray-900 leading-snug">{post.clientName}</h3>}
           <div className="text-xs text-gray-500 mt-1 flex items-center gap-1">
             <Clock className="h-3 w-3" />
-            {post.datetime ? new Date(post.datetime).toLocaleString('nl-BE', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Geen tijd'}
+            {post.datetime ? fullDateTimeOf(post.datetime) : 'Geen tijd'}
           </div>
         </div>
         <button onClick={onClose} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 shrink-0"><X className="h-4 w-4" /></button>
