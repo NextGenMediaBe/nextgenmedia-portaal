@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, Users, FileText, UserSquare2, ArrowLeftRight, TrendingUp,
   LogOut, ChevronDown, Globe, Calendar, Briefcase, RefreshCcw, Menu, X,
-  Info, ClipboardList, CalendarDays, ShoppingCart, Mail, Receipt, Newspaper, Rocket, UserCog,
+  Info, ClipboardList, CalendarDays, ShoppingCart, Mail, Receipt, Newspaper, Rocket, UserCog, CalendarClock,
 } from 'lucide-react'
 import { canSeeModule } from '@/lib/staff'
 import { useState } from 'react'
@@ -25,6 +25,7 @@ const NAV = [
       { label: 'Website',      href: '/admin/services/website',      icon: Globe },
     ],
   },
+  { label: 'Metricool',   href: '/admin/metricool',    icon: CalendarClock, module: 'metricool' },
   {
     label: 'Blogs', href: '/admin/blog-calendar', icon: Newspaper, module: 'blogs',
     children: [

@@ -1310,5 +1310,12 @@ CREATE POLICY "staff admin all" ON public.staff_members
 CREATE POLICY "staff self read" ON public.staff_members
   FOR SELECT TO authenticated USING (auth_user_id = auth.uid());
 
+-- ── Metricool-koppeling (read-only overzicht) ────────────────────────────────
+-- Elke app-klant kan aan één Metricool-merk (blogId) gekoppeld worden. Enkel
+-- gekoppelde klanten verschijnen in het Metricool-overzicht en -klantportaal.
+ALTER TABLE public.clients
+  ADD COLUMN IF NOT EXISTS metricool_blog_id     text,
+  ADD COLUMN IF NOT EXISTS metricool_brand_name  text;
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.

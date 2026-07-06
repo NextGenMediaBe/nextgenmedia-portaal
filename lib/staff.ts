@@ -14,6 +14,7 @@ export const ADMIN_MODULES: AdminModule[] = [
   { key: 'clients',     label: 'Klanten',              prefixes: ['/admin/clients'] },
   { key: 'contracts',   label: 'Contracten',           prefixes: ['/admin/contracts'] },
   { key: 'content',     label: 'Content / Diensten',   prefixes: ['/admin/services'] },
+  { key: 'metricool',   label: 'Metricool',            prefixes: ['/admin/metricool'] },
   { key: 'blogs',       label: 'Blogs',                prefixes: ['/admin/blog-calendar', '/admin/blogaccounts', '/admin/blogs'] },
   { key: 'partners',    label: 'Partners',             prefixes: ['/admin/partners'] },
   { key: 'assignments', label: 'Opdrachten',           prefixes: ['/admin/assignments'] },
@@ -51,7 +52,7 @@ export function canSeeModule(perms: string[] | null | undefined, key: string | n
 
 export type StaffPreset = { key: string; label: string; modules: string[] }
 export const STAFF_PRESETS: StaffPreset[] = [
-  { key: 'content', label: 'Content/Social', modules: ['clients', 'content', 'blogs', 'info'] },
+  { key: 'content', label: 'Content/Social', modules: ['clients', 'content', 'metricool', 'blogs', 'info'] },
   { key: 'sales', label: 'Sales/Klanten', modules: ['clients', 'contracts', 'invoices', 'info'] },
   { key: 'operations', label: 'Operations', modules: ['clients', 'content', 'blogs', 'assignments', 'partners', 'info'] },
   { key: 'no_finance', label: 'Alles behalve financieel', modules: ['clients', 'contracts', 'content', 'blogs', 'partners', 'assignments', 'email', 'info'] },
