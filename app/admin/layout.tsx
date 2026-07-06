@@ -19,20 +19,28 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     .eq('user_id', user.id)
     .maybeSingle()
 
-  const role = roleData?.role
-  if (role !== 'admin' && role !== 'employee') redirect('/login')
+  let role = roleData?.role as string | undefined
 
   // Werknemer = enkel toegestane modules in de sidebar (admin = alles → undefined).
+  // staff_members is de bron van waarheid: een actieve staff-rij maakt de
+  // gebruiker werknemer, ook als de user_roles-rol ontbreekt (app_role-enum kan
+  // 'employee' missen).
   let allowedModules: string[] | undefined
-  if (role === 'employee') {
+  if (role !== 'admin') {
     const { data: staff } = await admin
       .from('staff_members')
       .select('active, permissions')
       .eq('auth_user_id', user.id)
       .maybeSingle()
-    if (staff?.active === false) redirect('/login')
-    allowedModules = Array.isArray(staff?.permissions) ? (staff!.permissions as string[]) : []
+    if (staff && staff.active !== false) {
+      role = 'employee'
+      allowedModules = Array.isArray(staff.permissions) ? (staff.permissions as string[]) : []
+    } else if (staff && staff.active === false) {
+      redirect('/login')
+    }
   }
+
+  if (role !== 'admin' && role !== 'employee') redirect('/login')
 
   return (
     <div className="flex min-h-screen bg-gray-50">

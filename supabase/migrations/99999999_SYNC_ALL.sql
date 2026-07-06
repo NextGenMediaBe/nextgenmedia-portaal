@@ -1266,6 +1266,11 @@ CREATE POLICY "terms read active" ON public.terms
   FOR SELECT TO authenticated USING (active = true);
 
 -- ── Interne werknemers (rol 'employee') met per-module zichtbaarheid ──────────
+-- 'employee' toevoegen aan het app_role-enum. MOET top-level (niet in een DO-block)
+-- en de waarde mag niet in dezelfde transactie gebruikt worden — dit bestand doet
+-- dat ook nergens. Idempotent via IF NOT EXISTS.
+ALTER TYPE public.app_role ADD VALUE IF NOT EXISTS 'employee';
+
 CREATE TABLE IF NOT EXISTS public.staff_members (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   auth_user_id  uuid,

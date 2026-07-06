@@ -37,7 +37,16 @@ export async function POST(req: NextRequest) {
     if (authErr || !created.user) return NextResponse.json({ error: `Account aanmaken mislukt: ${authErr?.message ?? 'onbekend'}` }, { status: 400 })
     const authUserId = created.user.id
 
-    await admin.from('user_roles').insert({ user_id: authUserId, role: 'employee' })
+    // Rol-rij is best-effort: het app_role-enum bevat mogelijk (nog) geen
+    // 'employee' als de migratie niet gedraaid is. De werknemer-status wordt
+    // primair uit staff_members afgeleid (zie role-resolutie in middleware/
+    // layouts), dus een mislukte rol-insert mag de aanmaak niet blokkeren.
+    await admin.from('user_roles').upsert(
+      { user_id: authUserId, role: 'employee' },
+      { onConflict: 'user_id,role' },
+    ).then(({ error }) => { if (error) console.warn('user_roles employee insert overgeslagen:', error.message) })
+
+    // staff_members is de bron van waarheid — dit MOET lukken.
     const { data: row, error: rowErr } = await admin
       .from('staff_members')
       .insert({ auth_user_id: authUserId, name, email, active: true, permissions, created_by: actor.id })

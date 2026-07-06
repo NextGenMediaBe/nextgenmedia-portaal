@@ -72,7 +72,22 @@ export async function updateSession(request: NextRequest) {
     .limit(1)
     .maybeSingle()
 
-  const role = roleData?.role as string | undefined
+  let role = roleData?.role as string | undefined
+
+  // staff_members = bron van waarheid voor werknemers. Het app_role-enum bevat
+  // mogelijk (nog) geen 'employee', waardoor de rol-rij kan ontbreken; een
+  // actieve staff-rij maakt de gebruiker sowieso werknemer. Enkel opzoeken als
+  // de rol geen bekende non-employee is (bespaart een query voor admin/klant/partner).
+  let staff: { active?: boolean; permissions?: string[] } | null = null
+  if (role !== 'admin' && role !== 'client' && role !== 'freelancer') {
+    const { data } = await db
+      .from('staff_members')
+      .select('active, permissions')
+      .eq('auth_user_id', user.id)
+      .maybeSingle()
+    staff = data
+    if (staff && staff.active !== false) role = 'employee'
+  }
 
   // Role-based routing
   if (path.startsWith('/admin')) {
@@ -80,20 +95,17 @@ export async function updateSession(request: NextRequest) {
     if (role === 'admin') {
       // ok
     } else if (role === 'employee') {
+      // Inactieve werknemer → geen toegang.
+      if (staff && staff.active === false) {
+        return NextResponse.redirect(new URL('/login', request.url))
+      }
       // Werknemersbeheer is altijd admin-only.
       if (path.startsWith('/admin/werknemers')) {
         return NextResponse.redirect(new URL('/admin', request.url))
       }
       const moduleKey = pathToModule(path)
       if (moduleKey) {
-        const { data: staff } = await db
-          .from('staff_members')
-          .select('active, permissions')
-          .eq('auth_user_id', user.id)
-          .maybeSingle()
-        const active = staff?.active !== false
         const perms = Array.isArray(staff?.permissions) ? (staff!.permissions as string[]) : []
-        if (!active) return NextResponse.redirect(new URL('/login', request.url))
         if (!canSeeModule(perms, moduleKey)) {
           return NextResponse.redirect(new URL('/admin', request.url))
         }

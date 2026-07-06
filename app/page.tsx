@@ -16,10 +16,17 @@ export default async function Home() {
     .eq('user_id', user.id)
     .maybeSingle()
 
-  const role = roleData?.role
-  // Werknemers (rol 'employee') horen — net als admins — in het admin-portaal.
-  // Zonder deze case viel een werknemer door naar /login → login stuurt terug
-  // naar '/' → oneindige refresh-loop (nooit ingelogd geraken).
+  let role = roleData?.role as string | undefined
+
+  // staff_members = bron van waarheid voor werknemers (het app_role-enum bevat
+  // mogelijk geen 'employee', dus de rol-rij kan ontbreken).
+  if (role !== 'admin' && role !== 'client' && role !== 'freelancer') {
+    const { data: staff } = await admin
+      .from('staff_members').select('active').eq('auth_user_id', user.id).maybeSingle()
+    if (staff && staff.active !== false) role = 'employee'
+  }
+
+  // Werknemers horen — net als admins — in het admin-portaal.
   if (role === 'admin' || role === 'employee') redirect('/admin')
   if (role === 'client') redirect('/portal')
   if (role === 'freelancer') redirect('/partner')
