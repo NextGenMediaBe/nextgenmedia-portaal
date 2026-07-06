@@ -1266,10 +1266,25 @@ CREATE POLICY "terms read active" ON public.terms
   FOR SELECT TO authenticated USING (active = true);
 
 -- ── Interne werknemers (rol 'employee') met per-module zichtbaarheid ──────────
--- 'employee' toevoegen aan het app_role-enum. MOET top-level (niet in een DO-block)
--- en de waarde mag niet in dezelfde transactie gebruikt worden — dit bestand doet
--- dat ook nergens. Idempotent via IF NOT EXISTS.
-ALTER TYPE public.app_role ADD VALUE IF NOT EXISTS 'employee';
+-- 'employee' toevoegen aan het app_role-enum — ENKEL als dat enum bestaat.
+-- In deze database is user_roles.role een gewone text-kolom (geen enum); dan is
+-- er niets te doen en mag SYNC_ALL niet crashen op een ontbrekend type. De guard
+-- op pg_type zorgt dat de ALTER daar nooit uitgevoerd wordt. (Werknemer-zijn
+-- wordt sowieso primair uit staff_members afgeleid, niet uit dit enum.)
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+    WHERE t.typname = 'app_role' AND n.nspname = 'public'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM pg_enum e
+    JOIN pg_type t ON t.oid = e.enumtypid
+    JOIN pg_namespace n ON n.oid = t.typnamespace
+    WHERE t.typname = 'app_role' AND n.nspname = 'public' AND e.enumlabel = 'employee'
+  ) THEN
+    ALTER TYPE public.app_role ADD VALUE 'employee';
+  END IF;
+END$$;
 
 CREATE TABLE IF NOT EXISTS public.staff_members (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
