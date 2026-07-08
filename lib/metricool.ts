@@ -316,8 +316,13 @@ export function normalizeStat(raw: any, network: string, type: string): PostStat
   }
 }
 
+// De /stats/*-endpoints verwachten datums als yyyyMMdd (géén streepjes/tijd) —
+// bevestigd via /diag ("could not be parsed at index 4"). Afwijkend van de
+// v2/scheduler-endpoints die net ISO met tijd willen.
+function statDate(d: string): string { return d.slice(0, 10).replace(/-/g, '') }
+
 async function fetchStatSource(blogId: string, src: StatSource, start: string, end: string): Promise<PostStat[]> {
-  const q = { blogId, start: dayStart(start), end: dayEnd(end), timezone: 'Europe/Brussels' }
+  const q = { blogId, start: statDate(start), end: statDate(end), timezone: 'Europe/Brussels' }
   try {
     const data = await mcJson<unknown>(src.path, q)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -396,7 +401,7 @@ export function summarizeStats(posts: PostStat[]): StatsSummary {
 
 /** Diagnose voor analytics: ruwe respons per stats-endpoint (veldnamen bevestigen). */
 export async function diagnoseAnalytics(blogId: string, start: string, end: string) {
-  const q = { blogId, start: dayStart(start), end: dayEnd(end), timezone: 'Europe/Brussels' }
+  const q = { blogId, start: statDate(start), end: statDate(end), timezone: 'Europe/Brussels' }
   const paths = [...STAT_SOURCES.map((s) => s.path), '/stats/posts', '/stats/besttimes/global', '/stats/besttimes/instagram']
   const attempts: Array<{ path: string; ok: boolean; status?: number; count?: number; sample?: unknown; error?: string }> = []
   for (const path of paths) {

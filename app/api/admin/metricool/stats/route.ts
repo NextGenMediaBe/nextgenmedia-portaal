@@ -24,9 +24,14 @@ export async function GET(req: NextRequest) {
       const { data } = await admin.from('clients').select('id, company_name, metricool_blog_id').eq('id', clientId).maybeSingle()
       client = data
     } else if (isDiag) {
-      const { data } = await admin.from('clients').select('id, company_name, metricool_blog_id')
-        .not('metricool_blog_id', 'is', null).order('company_name').limit(1).maybeSingle()
-      client = data
+      const forceBlog = sp.get('blogId')
+      if (forceBlog) {
+        client = { id: '', company_name: '(diag)', metricool_blog_id: forceBlog }
+      } else {
+        const { data } = await admin.from('clients').select('id, company_name, metricool_blog_id')
+          .not('metricool_blog_id', 'is', null).order('company_name').limit(1).maybeSingle()
+        client = data
+      }
     }
     if (!clientId && !isDiag) return NextResponse.json({ error: 'clientId vereist' }, { status: 400 })
     if (!client) return NextResponse.json({ error: 'Geen (gekoppelde) klant gevonden' }, { status: 404 })
