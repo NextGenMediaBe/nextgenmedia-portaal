@@ -15,12 +15,21 @@ export async function GET(req: NextRequest) {
 
     const sp = req.nextUrl.searchParams
     const clientId = sp.get('clientId')
-    if (!clientId) return NextResponse.json({ error: 'clientId vereist' }, { status: 400 })
-
+    const isDiag = sp.get('diag') === '1'
     const admin = createAdminSupabaseClient()
-    const { data: client } = await admin
-      .from('clients').select('id, company_name, metricool_blog_id').eq('id', clientId).maybeSingle()
-    if (!client) return NextResponse.json({ error: 'Klant niet gevonden' }, { status: 404 })
+
+    // Diagnose zonder clientId → automatisch de eerste gekoppelde klant.
+    let client: { id: string; company_name: string; metricool_blog_id: string | null } | null = null
+    if (clientId) {
+      const { data } = await admin.from('clients').select('id, company_name, metricool_blog_id').eq('id', clientId).maybeSingle()
+      client = data
+    } else if (isDiag) {
+      const { data } = await admin.from('clients').select('id, company_name, metricool_blog_id')
+        .not('metricool_blog_id', 'is', null).order('company_name').limit(1).maybeSingle()
+      client = data
+    }
+    if (!clientId && !isDiag) return NextResponse.json({ error: 'clientId vereist' }, { status: 400 })
+    if (!client) return NextResponse.json({ error: 'Geen (gekoppelde) klant gevonden' }, { status: 404 })
     if (!client.metricool_blog_id) return NextResponse.json({ configured: true, linked: false })
 
     const blogId = client.metricool_blog_id as string
