@@ -7,14 +7,14 @@ import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, Users, FileText, UserSquare2, ArrowLeftRight, TrendingUp,
   LogOut, ChevronDown, Globe, Calendar, Briefcase, RefreshCcw, Menu, X,
-  Info, ClipboardList, CalendarDays, ShoppingCart, Mail, Receipt, Newspaper, Rocket, UserCog, CalendarClock,
+  Info, ClipboardList, CalendarDays, ShoppingCart, Mail, Receipt, Newspaper, Rocket, UserCog, CalendarClock, BarChart3,
 } from 'lucide-react'
 import { canSeeModule } from '@/lib/staff'
 import { useState } from 'react'
 import { useRefresh } from '@/lib/use-refresh'
 import { Logo } from '@/components/logo'
 
-type NavChild = { label: string; href: string; icon: React.ElementType }
+type NavChild = { label: string; href: string; icon: React.ElementType; exact?: boolean }
 type NavEntry = {
   label: string
   href: string
@@ -46,7 +46,13 @@ const SECTIONS: NavSection[] = [
           { label: 'Website',      href: '/admin/services/website',      icon: Globe },
         ],
       },
-      { label: 'Metricool', href: '/admin/metricool', icon: CalendarClock, module: 'metricool' },
+      {
+        label: 'Metricool', href: '/admin/metricool', icon: CalendarClock, module: 'metricool',
+        children: [
+          { label: 'Kalender',     href: '/admin/metricool',       icon: CalendarClock, exact: true },
+          { label: 'Statistieken', href: '/admin/metricool/stats', icon: BarChart3 },
+        ],
+      },
       {
         label: 'Blogs', href: '/admin/blog-calendar', icon: Newspaper, module: 'blogs',
         children: [
@@ -128,7 +134,7 @@ function NavItem({
                 key={child.href}
                 href={child.href}
                 onClick={onNavigate}
-                className={cn('sidebar-item text-xs', pathname.startsWith(child.href) && 'active')}
+                className={cn('sidebar-item text-xs', (child.exact ? pathname === child.href : pathname.startsWith(child.href)) && 'active')}
               >
                 <child.icon className="h-3.5 w-3.5 shrink-0" />
                 {child.label}

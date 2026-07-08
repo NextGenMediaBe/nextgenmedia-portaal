@@ -85,6 +85,7 @@ export function MetricoolCalendarView({
 }) {
   const [cursor, setCursor] = useState(() => new Date())
   const [selected, setSelected] = useState<MetricoolCalPost | null>(null)
+  const [dayModal, setDayModal] = useState<{ key: string; items: MetricoolCalPost[] } | null>(null)
 
   useEffect(() => {
     const start = ymd(new Date(cursor.getFullYear(), cursor.getMonth(), 1))
@@ -161,7 +162,13 @@ export function MetricoolCalendarView({
               const items = byDay.get(dayStr) ?? []
               return (
                 <div key={idx} className={`relative border-r border-b border-gray-100 p-1.5 flex flex-col gap-1 min-h-[104px] ${!inMonth ? 'bg-gray-50/50' : ''}`}>
-                  <span className={`text-[11px] font-medium px-1 py-0.5 rounded-full self-start ${isToday ? 'bg-[#fff848] text-black font-bold' : inMonth ? 'text-gray-700' : 'text-gray-300'}`}>{d.getDate()}</span>
+                  <button
+                    type="button"
+                    onClick={() => items.length > 0 && setDayModal({ key: dayStr, items })}
+                    disabled={items.length === 0}
+                    className={`text-[11px] font-medium px-1 py-0.5 rounded-full self-start ${isToday ? 'bg-[#fff848] text-black font-bold' : inMonth ? 'text-gray-700' : 'text-gray-300'} ${items.length > 0 ? 'hover:ring-1 hover:ring-gray-300 cursor-pointer' : ''}`}
+                    title={items.length > 0 ? `${items.length} post(s) — bekijk alles` : undefined}
+                  >{d.getDate()}</button>
                   <div className="flex flex-col gap-0.5 overflow-hidden">
                     {items.slice(0, 4).map((p) => (
                       <button key={p.id} onClick={() => setSelected(p)} title={`${showClientName ? p.clientName + ' · ' : ''}${timeLabel(p.datetime)}`}
@@ -172,7 +179,13 @@ export function MetricoolCalendarView({
                         <span className="truncate">{showClientName ? p.clientName : (p.networks[0] ?? 'post')}</span>
                       </button>
                     ))}
-                    {items.length > 4 && <div className="text-[10px] text-gray-400 px-1">+{items.length - 4} meer</div>}
+                    {items.length > 4 && (
+                      <button
+                        type="button"
+                        onClick={() => setDayModal({ key: dayStr, items })}
+                        className="text-[10px] text-gray-500 hover:text-black font-medium px-1 text-left hover:underline"
+                      >+{items.length - 4} meer</button>
+                    )}
                   </div>
                 </div>
               )
@@ -182,6 +195,67 @@ export function MetricoolCalendarView({
 
         <div className="lg:w-[380px]">
           <PreviewPanel post={selected} showClientName={showClientName} onClose={() => setSelected(null)} />
+        </div>
+      </div>
+
+      {dayModal && (
+        <DayModal
+          dayKey={dayModal.key}
+          items={dayModal.items}
+          showClientName={showClientName}
+          dot={dot}
+          onPick={(p) => { setSelected(p); setDayModal(null) }}
+          onClose={() => setDayModal(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+function DayModal({
+  dayKey, items, showClientName, dot, onPick, onClose,
+}: {
+  dayKey: string
+  items: MetricoolCalPost[]
+  showClientName: boolean
+  dot: (p: MetricoolCalPost) => string
+  onPick: (p: MetricoolCalPost) => void
+  onClose: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[85dvh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-5 border-b border-gray-100">
+          <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+            <Calendar className="h-5 w-5 text-gray-700" />
+            <span className="capitalize">{longDateOf(`${dayKey}T12:00:00`)}</span>
+            <span className="text-xs font-normal text-gray-400">· {items.length} post(s)</span>
+          </h3>
+          <button onClick={onClose} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-gray-100"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="p-3 overflow-y-auto space-y-1.5">
+          {items.map((p) => {
+            const thumb = p.media.find((m) => m.type === 'image')?.url ?? p.media.find((m) => m.type === 'video')?.thumbnail ?? null
+            return (
+              <button key={p.id} onClick={() => onPick(p)}
+                className="w-full text-left flex items-center gap-3 p-2 rounded-xl border border-gray-100 hover:border-gray-200 hover:bg-gray-50 transition">
+                <span className="tabular-nums text-sm font-semibold text-gray-700 w-12 shrink-0">{timeLabel(p.datetime)}</span>
+                <span className="h-10 w-10 rounded-lg bg-gray-100 overflow-hidden shrink-0 flex items-center justify-center" style={{ boxShadow: `inset 0 0 0 2px ${dot(p)}` }}>
+                  {thumb ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={thumb} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <ImageIcon className="h-4 w-4 text-gray-300" />
+                  )}
+                </span>
+                <span className="min-w-0 flex-1">
+                  {showClientName && <span className="block text-sm font-medium text-gray-900 truncate">{p.clientName}</span>}
+                  <span className="block text-xs text-gray-500 truncate">{p.text || '(geen tekst)'}</span>
+                  {p.networks.length > 0 && <span className="block text-[10px] text-gray-400 capitalize mt-0.5">{p.networks.join(', ')}</span>}
+                </span>
+              </button>
+            )
+          })}
         </div>
       </div>
     </div>
