@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Loader2, AlertTriangle, Eye, Heart, MessageCircle, Share2, Users, TrendingUp,
-  Bookmark, ExternalLink, Image as ImageIcon, Video, Film, FileText,
+  ExternalLink, Image as ImageIcon, Video, Film, FileText, Sparkles, X,
 } from 'lucide-react'
 
 type MetricTotals = Record<string, number>
@@ -48,6 +48,26 @@ export function MetricoolStats() {
   const [days, setDays] = useState(90)
   const [data, setData] = useState<StatsResponse | null>(null)
   const [loading, setLoading] = useState(false)
+
+  // AI-samenvatting
+  const [aiOpen, setAiOpen] = useState(false)
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiMd, setAiMd] = useState<string | null>(null)
+  const [aiError, setAiError] = useState<string | null>(null)
+
+  const genSummary = useCallback(async () => {
+    if (!clientId) return
+    setAiOpen(true); setAiLoading(true); setAiMd(null); setAiError(null)
+    try {
+      const res = await fetch('/api/admin/metricool/stats/summary', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId, days }),
+      })
+      const j = await res.json()
+      if (!res.ok) throw new Error(j.error || 'Mislukt')
+      setAiMd(j.markdown || '')
+    } catch (e) { setAiError(e instanceof Error ? e.message : 'Fout') } finally { setAiLoading(false) }
+  }, [clientId, days])
 
   useEffect(() => {
     fetch('/api/admin/metricool/brands').then((r) => r.json()).then((j) => {
@@ -110,15 +130,44 @@ export function MetricoolStats() {
         <select value={clientId} onChange={(e) => setClientId(e.target.value)} className="input-base max-w-xs">
           {clients.map((c) => <option key={c.id} value={c.id}>{c.company_name}</option>)}
         </select>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 flex-wrap">
           {DAYS_OPTIONS.map((d) => (
             <button key={d} onClick={() => setDays(d)} className={`text-xs px-3 py-1.5 rounded-lg border ${days === d ? 'bg-black text-white border-black' : 'border-gray-200 hover:bg-gray-50'}`}>
               {d} dagen
             </button>
           ))}
           {loading && <Loader2 className="h-4 w-4 animate-spin text-gray-400 ml-1" />}
+          <button
+            onClick={genSummary}
+            disabled={aiLoading || !summary || summary.totalPosts === 0}
+            className="btn-primary text-sm ml-2 disabled:opacity-40 disabled:cursor-not-allowed"
+            title={summary && summary.totalPosts > 0 ? 'AI-analyse van wat werkt en wat niet' : 'Geen data om te analyseren'}
+          >
+            {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            Samenvatting
+          </button>
         </div>
       </div>
+
+      {aiOpen && (
+        <div className="card-base border-[#fff848] bg-[#fff848]/[0.06]">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <h2 className="font-semibold text-gray-900 flex items-center gap-2"><Sparkles className="h-4 w-4 text-[#c5b800]" />AI-samenvatting {data?.clientName ? `— ${data.clientName}` : ''}</h2>
+            <div className="flex items-center gap-1">
+              {!aiLoading && <button onClick={genSummary} className="text-xs text-gray-500 hover:text-black px-2 py-1">Opnieuw</button>}
+              <button onClick={() => setAiOpen(false)} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-black/5 text-gray-500"><X className="h-4 w-4" /></button>
+            </div>
+          </div>
+          {aiLoading ? (
+            <div className="flex items-center gap-2 text-sm text-gray-500 py-6 justify-center"><Loader2 className="h-4 w-4 animate-spin" />Analyseren op basis van de data…</div>
+          ) : aiError ? (
+            <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{aiError}</div>
+          ) : aiMd ? (
+            <div className="ai-summary text-sm text-gray-800" dangerouslySetInnerHTML={{ __html: renderMarkdown(aiMd) }} />
+          ) : null}
+          <p className="text-[11px] text-gray-400 mt-3">Gegenereerd uit de Metricool-cijfers. Enkel intern — controleer altijd voor je beslissingen neemt.</p>
+        </div>
+      )}
 
       {data && data.linked === false && (
         <div className="card-base text-sm text-gray-500">Deze klant is niet gekoppeld aan een Metricool-merk.</div>
@@ -272,6 +321,27 @@ export function MetricoolStats() {
 function engagementFromTotals(m: MetricTotals): number {
   const sum = (m.likes ?? 0) + (m.comments ?? 0) + (m.shares ?? 0) + (m.saved ?? 0)
   return sum > 0 ? sum : (m.engagement ?? m.interactions ?? 0)
+}
+
+// Lichte Markdown → HTML (koppen, lijsten, bold) voor de AI-samenvatting.
+function renderMarkdown(md: string): string {
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const bold = (s: string) => esc(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+  const lines = md.split('\n')
+  let html = ''
+  let inList = false
+  const closeList = () => { if (inList) { html += '</ul>'; inList = false } }
+  for (const raw of lines) {
+    const line = raw.trim()
+    if (/^###\s+/.test(line)) { closeList(); html += `<h4 class="font-medium text-gray-800 mt-3 mb-0.5">${bold(line.replace(/^###\s+/, ''))}</h4>` }
+    else if (/^##\s+/.test(line)) { closeList(); html += `<h3 class="font-semibold text-gray-900 mt-4 mb-1 text-[15px]">${bold(line.replace(/^##\s+/, ''))}</h3>` }
+    else if (/^#\s+/.test(line)) { closeList(); html += `<h3 class="font-semibold text-gray-900 mt-4 mb-1 text-[15px]">${bold(line.replace(/^#\s+/, ''))}</h3>` }
+    else if (/^[-*]\s+/.test(line)) { if (!inList) { html += '<ul class="list-disc pl-5 space-y-0.5 my-1">'; inList = true } html += `<li>${bold(line.replace(/^[-*]\s+/, ''))}</li>` }
+    else if (line === '') { closeList() }
+    else { closeList(); html += `<p class="my-1 leading-relaxed">${bold(line)}</p>` }
+  }
+  closeList()
+  return html
 }
 
 function Bar({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
