@@ -126,6 +126,8 @@ function pickMedia(raw: any): MetricoolMedia[] {
       }
     }
   }
+  // Enkelvoudige beeld-velden (o.a. Facebook stats: picture/fullPicture).
+  for (const s of [raw?.fullPicture, raw?.picture, raw?.image, raw?.thumbnail, raw?.thumbnailUrl]) push(s)
   // Video's: gebruik de aparte thumbnail (poster) indien aanwezig.
   const thumb = typeof raw?.videoThumbnailUrl === 'string' ? raw.videoThumbnailUrl : null
   if (thumb) for (const m of out) if (m.type === 'video' && !m.thumbnail) m.thumbnail = thumb
@@ -267,16 +269,21 @@ const STAT_SOURCES: StatSource[] = [
   { network: 'youtube',   type: 'video', path: '/stats/youtube/videos' },
 ]
 
+// Bevestigd via /diag op echte Facebook-data: likes=reactions, views=videoViews,
+// reach=impressionsUnique, plus impressions/clicks. Let op: Metricool's veld
+// `engagement` is een PERCENTAGE (rate), geen telling → bewust NIET als count
+// mappen (we berekenen engagement uit interacties in engagementOf).
 const METRIC_FIELDS: Record<string, string[]> = {
   likes:        ['likes', 'likeCount', 'like', 'favorites', 'favoriteCount', 'reactions', 'reactionsCount', 'totalReactions'],
   comments:     ['comments', 'commentCount', 'comment', 'commentsCount', 'replies', 'replyCount'],
   shares:       ['shares', 'shareCount', 'share', 'sharesCount', 'retweets', 'retweetCount', 'reposts', 'repostCount'],
   saved:        ['saved', 'saves', 'saveCount', 'bookmarks', 'bookmarkCount'],
-  views:        ['views', 'videoViews', 'viewCount', 'plays', 'playCount', 'reproductions', 'videoViewCount', 'impressionsVideo'],
-  reach:        ['reach', 'reachCount', 'uniqueReach', 'accountsReached', 'reachedAccounts'],
-  impressions:  ['impressions', 'impressionCount', 'impressionsCount'],
-  engagement:   ['engagement', 'engagements', 'engagementCount', 'engagementRate'],
+  views:        ['views', 'videoViews', 'viewCount', 'plays', 'playCount', 'reproductions', 'videoViewCount', 'impressionsVideo', 'totalMediaViewUnique'],
+  reach:        ['reach', 'reachCount', 'uniqueReach', 'accountsReached', 'reachedAccounts', 'impressionsUnique', 'impressionsUniqueOrganic'],
+  impressions:  ['impressions', 'impressionCount', 'impressionsCount', 'impressionsOrganic'],
+  clicks:       ['clicks', 'linkClicks', 'linkclicks', 'postClicks'],
   interactions: ['interactions', 'totalInteractions', 'interactionCount'],
+  engagementRate: ['engagementRate', 'engagement'],   // percentage — enkel ter info, niet als telling
 }
 
 function num(v: unknown): number | null {
@@ -302,13 +309,30 @@ function extractMetrics(raw: any): Record<string, number> {
   return out
 }
 
+// Stats-posts geven de tijd als unix-timestamp (ms of s), bv. created/timestamp.
+// Omzetten naar naïeve Brusselse wall-clock string zodat de heatmap + weergave kloppen.
+function toMs(n: number): number { return n < 1e12 ? n * 1000 : n }
+function epochToBrussels(ms: number): string {
+  const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Brussels', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(new Date(ms))
+  const g = (t: string) => p.find((x) => x.type === t)?.value ?? '00'
+  const h = g('hour') === '24' ? '00' : g('hour')
+  return `${g('year')}-${g('month')}-${g('day')}T${h}:${g('minute')}:${g('second')}`
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function pickStatDatetime(raw: any): string | null {
+  const t = raw?.timestamp ?? raw?.created ?? raw?.publishedAt ?? raw?.publishDate ?? raw?.date
+  if (typeof t === 'number' && isFinite(t)) return epochToBrussels(toMs(t))
+  if (typeof t === 'string' && /^\d{10,}$/.test(t.trim())) return epochToBrussels(toMs(Number(t)))
+  return pickDatetime(raw)
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function normalizeStat(raw: any, network: string, type: string): PostStat {
   return {
     id: String(raw?.id ?? raw?.uuid ?? raw?.postId ?? crypto.randomUUID()),
     network,
     type,
-    datetime: pickDatetime(raw),
+    datetime: pickStatDatetime(raw),
     text: String(raw?.text ?? raw?.content ?? raw?.caption ?? raw?.message ?? raw?.title ?? '').trim(),
     media: pickMedia(raw),
     metrics: extractMetrics(raw),

@@ -120,7 +120,7 @@ export function MetricoolStats() {
     { key: 'reach', label: 'Bereik', icon: Users },
   ]
 
-  const maxAvgEng = Math.max(1, ...(summary?.byType ?? []).map((f) => f.avg.engagement ?? engagementFromTotals(f.avg)))
+  const maxAvgEng = Math.max(1, ...(summary?.byType ?? []).map((f) => engagementFromTotals(f.avg)))
   const maxAvgViews = Math.max(1, ...(summary?.byType ?? []).map((f) => f.avg.views ?? 0))
 
   return (
@@ -205,7 +205,7 @@ export function MetricoolStats() {
             <div className="space-y-4">
               {summary.byType.map((f) => {
                 const Icon = TYPE_ICON[f.type] ?? FileText
-                const eng = f.avg.engagement ?? engagementFromTotals(f.avg)
+                const eng = engagementFromTotals(f.avg)
                 const views = f.avg.views ?? 0
                 return (
                   <div key={f.key} className="grid grid-cols-1 sm:grid-cols-[140px_1fr] gap-2 sm:gap-4 items-center">
@@ -301,7 +301,7 @@ export function MetricoolStats() {
                       <td className="py-2 px-3 text-gray-500">{f.count}</td>
                       <td className="py-2 px-3">{fmt(f.avg.views)}</td>
                       <td className="py-2 px-3">{fmt(f.avg.likes)}</td>
-                      <td className="py-2 px-3 font-medium">{fmt(f.avg.engagement ?? engagementFromTotals(f.avg))}</td>
+                      <td className="py-2 px-3 font-medium">{fmt(engagementFromTotals(f.avg))}</td>
                     </tr>
                   ))}
                 </tbody>
