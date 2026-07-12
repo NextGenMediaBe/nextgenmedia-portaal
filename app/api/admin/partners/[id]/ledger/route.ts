@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createAdminSupabaseClient, insertResilient } from '@/lib/supabase/server'
+import { createClient, createAdminSupabaseClient, insertResilient , isActiveStaff } from '@/lib/supabase/server'
 
 async function requireAdmin() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
   const { data } = await supabase.from('user_roles').select('role').eq('user_id', user.id).maybeSingle()
-  return data?.role === 'admin' ? user : null
+  return data?.role === 'admin' || (await isActiveStaff(user.id)) ? user : null
 }
 
 const VALID_KINDS = ['commission_owed', 'payout_owed', 'service_billed', 'manual_credit', 'manual_debit']

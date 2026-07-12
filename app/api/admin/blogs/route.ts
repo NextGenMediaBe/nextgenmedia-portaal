@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
+import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { generateBlogsForAccount, sendBlogReviewMail, BLOG_ACCOUNT_COLS, type BlogAccount } from '@/lib/blog-generate'
 import { generateBlog, slugify } from '@/lib/blog-ai'
@@ -17,7 +17,7 @@ const FRAMER_COLS = 'id, framer_project_url, framer_api_key, framer_blog_collect
 // GET ?account_id= | ?client_id= | ?status= | ?versions=<blog_id>
 export async function GET(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const sp = req.nextUrl.searchParams
     const admin = createAdminSupabaseClient()
 
@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
 // POST { action:'generate', account_id, count? } | { action:'bulk', op, ids[] }
 export async function POST(req: NextRequest) {
   try {
-    const actor = await requireAdmin()
+    const actor = await requireStaff()
     if (!actor) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const b = await req.json()
     const admin = createAdminSupabaseClient()
@@ -126,7 +126,7 @@ async function bulk(admin: any, b: { op?: string; ids?: string[] }, actor: strin
 // PATCH { id, action?, ...fields }
 export async function PATCH(req: NextRequest) {
   try {
-    const actor = await requireAdmin()
+    const actor = await requireStaff()
     if (!actor) return NextResponse.json({ error: 'Geen toegang' }, { status: 400 })
     const b = await req.json()
     if (!b.id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })
@@ -216,7 +216,7 @@ export async function PATCH(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const id = req.nextUrl.searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })
     const admin = createAdminSupabaseClient()

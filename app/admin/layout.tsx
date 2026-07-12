@@ -48,11 +48,13 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       <AdminSidebar allowedModules={allowedModules} isEmployee={role === 'employee'} />
       <main className="flex-1 min-w-0 md:ml-[var(--sidebar-width)] min-h-screen">
         <div className="max-w-[1400px] mx-auto px-4 pt-16 pb-8 md:pt-6 md:px-6 lg:px-8">
-          <AdminTopBar />
+          {/* Topbar (zoek/notificaties/AI) is admin-only: de onderliggende
+              API's zijn dat ook — voor werknemers verbergen i.p.v. 403-ruis. */}
+          {role === 'admin' && <AdminTopBar />}
           {children}
         </div>
       </main>
-      <AiAssistant />
+      {role === 'admin' && <AiAssistant />}
     </div>
   )
 }

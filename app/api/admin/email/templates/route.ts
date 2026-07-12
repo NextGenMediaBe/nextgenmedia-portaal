@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
+import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { DEFAULT_TEMPLATES } from '@/lib/email-templates-defaults'
 
 export async function GET() {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const admin = createAdminSupabaseClient()
     const { data, error } = await admin.from('email_templates').select('*').order('created_at', { ascending: true })
     if (error) throw new Error(error.message)
@@ -16,7 +16,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const actor = await requireAdmin()
+    const actor = await requireStaff()
     if (!actor) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const b = await req.json()
     const admin = createAdminSupabaseClient()
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const b = await req.json()
     if (!b.id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })
     const patch: Record<string, unknown> = {}
@@ -74,7 +74,7 @@ export async function PATCH(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const id = req.nextUrl.searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })
     const admin = createAdminSupabaseClient()

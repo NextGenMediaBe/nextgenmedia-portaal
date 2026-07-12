@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
+import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { encryptSecret, isEncrypted } from '@/lib/crypto'
 import { firstGenerationDate } from '@/lib/blog-dates'
@@ -15,7 +15,7 @@ export const maxDuration = 60
 // GET — alle blogaccounts + tellingen + klanten voor koppeling
 export async function GET() {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const admin = createAdminSupabaseClient()
     const [{ data: accounts }, { data: blogs }, { data: clients }, cron] = await Promise.all([
       admin.from('blog_accounts').select('*').order('name'),
@@ -63,7 +63,7 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const actor = await requireAdmin()
+    const actor = await requireStaff()
     if (!actor) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const b = await req.json()
     const admin = createAdminSupabaseClient()
@@ -149,7 +149,7 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 400 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 400 })
     const b = await req.json()
     if (!b.id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })
     const admin = createAdminSupabaseClient()
@@ -190,7 +190,7 @@ export async function PATCH(req: NextRequest) {
 // zodat de UI een duidelijke bevestiging kan tonen.
 export async function DELETE(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const id = req.nextUrl.searchParams.get('id')
     const force = req.nextUrl.searchParams.get('force') === '1'
     if (!id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
+import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { randomUUID } from 'crypto'
 
@@ -10,7 +10,7 @@ const STATUSES = ['open', 'in_progress', 'done', 'cancelled']
 // GET ?client_id= — taken van een klant (admin), incl. bijlage-URL
 export async function GET(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const clientId = req.nextUrl.searchParams.get('client_id')
     if (!clientId) return NextResponse.json({ error: 'client_id vereist' }, { status: 400 })
     const admin = createAdminSupabaseClient()
@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
 // POST (multipart) — taak aanmaken
 export async function POST(req: NextRequest) {
   try {
-    const actor = await requireAdmin()
+    const actor = await requireStaff()
     if (!actor) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const fd = await req.formData()
     const client_id = fd.get('client_id') as string
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
 // PATCH { id, ... } — taak aanpassen
 export async function PATCH(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 400 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 400 })
     const b = await req.json()
     if (!b.id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })
     const patch: Record<string, unknown> = {}
@@ -97,7 +97,7 @@ export async function PATCH(req: NextRequest) {
 // DELETE ?id=
 export async function DELETE(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const id = req.nextUrl.searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })
     const admin = createAdminSupabaseClient()

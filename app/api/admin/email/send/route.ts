@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
+import { createClient, createAdminSupabaseClient , isActiveStaff } from '@/lib/supabase/server'
 import { sendEmail } from '@/lib/email'
 import { buildEmailHtml, buildEmailText } from '@/lib/email-html'
 
@@ -8,7 +8,7 @@ async function requireAdminUser() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
   const { data } = await supabase.from('user_roles').select('role').eq('user_id', user.id).maybeSingle()
-  return data?.role === 'admin' ? user : null
+  return data?.role === 'admin' || (await isActiveStaff(user.id)) ? user : null
 }
 
 // POST — admin verstuurt bewust een mail naar een klant (nooit automatisch).

@@ -1,6 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
-import { pathToModule, canSeeModule } from '@/lib/staff'
+import { pathToModule, canSeeModule, STAFF_API_WHITELIST, isStaffApiDenied } from '@/lib/staff'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 
 // Rol/rechten worden via de service-role client gelezen (bypasst RLS). Reden:
@@ -42,6 +42,31 @@ export async function updateSession(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
 
   const path = request.nextUrl.pathname
+
+  // Admin-API's: werknemers centraal per module afschermen (de route-guards
+  // controleren identiteit; dit is de module-laag). Admin passeert altijd.
+  if (path.startsWith('/api/admin')) {
+    if (!user) return NextResponse.json({ error: 'Niet ingelogd' }, { status: 401 })
+    const db = roleReader(supabase)
+    const { data: roleData } = await db
+      .from('user_roles').select('role').eq('user_id', user.id).limit(1).maybeSingle()
+    if (roleData?.role === 'admin') return supabaseResponse
+
+    // Geen admin → enkel actieve werknemers, binnen hun modules.
+    const { data: staff } = await db
+      .from('staff_members').select('active, permissions').eq('auth_user_id', user.id).maybeSingle()
+    const activeStaff = !!staff && staff.active !== false
+    if (!activeStaff) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (isStaffApiDenied(path)) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (STAFF_API_WHITELIST.some((p) => path === p || path.startsWith(p + '?'))) return supabaseResponse
+    const moduleKey = pathToModule(path)
+    const perms = Array.isArray(staff!.permissions) ? (staff!.permissions as string[]) : []
+    // Ongemapte admin-API's blijven dicht voor werknemers (default-deny).
+    if (!moduleKey || !canSeeModule(perms, moduleKey)) {
+      return NextResponse.json({ error: 'Geen toegang tot deze module' }, { status: 403 })
+    }
+    return supabaseResponse
+  }
 
   // Public routes
   if (

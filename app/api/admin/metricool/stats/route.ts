@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
+import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { metricoolConfigured, fetchAllPostStats, summarizeStats, engagementOf, diagnoseAnalytics } from '@/lib/metricool'
 
 export const dynamic = 'force-dynamic'
@@ -10,7 +10,7 @@ export const maxDuration = 60
 //   ?clientId=<uuid>&diag=1         → ruwe analytics-respons (veldnamen bevestigen)
 export async function GET(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     if (!metricoolConfigured()) return NextResponse.json({ configured: false })
 
     const sp = req.nextUrl.searchParams

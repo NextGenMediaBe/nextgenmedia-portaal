@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireAdmin } from '@/lib/supabase/server'
+import { requireStaff } from '@/lib/supabase/server'
 import { buildClientMailContext } from '@/lib/email-context'
 
 // GET ?client_id=&kind=&contract_id=&shoot_id= → ontvanger + placeholder-waarden
 export async function GET(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const sp = req.nextUrl.searchParams
     const clientId = sp.get('client_id')
     if (!clientId) return NextResponse.json({ error: 'client_id vereist' }, { status: 400 })

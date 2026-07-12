@@ -43,17 +43,57 @@ export function createAdminSupabaseClient() {
  * Server-side admin guard. Returns the authenticated User when the caller has
  * the `admin` role, otherwise null. Use as: `const user = await requireAdmin();
  * if (!user) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })`.
+ * Rol wordt via service-role gelezen (RLS-proof — zie memory: login-loop les).
  */
 export async function requireAdmin(): Promise<User | null> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
-  const { data } = await supabase
+  const admin = createAdminSupabaseClient()
+  const { data } = await admin
     .from('user_roles')
     .select('role')
     .eq('user_id', user.id)
     .maybeSingle()
   return data?.role === 'admin' ? user : null
+}
+
+/**
+ * Is deze gebruiker een ACTIEVE interne werknemer (staff_members)?
+ * Service-role lezing; staff_members is de bron van waarheid voor werknemer-zijn.
+ */
+export async function isActiveStaff(userId: string): Promise<boolean> {
+  try {
+    const admin = createAdminSupabaseClient()
+    const { data } = await admin
+      .from('staff_members')
+      .select('active')
+      .eq('auth_user_id', userId)
+      .maybeSingle()
+    return !!data && data.active !== false
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Staff-guard voor module-API's: admin óf actieve werknemer.
+ * PER-MODULE afscherming voor werknemers gebeurt centraal in de middleware
+ * (pathToModule op /api/admin-paden); deze guard is de identiteitslaag.
+ * Gevoelige routes (staff-beheer, AI, credentials, …) blijven requireAdmin gebruiken.
+ */
+export async function requireStaff(): Promise<User | null> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+  const admin = createAdminSupabaseClient()
+  const { data } = await admin
+    .from('user_roles')
+    .select('role')
+    .eq('user_id', user.id)
+    .maybeSingle()
+  if (data?.role === 'admin') return user
+  return (await isActiveStaff(user.id)) ? user : null
 }
 
 /**

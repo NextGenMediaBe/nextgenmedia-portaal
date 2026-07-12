@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
+import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import {
   inclFromExcl, lastDayOfMonth, billingDateFor, expandRevenueForMonth, normalizeInvoiceStatus,
@@ -94,7 +94,7 @@ type Row = {
 // GET ?month=YYYY-MM → samengevoegde facturen (eenmalig + recurring) + omzet + klanten
 export async function GET(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const month = req.nextUrl.searchParams.get('month')
     if (!month) return NextResponse.json({ error: 'month vereist' }, { status: 400 })
     const admin = createAdminSupabaseClient()
@@ -163,7 +163,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const actor = await requireAdmin()
+    const actor = await requireStaff()
     if (!actor) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const b = await req.json()
     const admin = createAdminSupabaseClient()
@@ -260,7 +260,7 @@ export async function POST(req: NextRequest) {
 // PATCH { kind, id, ...velden } — eenmalige factuur of recurring-definitie bewerken/koppelen
 export async function PATCH(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const b = await req.json()
     if (!b.id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })
     const admin = createAdminSupabaseClient()
@@ -298,7 +298,7 @@ export async function PATCH(req: NextRequest) {
 // DELETE ?kind=&id=
 export async function DELETE(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const id = req.nextUrl.searchParams.get('id')
     const kind = req.nextUrl.searchParams.get('kind')
     if (!id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })

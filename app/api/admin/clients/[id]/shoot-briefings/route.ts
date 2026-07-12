@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
+import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
 const FIELDS = ['shoot_date', 'start_time', 'end_time', 'location', 'briefing'] as const
@@ -15,7 +15,7 @@ function cleanPayload(body: Record<string, unknown>) {
 // GET — alle shoots van een klant
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const { id } = await params
     const admin = createAdminSupabaseClient()
     const { data, error } = await admin
@@ -33,7 +33,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 // POST — nieuwe shoot
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const { id } = await params
     const admin = createAdminSupabaseClient()
     const body = await req.json()
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 // PATCH — shoot bewerken
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const { id } = await params
     const admin = createAdminSupabaseClient()
     const body = await req.json()
@@ -82,7 +82,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 // DELETE — shoot verwijderen (?shoot_id=)
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const { id } = await params
     const shootId = req.nextUrl.searchParams.get('shoot_id')
     if (!shootId) return NextResponse.json({ error: 'shoot_id vereist' }, { status: 400 })

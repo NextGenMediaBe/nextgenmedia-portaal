@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
+import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { encryptSecret, isEncrypted } from '@/lib/crypto'
 import { firstGenerationDate } from '@/lib/blog-dates'
@@ -8,7 +8,7 @@ import { validateFramerConfig } from '@/lib/framer'
 // GET ?client_id= — bloginstellingen (API key NOOIT teruggeven, enkel of die bestaat)
 export async function GET(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const clientId = req.nextUrl.searchParams.get('client_id')
     if (!clientId) return NextResponse.json({ error: 'client_id vereist' }, { status: 400 })
     const admin = createAdminSupabaseClient()
@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
 // POST — bloginstellingen opslaan (API key wordt versleuteld bewaard)
 export async function POST(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const b = await req.json()
     if (!b.client_id) return NextResponse.json({ error: 'client_id vereist' }, { status: 400 })
     const admin = createAdminSupabaseClient()

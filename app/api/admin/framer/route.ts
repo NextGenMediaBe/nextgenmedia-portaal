@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
+import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import {
   validateFramerConfig, listFramerCollections, listFramerFields, suggestFieldMap,
   analyzeFramerProject, testPublish, friendlyMissing, testFramerConnection, logFramerAction, type FramerClientConfig,
@@ -22,7 +22,7 @@ const configOf = (a: AccountRow): FramerClientConfig => ({
 // GET — overzicht per blogaccount + dashboardstats, of ?logs=<account_id>
 export async function GET(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const admin = createAdminSupabaseClient()
 
     const logsFor = req.nextUrl.searchParams.get('logs')
@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
 // POST { action, account_id, collection_id? }
 export async function POST(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const b = await req.json()
     if (!b.account_id) return NextResponse.json({ error: 'account_id vereist' }, { status: 400 })
     const admin = createAdminSupabaseClient()

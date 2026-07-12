@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
+import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { analysisToPromptText, type WebsiteAnalysis } from '@/lib/website-analyze'
 import { suggestContentGaps } from '@/lib/blog-ai'
 
 // GET ?id=<account_id>[&gaps=1] — SEO-dashboard per blogaccount.
 export async function GET(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const id = req.nextUrl.searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })
     const withGaps = req.nextUrl.searchParams.get('gaps') === '1'

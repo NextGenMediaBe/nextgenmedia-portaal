@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
+import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { metricoolConfigured, fetchAllPostStats, summarizeStats, engagementOf, type PostStat } from '@/lib/metricool'
 
 export const dynamic = 'force-dynamic'
@@ -14,7 +14,7 @@ const fmt = (n: number | undefined) => (n == null || !isFinite(n) ? '0' : String
 // ADMIN-ONLY, read-only analyse. Nooit in het klantportaal.
 export async function POST(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     if (!metricoolConfigured()) return NextResponse.json({ error: 'Metricool niet geconfigureerd' }, { status: 400 })
 
     const { clientId, days: daysRaw } = await req.json()

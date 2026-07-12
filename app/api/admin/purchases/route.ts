@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
+import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { logAudit, requestMeta } from '@/lib/audit'
 import { FOUNDER_EMAILS } from '@/lib/founders'
 import { randomUUID } from 'crypto'
@@ -26,7 +26,7 @@ async function recomputeStatus(admin: ReturnType<typeof createAdminSupabaseClien
 // POST (multipart) — nieuwe aankoopaanvraag
 export async function POST(req: NextRequest) {
   try {
-    const actor = await requireAdmin()
+    const actor = await requireStaff()
     if (!actor) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const fd = await req.formData()
     const title = (fd.get('title') as string)?.trim()
@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
 // PATCH (json) — action: decide | submit | add_cost
 export async function PATCH(req: NextRequest) {
   try {
-    const actor = await requireAdmin()
+    const actor = await requireStaff()
     if (!actor) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const body = await req.json()
     const { purchase_id, action } = body
@@ -149,7 +149,7 @@ export async function PATCH(req: NextRequest) {
 // DELETE ?id= — alleen eigen concept/aanvraag
 export async function DELETE(req: NextRequest) {
   try {
-    const actor = await requireAdmin()
+    const actor = await requireStaff()
     if (!actor) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const id = req.nextUrl.searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
+import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { logAudit, requestMeta } from '@/lib/audit'
 import {
   clickupConfigured,
@@ -39,7 +39,7 @@ type ContentItem = {
 // GET — status van de sync voor deze klant
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const { id } = await params
     const admin = createAdminSupabaseClient()
 
@@ -74,7 +74,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 // PATCH — sync aan/uit zetten voor deze klant
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const actor = await requireAdmin()
+    const actor = await requireStaff()
     if (!actor) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const { id } = await params
     const { enabled } = await req.json()
@@ -108,7 +108,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 // POST — voer de sync uit (app → ClickUp) voor alle contentitems van deze klant
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const actor = await requireAdmin()
+    const actor = await requireStaff()
     if (!actor) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     if (!clickupConfigured()) {
       return NextResponse.json({ error: 'CLICKUP_API_KEY is niet ingesteld op de server' }, { status: 400 })

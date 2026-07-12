@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
+import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
 const ALLOWED_STATUSES = ['new', 'in_progress', 'rejected', 'done', 'archived']
@@ -14,7 +14,7 @@ function invalidateWebdesignCaches() {
 
 export async function PATCH(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
 
     const { id, status, admin_notes } = await req.json()
     if (!id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })
@@ -44,7 +44,7 @@ export async function PATCH(req: NextRequest) {
 // Combines delete + image_paths retrieval into a single round-trip via `.delete().select()`.
 export async function DELETE(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
 
     const id = req.nextUrl.searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })

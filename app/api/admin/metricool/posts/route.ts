@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
+import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { metricoolConfigured, listScheduledPosts, type MetricoolPost } from '@/lib/metricool'
 
 export const dynamic = 'force-dynamic'
@@ -11,7 +11,7 @@ export type MetricoolPostWithClient = MetricoolPost & { clientId: string; client
 //   ?start=YYYY-MM-DD&end=YYYY-MM-DD&clientIds=a,b,c   (clientIds optioneel = alle gekoppelde)
 export async function GET(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     if (!metricoolConfigured()) return NextResponse.json({ configured: false, posts: [] })
 
     const sp = req.nextUrl.searchParams

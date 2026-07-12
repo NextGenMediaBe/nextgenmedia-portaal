@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
+import { createClient, createAdminSupabaseClient , isActiveStaff } from '@/lib/supabase/server'
 import { CONTRACT_FIELD_TYPES, type ContractField } from '@/lib/contract-ai'
 
 const VALID = new Set<string>(CONTRACT_FIELD_TYPES)
@@ -12,7 +12,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Niet ingelogd' }, { status: 401 })
     const { data: roleData } = await supabase.from('user_roles').select('role').eq('user_id', user.id).maybeSingle()
-    if (roleData?.role !== 'admin') return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (roleData?.role !== 'admin' && !(await isActiveStaff(user.id))) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
 
     const b = await req.json()
     if (!Array.isArray(b.detected_fields)) return NextResponse.json({ error: 'detected_fields vereist' }, { status: 400 })

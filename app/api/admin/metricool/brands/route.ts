@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
+import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { metricoolConfigured, listBrands } from '@/lib/metricool'
 
 export const dynamic = 'force-dynamic'
@@ -8,7 +8,7 @@ export const maxDuration = 30
 // GET — alle Metricool-merken + de huidige app-klant-koppelingen (voor het koppelscherm).
 export async function GET() {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     if (!metricoolConfigured()) {
       return NextResponse.json({ configured: false, brands: [], clients: [] })
     }

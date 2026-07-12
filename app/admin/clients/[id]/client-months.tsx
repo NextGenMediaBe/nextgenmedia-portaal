@@ -104,7 +104,7 @@ function AddDialog({
   const inp = 'w-full px-3 py-2 text-sm border border-gray-200 rounded-lg'
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90dvh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-gray-100">
           <h3 className="font-semibold">Maandplanning toevoegen</h3>
           <button onClick={onClose} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-gray-100"><X className="h-4 w-4" /></button>

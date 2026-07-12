@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
+import { createClient, createAdminSupabaseClient , isActiveStaff } from '@/lib/supabase/server'
 import { logAudit, requestMeta } from '@/lib/audit'
 import { revalidatePath } from 'next/cache'
 import { validateBtw } from '@/lib/btw'
@@ -8,6 +8,7 @@ import { clickupConfigured, deleteList } from '@/lib/clickup'
 // Klant-verwijdering ruimt ook storage, auth en (best-effort) ClickUp op.
 export const maxDuration = 60
 
+// Strikt admin (voor destructieve acties zoals klant-DELETE).
 async function requireAdmin(supabase: Awaited<ReturnType<typeof createClient>>) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
@@ -15,12 +16,20 @@ async function requireAdmin(supabase: Awaited<ReturnType<typeof createClient>>) 
   return data?.role === 'admin' ? user : null
 }
 
+// Admin óf actieve werknemer (module-afscherming zit in de middleware).
+async function requireStaffLocal(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+  const { data } = await supabase.from('user_roles').select('role').eq('user_id', user.id).maybeSingle()
+  return data?.role === 'admin' || (await isActiveStaff(user.id)) ? user : null
+}
+
 // PATCH — update client fields
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
     const supabase = await createClient()
-    const user = await requireAdmin(supabase)
+    const user = await requireStaffLocal(supabase)
     if (!user) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
 
     const body = await req.json()

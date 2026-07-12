@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
+import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
 // GET ?shoot_id= — feedback van een shoot
 export async function GET(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const shootId = req.nextUrl.searchParams.get('shoot_id')
     if (!shootId) return NextResponse.json({ error: 'shoot_id vereist' }, { status: 400 })
     const admin = createAdminSupabaseClient()
@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
 // PATCH { feedback_id, resolved } — markeer feedback als verwerkt / onverwerkt
 export async function PATCH(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const { feedback_id, resolved } = await req.json()
     if (!feedback_id) return NextResponse.json({ error: 'feedback_id vereist' }, { status: 400 })
     const admin = createAdminSupabaseClient()

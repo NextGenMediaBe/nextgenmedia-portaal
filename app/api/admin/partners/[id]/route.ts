@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
+import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { logAudit, requestMeta } from '@/lib/audit'
 import { revalidatePath } from 'next/cache'
 
@@ -11,7 +11,7 @@ const ALLOWED_PATCH_FIELDS = new Set([
 // PATCH — edit partner details
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
 
     const { id } = await params
     const body = await req.json()
@@ -42,7 +42,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 // DELETE — deactivate and optionally hard-delete a partner
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const actor = await requireAdmin()
+    const actor = await requireStaff()
     if (!actor) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
 
     const { id } = await params

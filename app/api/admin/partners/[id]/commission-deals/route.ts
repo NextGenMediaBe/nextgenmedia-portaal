@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminSupabaseClient, requireAdmin, insertResilient } from '@/lib/supabase/server'
+import { createAdminSupabaseClient, requireStaff, insertResilient } from '@/lib/supabase/server'
 import { commissionForSale } from '@/lib/utils'
 import { revalidatePath } from 'next/cache'
 
@@ -10,7 +10,7 @@ import { revalidatePath } from 'next/cache'
 // POST — create a referral relationship
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const { id: freelancerId } = await params
     const body = await req.json()
 
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 // PATCH — add a sale to a referral, OR edit the referral's fields
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const { id: freelancerId } = await params
     const body = await req.json()
     const { deal_id, action } = body
@@ -165,7 +165,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 // DELETE — remove a referral (?deal_id=) or a single sale (?sale_id=)
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const { id: freelancerId } = await params
     const dealId = req.nextUrl.searchParams.get('deal_id')
     const saleId = req.nextUrl.searchParams.get('sale_id')

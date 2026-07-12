@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminSupabaseClient, requireAdmin, trySignedUrl } from '@/lib/supabase/server'
+import { createAdminSupabaseClient, requireStaff, trySignedUrl } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
 // GET ?shoot_id= — ideeën van een shoot (met signed urls voor bijlagen)
 export async function GET(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const shootId = req.nextUrl.searchParams.get('shoot_id')
     if (!shootId) return NextResponse.json({ error: 'shoot_id vereist' }, { status: 400 })
     const admin = createAdminSupabaseClient()
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
 // PATCH { idea_id, status?, admin_note? }
 export async function PATCH(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const { idea_id, status, admin_note } = await req.json()
     if (!idea_id) return NextResponse.json({ error: 'idea_id vereist' }, { status: 400 })
     const patch: Record<string, unknown> = {}

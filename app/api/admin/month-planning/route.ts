@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
+import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 
 // Handmatige uitzonderingen op de automatische maandplanning. Per datum een
 // lijst categorie-keys; lege lijst = dag bewust leeg; geen rij = standaard.
@@ -7,7 +7,7 @@ import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
 // GET ?from=YYYY-MM-DD&to=YYYY-MM-DD — overrides in een periode
 export async function GET(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const from = req.nextUrl.searchParams.get('from')
     const to = req.nextUrl.searchParams.get('to')
     const admin = createAdminSupabaseClient()
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
 // PUT { plan_date, categories[] } — override zetten (upsert)
 export async function PUT(req: NextRequest) {
   try {
-    const actor = await requireAdmin()
+    const actor = await requireStaff()
     if (!actor) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const { plan_date, categories } = await req.json()
     if (!plan_date) return NextResponse.json({ error: 'plan_date vereist' }, { status: 400 })
@@ -44,7 +44,7 @@ export async function PUT(req: NextRequest) {
 // DELETE ?from=&to=  — overrides in periode wissen (reset naar standaard)
 export async function DELETE(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const from = req.nextUrl.searchParams.get('from')
     const to = req.nextUrl.searchParams.get('to')
     if (!from || !to) return NextResponse.json({ error: 'from en to vereist' }, { status: 400 })

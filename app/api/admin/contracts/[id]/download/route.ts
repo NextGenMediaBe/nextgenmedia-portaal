@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
+import { createClient, createAdminSupabaseClient , isActiveStaff } from '@/lib/supabase/server'
 import { logContractEvent } from '@/lib/contract-audit'
 
 // GET ?type=original|signed — logt de download en redirect naar een signed URL.
@@ -10,7 +10,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Niet ingelogd' }, { status: 401 })
     const { data: roleData } = await supabase.from('user_roles').select('role').eq('user_id', user.id).maybeSingle()
-    if (roleData?.role !== 'admin') return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (roleData?.role !== 'admin' && !(await isActiveStaff(user.id))) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
 
     const type = req.nextUrl.searchParams.get('type') === 'signed' ? 'signed' : 'original'
     const admin = createAdminSupabaseClient()

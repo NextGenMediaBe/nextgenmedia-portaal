@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
+import { createClient, createAdminSupabaseClient , isActiveStaff } from '@/lib/supabase/server'
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { validateBtw } from '@/lib/btw'
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
 
     const { data: roleData } = await supabase
       .from('user_roles').select('role').eq('user_id', user.id).maybeSingle()
-    if (roleData?.role !== 'admin') {
+    if (roleData?.role !== 'admin' && !(await isActiveStaff(user.id))) {
       return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     }
 

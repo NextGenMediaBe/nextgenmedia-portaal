@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
+import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { MONTH_CLIENT_TYPE_KEYS } from '@/lib/month-phases'
 
 // Klanten per maand: één rij per klant per maand. `planning_type` = 'new' of
@@ -9,7 +9,7 @@ import { MONTH_CLIENT_TYPE_KEYS } from '@/lib/month-phases'
 // GET ?month=YYYY-MM  of  ?client_id=<uuid>
 export async function GET(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const month = req.nextUrl.searchParams.get('month')
     const clientId = req.nextUrl.searchParams.get('client_id')
     const admin = createAdminSupabaseClient()
@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
 // POST { plan_month, client_id, planning_type, note? }
 export async function POST(req: NextRequest) {
   try {
-    const actor = await requireAdmin()
+    const actor = await requireStaff()
     if (!actor) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const b = await req.json()
     if (!b.plan_month || !b.client_id) return NextResponse.json({ error: 'plan_month en client_id vereist' }, { status: 400 })
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
 // PATCH { id, planning_type?, note? }
 export async function PATCH(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const b = await req.json()
     if (!b.id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })
     const patch: Record<string, unknown> = {}
@@ -77,7 +77,7 @@ export async function PATCH(req: NextRequest) {
 // DELETE ?id=
 export async function DELETE(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const id = req.nextUrl.searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })
     const admin = createAdminSupabaseClient()

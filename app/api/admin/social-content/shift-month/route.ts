@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
+import { createClient, createAdminSupabaseClient , isActiveStaff } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
 async function assertAdmin() {
@@ -7,7 +7,7 @@ async function assertAdmin() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Niet ingelogd')
   const { data } = await supabase.from('user_roles').select('role').eq('user_id', user.id).maybeSingle()
-  if (data?.role !== 'admin') throw new Error('Geen toegang')
+  if (data?.role !== 'admin' && !(await isActiveStaff(user.id))) throw new Error('Geen toegang')
   return user
 }
 
