@@ -1,6 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
-import { pathToModule, canSeeModule, STAFF_API_WHITELIST, isStaffApiDenied } from '@/lib/staff'
+import { pathToModule, canSeeModule, STAFF_API_WHITELIST, isStaffApiDenied, modulesForApiPath } from '@/lib/staff'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 
 // Rol/rechten worden via de service-role client gelezen (bypasst RLS). Reden:
@@ -59,10 +59,12 @@ export async function updateSession(request: NextRequest) {
     if (!activeStaff) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     if (isStaffApiDenied(path)) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     if (STAFF_API_WHITELIST.some((p) => path === p || path.startsWith(p + '?'))) return supabaseResponse
-    const moduleKey = pathToModule(path)
     const perms = Array.isArray(staff!.permissions) ? (staff!.permissions as string[]) : []
-    // Ongemapte admin-API's blijven dicht voor werknemers (default-deny).
-    if (!moduleKey || !canSeeModule(perms, moduleKey)) {
+    // Toegang tot een dashboard = alle acties in dat dashboard. Gedeelde endpoints
+    // geven meerdere modules; de werknemer passeert met één ervan. Ongemapte
+    // admin-API's blijven dicht (default-deny).
+    const allowedModules = modulesForApiPath(path)
+    if (!allowedModules || !allowedModules.some((m) => canSeeModule(perms, m))) {
       return NextResponse.json({ error: 'Geen toegang tot deze module' }, { status: 403 })
     }
     return supabaseResponse

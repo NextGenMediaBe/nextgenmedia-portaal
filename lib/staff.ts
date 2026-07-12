@@ -52,6 +52,33 @@ export function isStaffApiDenied(path: string): boolean {
   return STAFF_API_DENY_SUBSTRINGS.some((s) => path.includes(s))
 }
 
+// Endpoints die in MEERDERE dashboards opduiken. Principe: toegang tot een
+// dashboard = alle acties in dat dashboard werken — ook als het onderliggende
+// endpoint "van" een andere module lijkt. Een werknemer mag zo'n endpoint dus
+// gebruiken als hij ÉÉN van de vermelde modules heeft. Eerste match wint.
+const SHARED_API: Array<{ test: (p: string) => boolean; modules: string[] }> = [
+  // Klant-subresources die in het content-dashboard (social-media) én de klant-hub
+  // opduiken. Strikt op /api/admin/clients/<id>/(clickup-sync|shoot-briefings) —
+  // opdracht-sync (/api/admin/assignments/.../clickup-sync) valt hier bewust buiten.
+  { test: (p) => /^\/api\/admin\/clients\/[^/]+\/(clickup-sync|shoot-briefings)(\/|\?|$)/.test(p), modules: ['content', 'clients'] },
+  // Mail-composer: content (scripts/shoot), klanten (hub), contracten, blogs, partners.
+  {
+    test: (p) => p.startsWith('/api/admin/email/send') || p.startsWith('/api/admin/email/context') || p.startsWith('/api/admin/email/templates'),
+    modules: ['email', 'content', 'clients', 'contracts', 'blogs', 'partners'],
+  },
+]
+
+/**
+ * Module(s) die toegang geven tot een admin-API-pad. Meestal één; gedeelde
+ * endpoints geven een lijst (werknemer passeert met één ervan). null = niet
+ * gemapt (default-deny voor werknemers).
+ */
+export function modulesForApiPath(path: string): string[] | null {
+  for (const s of SHARED_API) if (s.test(path)) return s.modules
+  const single = pathToModule(path)
+  return single ? [single] : null
+}
+
 /** Module-key voor een /admin-pad (langste prefix wint), of null = niet gegate. */
 export function pathToModule(path: string): string | null {
   let best: { key: string; len: number } | null = null
