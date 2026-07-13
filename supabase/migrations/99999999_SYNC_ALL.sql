@@ -1317,5 +1317,69 @@ ALTER TABLE public.clients
   ADD COLUMN IF NOT EXISTS metricool_blog_id     text,
   ADD COLUMN IF NOT EXISTS metricool_brand_name  text;
 
+-- ── Framer CMS-koppeling (klant beheert website-content via de app) ───────────
+-- Per klant: Framer-project + API-key (server-side geheim) + of de klant het CMS
+-- in de app mag beheren. De API-key wordt NOOIT naar de client-browser gestuurd.
+ALTER TABLE public.clients
+  ADD COLUMN IF NOT EXISTS framer_project_url text,
+  ADD COLUMN IF NOT EXISTS framer_api_key     text,
+  ADD COLUMN IF NOT EXISTS cms_enabled        boolean NOT NULL DEFAULT false;
+
+-- Spiegel van de Framer-CMS-collecties (import + publiceren-model).
+CREATE TABLE IF NOT EXISTS public.cms_collections (
+  id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id             uuid NOT NULL REFERENCES public.clients(id) ON DELETE CASCADE,
+  framer_collection_id  text NOT NULL,
+  name                  text,
+  slug                  text,
+  fields                jsonb NOT NULL DEFAULT '[]',   -- [{id,name,type,userEditable,...}]
+  client_editable       boolean NOT NULL DEFAULT true, -- mag de klant deze collectie bewerken?
+  item_count            integer NOT NULL DEFAULT 0,
+  synced_at             timestamptz,
+  created_at            timestamptz NOT NULL DEFAULT now(),
+  updated_at            timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS cms_collections_client_framer_key
+  ON public.cms_collections(client_id, framer_collection_id);
+
+-- Spiegel van de items binnen een collectie. status: synced|dirty|new|deleted.
+CREATE TABLE IF NOT EXISTS public.cms_items (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  collection_id   uuid NOT NULL REFERENCES public.cms_collections(id) ON DELETE CASCADE,
+  framer_item_id  text,                                  -- null = nog niet naar Framer gepusht
+  slug            text,
+  draft           boolean NOT NULL DEFAULT false,
+  field_data      jsonb NOT NULL DEFAULT '{}',           -- { fieldId: value }
+  status          text NOT NULL DEFAULT 'synced',
+  position        integer NOT NULL DEFAULT 0,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  updated_at      timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS cms_items_collection_idx ON public.cms_items(collection_id);
+CREATE UNIQUE INDEX IF NOT EXISTS cms_items_framer_key
+  ON public.cms_items(collection_id, framer_item_id) WHERE framer_item_id IS NOT NULL;
+
+ALTER TABLE public.cms_collections ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cms_items ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "cms_collections admin" ON public.cms_collections;
+DROP POLICY IF EXISTS "cms_items admin" ON public.cms_items;
+-- Admin beheert alles; klant-toegang loopt via de service-role portaalresolver
+-- (gekeyd op de geverifieerde clientId), niet via RLS.
+CREATE POLICY "cms_collections admin" ON public.cms_collections
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+CREATE POLICY "cms_items admin" ON public.cms_items
+  FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
+DO $$ BEGIN
+  CREATE TRIGGER trg_cms_collections_updated BEFORE UPDATE ON public.cms_collections FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+  CREATE TRIGGER trg_cms_items_updated BEFORE UPDATE ON public.cms_items FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.

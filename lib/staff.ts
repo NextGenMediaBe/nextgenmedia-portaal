@@ -60,7 +60,7 @@ const SHARED_API: Array<{ test: (p: string) => boolean; modules: string[] }> = [
   // Klant-subresources die in het content-dashboard (social-media) én de klant-hub
   // opduiken. Strikt op /api/admin/clients/<id>/(clickup-sync|shoot-briefings) —
   // opdracht-sync (/api/admin/assignments/.../clickup-sync) valt hier bewust buiten.
-  { test: (p) => /^\/api\/admin\/clients\/[^/]+\/(clickup-sync|shoot-briefings)(\/|\?|$)/.test(p), modules: ['content', 'clients'] },
+  { test: (p) => /^\/api\/admin\/clients\/[^/]+\/(clickup-sync|shoot-briefings|framer)(\/|\?|$)/.test(p), modules: ['content', 'clients'] },
   // Mail-composer: content (scripts/shoot), klanten (hub), contracten, blogs, partners.
   {
     test: (p) => p.startsWith('/api/admin/email/send') || p.startsWith('/api/admin/email/context') || p.startsWith('/api/admin/email/templates'),

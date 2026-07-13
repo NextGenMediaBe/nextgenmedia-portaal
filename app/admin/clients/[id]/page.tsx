@@ -15,6 +15,7 @@ import { ClientLifecycleBlock } from './client-lifecycle'
 import { ClientMonths } from './client-months'
 import { ClientTasks } from './client-tasks'
 import { ClientBlogs } from './client-blogs'
+import { ClientCms } from './client-cms'
 
 async function getClient(id: string) {
   const admin = createAdminSupabaseClient()
@@ -181,6 +182,9 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
 
           {/* Blogs */}
           <ClientBlogs clientId={id} />
+
+          {/* Website-CMS (Framer) */}
+          <ClientCms clientId={id} />
 
           {/* Revenue */}
           <div className="card-base space-y-3">
