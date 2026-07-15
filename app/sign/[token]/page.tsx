@@ -1,4 +1,6 @@
-import { createAdminSupabaseClient, trySignedUrl } from '@/lib/supabase/server'
+export const dynamic = 'force-dynamic'
+
+import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import { FileText, CheckCircle2, Clock } from 'lucide-react'
 import { SignatureForm } from './signature-form'
@@ -82,7 +84,8 @@ export default async function SignContractPage({ params }: { params: { token: st
 
   const alreadySigned = alreadySignedStatus
 
-  const pdfUrl = await trySignedUrl(admin, 'contracts', contract.pdf_path, 3600)
+  // Document server-side streamen via een app-route (geen verlopende signed-URL).
+  const pdfUrl = contract.pdf_path ? `/sign/${params.token}/document` : null
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
