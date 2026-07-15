@@ -9,9 +9,11 @@ import { useRefresh } from '@/lib/use-refresh'
 import { Logo } from '@/components/logo'
 import { LayoutDashboard, FileText, Calendar, Globe, LogOut, RefreshCcw, Menu, X, ListChecks, Newspaper, CalendarClock } from 'lucide-react'
 import { MODULE_IMPLEMENTED, type PortalModule } from '@/lib/portal-permissions'
+import { t, type Lang } from '@/lib/i18n'
+import { LangToggle } from '@/components/lang-toggle'
 
 type NavItem = {
-  label: string
+  tKey: string
   href: string
   icon: React.ElementType
   exact?: boolean
@@ -22,13 +24,13 @@ type NavItem = {
 }
 
 const NAV: NavItem[] = [
-  { label: 'Dashboard',    href: '/portal',               icon: LayoutDashboard, exact: true },
-  { label: 'Contracten',   href: '/portal/contracts',     icon: FileText,  module: 'contracts' },
-  { label: 'Taken',        href: '/portal/tasks',         icon: ListChecks, module: 'tasks' },
-  { label: 'Social Media', href: '/portal/social-media',  icon: Calendar, requiresService: 'social-media', module: 'social_media' },
-  { label: 'Metricool',    href: '/portal/metricool',     icon: CalendarClock, requiresMetricool: true, module: 'metricool' },
-  { label: 'Website',      href: '/portal/website',       icon: Globe,    requiresService: 'webdesign', module: 'website' },
-  { label: 'Blogs',        href: '/portal/blogs',         icon: Newspaper, requiresBlogs: true, module: 'blogs' },
+  { tKey: 'nav.dashboard',  href: '/portal',               icon: LayoutDashboard, exact: true },
+  { tKey: 'nav.contracts',  href: '/portal/contracts',     icon: FileText,  module: 'contracts' },
+  { tKey: 'nav.tasks',      href: '/portal/tasks',         icon: ListChecks, module: 'tasks' },
+  { tKey: 'nav.social',     href: '/portal/social-media',  icon: Calendar, requiresService: 'social-media', module: 'social_media' },
+  { tKey: 'nav.metricool',  href: '/portal/metricool',     icon: CalendarClock, requiresMetricool: true, module: 'metricool' },
+  { tKey: 'nav.website',    href: '/portal/website',       icon: Globe,    requiresService: 'webdesign', module: 'website' },
+  { tKey: 'nav.blogs',      href: '/portal/blogs',         icon: Newspaper, requiresBlogs: true, module: 'blogs' },
 ]
 
 export function PortalSidebar({
@@ -37,6 +39,7 @@ export function PortalSidebar({
   hasBlogs = false,
   hasMetricool = false,
   allowedModules,
+  lang = 'nl',
 }: {
   companyName: string
   activeServices?: string[]
@@ -44,6 +47,7 @@ export function PortalSidebar({
   hasMetricool?: boolean
   /** Modules met view-recht. Undefined = alles tonen (owner/backward compat). */
   allowedModules?: string[]
+  lang?: Lang
 }) {
   const pathname = usePathname()
   const router = useRouter()
@@ -100,13 +104,13 @@ export function PortalSidebar({
             <Logo className="h-8 w-8 shrink-0" />
             <div className="flex-1 min-w-0">
               <div className="text-sm font-bold text-black leading-tight truncate">{companyName}</div>
-              <div className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">Klantenportaal</div>
+              <div className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">{t(lang, 'portal.subtitle')}</div>
             </div>
             {/* Refresh */}
             <button
               onClick={refresh}
               disabled={spinning}
-              title="Pagina vernieuwen"
+              title={t(lang, 'common.refresh')}
               className="h-7 w-7 flex items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition-colors"
             >
               <RefreshCcw className={cn('h-3.5 w-3.5', spinning && 'animate-spin')} />
@@ -133,19 +137,24 @@ export function PortalSidebar({
                 className={cn('sidebar-item', isActive && 'active')}
               >
                 <item.icon className="h-4 w-4 shrink-0" />
-                {item.label}
+                {t(lang, item.tKey)}
               </Link>
             )
           })}
         </nav>
 
-        <div className="px-3 py-4 border-t border-gray-100">
+        <div className="px-3 py-4 border-t border-gray-100 space-y-3">
+          {/* Taalwissel NL / EN */}
+          <div className="flex items-center justify-between px-1">
+            <span className="text-[11px] text-gray-400">{t(lang, 'common.language')}</span>
+            <LangToggle current={lang} />
+          </div>
           <button
             onClick={handleLogout}
             className="sidebar-item w-full text-red-500 hover:text-red-600 hover:bg-red-50"
           >
             <LogOut className="h-4 w-4" />
-            Uitloggen
+            {t(lang, 'common.logout')}
           </button>
         </div>
       </aside>

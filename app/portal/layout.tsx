@@ -3,6 +3,7 @@ import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { PortalSidebar } from '@/components/portal/sidebar'
 import { resolvePortalSession, sessionCan, touchLastLogin } from '@/lib/portal-auth'
 import { PORTAL_MODULES } from '@/lib/portal-permissions'
+import { getLang } from '@/lib/i18n-server'
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   // Resolveert owner óf subaccount → clientId + rechten + actief.
@@ -37,6 +38,7 @@ export default async function PortalLayout({ children }: { children: React.React
 
   // Modules waarvoor deze gebruiker view-recht heeft (owner = alles).
   const allowedModules = PORTAL_MODULES.filter((m) => sessionCan(session, m, 'view'))
+  const lang = await getLang()
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -46,6 +48,7 @@ export default async function PortalLayout({ children }: { children: React.React
         hasBlogs={hasBlogs}
         hasMetricool={hasMetricool}
         allowedModules={allowedModules}
+        lang={lang}
       />
       <main className="flex-1 min-w-0 md:ml-[var(--sidebar-width)] min-h-screen">
         <div className="max-w-[1200px] mx-auto px-4 pt-20 pb-8 md:pt-6 md:px-6 lg:px-8">
