@@ -21,6 +21,7 @@ const nl: Dict = {
   'nav.tasks': 'Taken',
   'nav.social': 'Social Media',
   'nav.metricool': 'Metricool',
+  'nav.cms': 'Website-CMS',
   'nav.website': 'Website',
   'nav.blogs': 'Blogs',
   // Dashboard
@@ -59,6 +60,7 @@ const en: Dict = {
   'nav.tasks': 'Tasks',
   'nav.social': 'Social Media',
   'nav.metricool': 'Metricool',
+  'nav.cms': 'Website CMS',
   'nav.website': 'Website',
   'nav.blogs': 'Blogs',
   'dash.noProfile': 'No client profile found. Please contact NextGenMedia.',

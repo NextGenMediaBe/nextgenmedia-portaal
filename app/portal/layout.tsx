@@ -26,6 +26,18 @@ export default async function PortalLayout({ children }: { children: React.React
     hasMetricool = !!(mc as { metricool_blog_id?: string | null } | null)?.metricool_blog_id
   } catch { hasMetricool = false }
 
+  // Website-CMS: enkel als cms_enabled én er een bewerkbare collectie is.
+  let hasCms = false
+  try {
+    const { data: cl } = await admin.from('clients').select('cms_enabled').eq('id', session.clientId).maybeSingle()
+    if ((cl as { cms_enabled?: boolean } | null)?.cms_enabled) {
+      const { count } = await admin.from('cms_collections')
+        .select('id', { count: 'exact', head: true })
+        .eq('client_id', session.clientId).eq('client_editable', true)
+      hasCms = (count ?? 0) > 0
+    }
+  } catch { hasCms = false }
+
   // Actieve diensten + blogs (gating naast rechten).
   let activeServices: string[] = []
   let hasBlogs = false
@@ -47,6 +59,7 @@ export default async function PortalLayout({ children }: { children: React.React
         activeServices={activeServices}
         hasBlogs={hasBlogs}
         hasMetricool={hasMetricool}
+        hasCms={hasCms}
         allowedModules={allowedModules}
         lang={lang}
       />

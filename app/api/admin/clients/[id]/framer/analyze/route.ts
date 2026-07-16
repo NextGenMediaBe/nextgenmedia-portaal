@@ -63,7 +63,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           collection_id: colRow.id,
           framer_item_id: it.framerItemId,
           slug: it.slug,
-          field_data: it.fieldData,
+          field_data: it.values,   // eenvoudige {fieldId: waarde}-map voor de editor
           status: 'synced',
           position: i,
         }))

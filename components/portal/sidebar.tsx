@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { useRefresh } from '@/lib/use-refresh'
 import { Logo } from '@/components/logo'
-import { LayoutDashboard, FileText, Calendar, Globe, LogOut, RefreshCcw, Menu, X, ListChecks, Newspaper, CalendarClock } from 'lucide-react'
+import { LayoutDashboard, FileText, Calendar, Globe, LogOut, RefreshCcw, Menu, X, ListChecks, Newspaper, CalendarClock, Database } from 'lucide-react'
 import { MODULE_IMPLEMENTED, type PortalModule } from '@/lib/portal-permissions'
 import { t, type Lang } from '@/lib/i18n'
 import { LangToggle } from '@/components/lang-toggle'
@@ -20,6 +20,7 @@ type NavItem = {
   requiresService?: string
   requiresBlogs?: boolean
   requiresMetricool?: boolean
+  requiresCms?: boolean
   module?: string
 }
 
@@ -29,6 +30,7 @@ const NAV: NavItem[] = [
   { tKey: 'nav.tasks',      href: '/portal/tasks',         icon: ListChecks, module: 'tasks' },
   { tKey: 'nav.social',     href: '/portal/social-media',  icon: Calendar, requiresService: 'social-media', module: 'social_media' },
   { tKey: 'nav.metricool',  href: '/portal/metricool',     icon: CalendarClock, requiresMetricool: true, module: 'metricool' },
+  { tKey: 'nav.cms',        href: '/portal/cms',           icon: Database, requiresCms: true, module: 'cms' },
   { tKey: 'nav.website',    href: '/portal/website',       icon: Globe,    requiresService: 'webdesign', module: 'website' },
   { tKey: 'nav.blogs',      href: '/portal/blogs',         icon: Newspaper, requiresBlogs: true, module: 'blogs' },
 ]
@@ -38,6 +40,7 @@ export function PortalSidebar({
   activeServices = [],
   hasBlogs = false,
   hasMetricool = false,
+  hasCms = false,
   allowedModules,
   lang = 'nl',
 }: {
@@ -45,6 +48,7 @@ export function PortalSidebar({
   activeServices?: string[]
   hasBlogs?: boolean
   hasMetricool?: boolean
+  hasCms?: boolean
   /** Modules met view-recht. Undefined = alles tonen (owner/backward compat). */
   allowedModules?: string[]
   lang?: Lang
@@ -68,6 +72,7 @@ export function PortalSidebar({
       (!item.requiresService || activeServices.includes(item.requiresService)) &&
       (!item.requiresBlogs || hasBlogs) &&
       (!item.requiresMetricool || hasMetricool) &&
+      (!item.requiresCms || hasCms) &&
       (!item.module || !allowedModules || allowedModules.includes(item.module))
   )
 

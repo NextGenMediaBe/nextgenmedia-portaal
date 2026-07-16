@@ -107,6 +107,81 @@ export async function getCollectionItems(projectUrl: string, apiKey: string, col
   })
 }
 
+// ── Schrijven + publiceren ────────────────────────────────────────────────────
+// De klant bewerkt eenvoudige waarden (strings) in de app; we bouwen daaruit de
+// Framer-veld-input per veldtype op. Beeld/bestand = URL-string; enum = case-id;
+// referenties = item-id('s). Bevestigen via /diag met echte data.
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildFieldDataInput(fields: FramerField[], values: Record<string, string>): Record<string, any> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const out: Record<string, any> = {}
+  for (const f of fields) {
+    if (!(f.id in values)) continue
+    const v = values[f.id] ?? ''
+    switch (f.type) {
+      case 'number': out[f.id] = { type: 'number', value: v === '' ? null : Number(v) }; break
+      case 'boolean': out[f.id] = { type: 'boolean', value: v === 'true' || v === '1' || v === 'on' }; break
+      case 'formattedText': out[f.id] = { type: 'formattedText', value: String(v), contentType: 'html' }; break
+      case 'image': out[f.id] = { type: 'image', value: v ? String(v) : null }; break
+      case 'file': out[f.id] = { type: 'file', value: v ? String(v) : null }; break
+      case 'date': out[f.id] = { type: 'date', value: v || null }; break
+      case 'enum': out[f.id] = { type: 'enum', value: v || null }; break
+      case 'color': out[f.id] = { type: 'color', value: String(v) }; break
+      case 'link': out[f.id] = { type: 'link', value: String(v) }; break
+      case 'collectionReference': out[f.id] = { type: 'collectionReference', value: v || null }; break
+      case 'multiCollectionReference': out[f.id] = { type: 'multiCollectionReference', value: v ? v.split(',').map((s) => s.trim()).filter(Boolean) : [] }; break
+      default: out[f.id] = { type: 'string', value: String(v) }
+    }
+  }
+  return out
+}
+
+export type PushItem = { framerItemId: string | null; slug: string; values: Record<string, string> }
+
+/** Voegt nieuwe items toe / werkt bestaande bij in een collectie. Geeft de
+ *  nieuw aangemaakte Framer-item-id's terug (gekeyd op slug). */
+export async function pushItems(projectUrl: string, apiKey: string, collectionId: string, fields: FramerField[], items: PushItem[]): Promise<Record<string, string>> {
+  return withFramer(projectUrl, apiKey, async (framer) => {
+    const newIds: Record<string, string> = {}
+    for (const it of items) {
+      const fieldData = buildFieldDataInput(fields, it.values)
+      if (it.framerItemId) {
+        await (framer.setCollectionItemAttributes2?.(it.framerItemId, { slug: it.slug || undefined, fieldData })
+          ?? framer.setCollectionItemAttributes?.(it.framerItemId, { slug: it.slug || undefined, fieldData }))
+      } else {
+        const res = await (framer.addCollectionItems2?.(collectionId, [{ slug: it.slug, fieldData }])
+          ?? framer.addCollectionItems?.(collectionId, [{ slug: it.slug, fieldData }]))
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const row: any = Array.isArray(res) ? res[0] : null
+        if (row) newIds[it.slug] = String(row.externalId ?? row.nodeId ?? row.id ?? '')
+      }
+    }
+    return newIds
+  })
+}
+
+/** Verwijdert items uit een collectie (op Framer-item-id). */
+export async function removeItems(projectUrl: string, apiKey: string, itemIds: string[]): Promise<void> {
+  if (itemIds.length === 0) return
+  return withFramer(projectUrl, apiKey, async (framer) => {
+    await framer.removeCollectionItems?.(itemIds)
+  })
+}
+
+/** Publiceert de wijzigingen naar de live Framer-website (publish → deploy). */
+export async function publishSite(projectUrl: string, apiKey: string): Promise<{ ok: boolean; deploymentId?: string | null }> {
+  return withFramer(projectUrl, apiKey, async (framer) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result: any = await framer.publish?.()
+    const deploymentId: string | null = result?.deployment?.id ?? null
+    if (deploymentId && typeof framer.deploy === 'function') {
+      try { await framer.deploy(deploymentId) } catch { /* productie-deploy best-effort */ }
+    }
+    return { ok: true, deploymentId }
+  })
+}
+
 /** Diagnose: ruwe respons zodat we de exacte veldshapes kunnen bevestigen. */
 export async function diagnoseFramer(projectUrl: string, apiKey: string) {
   return withFramer(projectUrl, apiKey, async (framer) => {
