@@ -37,6 +37,12 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const { clientId, title, platforms, platform, content_type, planned_date, caption, script, media_notes, status } = body
 
+    // Zonder geldige klant-koppeling NIET opslaan — voorkomt "wees-items" die
+    // daarna nergens getoond worden (leek op verdwenen content).
+    if (!clientId || typeof clientId !== 'string') {
+      return NextResponse.json({ error: 'Geen klant geselecteerd — kies eerst een klant.' }, { status: 400 })
+    }
+
     // Support both `platforms` (array) and legacy `platform` (string)
     const resolvedPlatforms: string[] = Array.isArray(platforms) && platforms.length > 0
       ? platforms

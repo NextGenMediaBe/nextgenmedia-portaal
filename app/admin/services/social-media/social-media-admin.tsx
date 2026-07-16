@@ -3,7 +3,7 @@
 import { useState, useCallback, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { ContentCalendar, type SocialContentItem, type SocialContentStatus } from '@/components/calendar/content-calendar'
-import { Plus, X, Loader2, Sparkles, CheckSquare, Trash2, AlertTriangle, CalendarRange, ArrowRight } from 'lucide-react'
+import { Plus, X, Loader2, Sparkles, CheckSquare, Trash2, AlertTriangle, CalendarRange, ArrowRight, History } from 'lucide-react'
 import { GenerateDialog } from './generate-dialog'
 import { ClickUpSyncControl } from '@/components/admin/clickup-sync-control'
 import { ShootBriefings } from '@/components/admin/shoot-briefings'
@@ -264,7 +264,12 @@ export function SocialMediaAdmin({
     try {
       const res = await fetch(`/api/admin/social-content?clientId=${clientId}`)
       const json = await res.json()
-      setItems(json.items ?? [])
+      // Bij een fout de lijst NIET leegmaken (voorkomt schijnbaar "verdwenen"
+      // content); enkel vervangen als de server echt items teruggeeft.
+      if (res.ok && Array.isArray(json.items)) setItems(json.items)
+      else if (!res.ok) alert(json.error || 'Kon content niet laden — probeer opnieuw.')
+    } catch {
+      alert('Kon content niet laden — controleer je verbinding en probeer opnieuw.')
     } finally {
       setLoading(false)
     }
@@ -343,6 +348,10 @@ export function SocialMediaAdmin({
                   <CalendarRange className="h-4 w-4" />
                   Verzetten
                 </button>
+                <a href="/admin/services/social-media/recover" className="btn-secondary" title="Verdwenen content terugvinden en herstellen">
+                  <History className="h-4 w-4" />
+                  Herstellen
+                </a>
                 <button
                   onClick={() => setSelectMode(true)}
                   className="btn-secondary"
@@ -475,6 +484,9 @@ export function SocialMediaAdmin({
           onCreated={(item) => {
             setItems((prev) => [...prev, item])
             setCreateDialog({ open: false })
+            // Herlaad vanuit de server zodat de weergave exact de database volgt
+            // (bevestigt dat het item écht bewaard is).
+            loadItems(selectedClient)
           }}
         />
       )}
