@@ -1374,6 +1374,15 @@ CREATE POLICY "cms_items admin" ON public.cms_items
   USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
   WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
 
+-- updated_at-trigger-functie idempotent garanderen (bestaat niet in elke DB).
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+RETURNS TRIGGER LANGUAGE plpgsql AS $func$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$func$;
+
 DO $$ BEGIN
   CREATE TRIGGER trg_cms_collections_updated BEFORE UPDATE ON public.cms_collections FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
