@@ -6,7 +6,8 @@
 
 import 'server-only'
 
-export type FramerField = { id: string; name: string; type: string; editable: boolean }
+export type FramerEnumCase = { id: string; name: string }
+export type FramerField = { id: string; name: string; type: string; editable: boolean; options?: FramerEnumCase[] }
 export type FramerCollection = {
   id: string
   name: string
@@ -52,12 +53,22 @@ function fieldsFrom(raw: any[]): FramerField[] {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .filter((f: any) => f && f.type !== 'divider' && f.type !== 'unsupported')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .map((f: any) => ({
-      id: String(f.id),
-      name: String(f.name ?? f.id ?? ''),
-      type: String(f.type ?? 'string'),
-      editable: f.userEditable !== false,
-    }))
+    .map((f: any) => {
+      // Enum-velden: de geldige opties (cases) uitlezen — id = wat Framer bij het
+      // schrijven verwacht (EnumFieldDataEntryInput.value = case-id), name = weergave.
+      let options: FramerEnumCase[] | undefined
+      try {
+        const cs = f.cases
+        if (Array.isArray(cs)) options = cs.map((c: { id: unknown; name: unknown }) => ({ id: String(c.id), name: String(c.name ?? c.id) }))
+      } catch { /* geen enum */ }
+      return {
+        id: String(f.id),
+        name: String(f.name ?? f.id ?? ''),
+        type: String(f.type ?? 'string'),
+        editable: f.userEditable !== false,
+        ...(options && options.length ? { options } : {}),
+      }
+    })
 }
 
 /** Ruwe Framer-fieldData-entry → leesbare weergavewaarde (string). */
@@ -154,7 +165,17 @@ function buildFieldDataInput(fields: FramerField[], values: Record<string, strin
       case 'image': if (!empty) out[f.id] = { type: 'image', value: { url: v } }; break
       case 'file': if (!empty) out[f.id] = { type: 'file', value: { url: v } }; break
       case 'date': { if (empty) break; const iso = toIsoDate(v); if (iso) out[f.id] = { type: 'date', value: iso }; break }
-      case 'enum': if (!empty) out[f.id] = { type: 'enum', value: v }; break
+      case 'enum': {
+        if (empty) break
+        const opts = f.options ?? []
+        if (opts.length === 0) { out[f.id] = { type: 'enum', value: v }; break } // cases onbekend → best effort
+        const match = opts.find((o) => o.id === v || o.name === v)
+          ?? opts.find((o) => o.id.toLowerCase() === v.toLowerCase() || o.name.toLowerCase() === v.toLowerCase())
+        // Geldige case → stuur de case-id. Ongeldige categorie → OVERSLAAN zodat
+        // Framer het hele item niet afwijst (categorie blijft dan gewoon leeg).
+        if (match) out[f.id] = { type: 'enum', value: match.id }
+        break
+      }
       case 'color': if (!empty) out[f.id] = { type: 'color', value: v }; break
       case 'link': if (!empty) out[f.id] = { type: 'link', value: v }; break
       case 'collectionReference': if (!empty) out[f.id] = { type: 'collectionReference', value: v }; break

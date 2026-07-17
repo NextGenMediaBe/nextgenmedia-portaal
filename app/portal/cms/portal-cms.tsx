@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Loader2, Plus, Save, X, Trash2, Rocket, Pencil, Database, RefreshCw, Upload, ImageIcon } from 'lucide-react'
 import { toast } from 'sonner'
 
-type Field = { id: string; name: string; type: string; editable?: boolean }
+type Field = { id: string; name: string; type: string; editable?: boolean; options?: { id: string; name: string }[] }
 type Collection = { id: string; framer_collection_id: string; name: string; slug: string | null; fields: Field[]; item_count: number }
 type Item = { id: string; collection_id: string; framer_item_id: string | null; slug: string | null; field_data: Record<string, string>; status: string }
 
@@ -225,6 +225,16 @@ function FieldInput({ field, value, onChange, inpClass }: { field: Field; value:
           <input type="checkbox" checked={value === 'true' || value === '1'} onChange={(e) => onChange(e.target.checked ? 'true' : 'false')} /> Aan
         </label>
       )
+    case 'enum':
+      if (field.options && field.options.length > 0) {
+        return (
+          <select className={inpClass} value={value} onChange={(e) => onChange(e.target.value)}>
+            <option value="">— kies —</option>
+            {field.options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+          </select>
+        )
+      }
+      return <input type="text" className={inpClass} value={value} onChange={(e) => onChange(e.target.value)} placeholder="Categorie" />
     case 'date':
       return <input type="date" className={inpClass} value={value?.slice(0, 10) ?? ''} onChange={(e) => onChange(e.target.value)} />
     case 'color':
