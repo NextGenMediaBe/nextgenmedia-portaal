@@ -132,8 +132,9 @@ function buildFieldDataInput(fields: FramerField[], values: Record<string, strin
       case 'number': out[f.id] = { type: 'number', value: v === '' ? null : Number(v) }; break
       case 'boolean': out[f.id] = { type: 'boolean', value: v === 'true' || v === '1' || v === 'on' }; break
       case 'formattedText': out[f.id] = { type: 'formattedText', value: String(v), contentType: 'html' }; break
-      case 'image': out[f.id] = { type: 'image', value: v ? String(v) : null }; break
-      case 'file': out[f.id] = { type: 'file', value: v ? String(v) : null }; break
+      // Framer bewaart image/file als object { url, … } — niet als kale string.
+      case 'image': out[f.id] = { type: 'image', value: v ? { url: String(v) } : null }; break
+      case 'file': out[f.id] = { type: 'file', value: v ? { url: String(v) } : null }; break
       case 'date': out[f.id] = { type: 'date', value: v || null }; break
       case 'enum': out[f.id] = { type: 'enum', value: v || null }; break
       case 'color': out[f.id] = { type: 'color', value: String(v) }; break
@@ -157,19 +158,30 @@ export async function pushItems(projectUrl: string, apiKey: string, collectionId
     if (!col) throw new Error('Collectie niet gevonden in Framer')
     if (items.length === 0) return {}
 
-    // Bestaande items updaten via item.setAttributes() (gedocumenteerde weg).
     const updates = items.filter((i) => i.framerItemId)
     const adds = items.filter((i) => !i.framerItemId)
 
+    // Bestaande items bijwerken via addItems MÉT id (bewezen schrijfweg — probe
+    // toont dat addItems met de {type,value}-vorm persistent + niet-draft is).
+    // Fallback per item via item.setAttributes() als addItems-met-id faalt.
     if (updates.length) {
-      const existing = (await col.getItems?.()) ?? []
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const byId = new Map((existing as any[]).map((it) => [String(it.id ?? it.nodeId), it]))
-      for (const u of updates) {
-        const obj = byId.get(String(u.framerItemId))
-        const fieldData = buildFieldDataInput(fields, u.values)
-        if (obj?.setAttributes) await obj.setAttributes({ slug: u.slug || undefined, fieldData })
-        else await col.addItems?.([{ id: u.framerItemId, slug: u.slug || undefined, fieldData }])
+      const payload = updates.map((u) => ({
+        id: u.framerItemId as string,
+        slug: u.slug || undefined,
+        fieldData: buildFieldDataInput(fields, u.values),
+      }))
+      try {
+        await col.addItems?.(payload)
+      } catch (addErr) {
+        const existing = (await col.getItems?.()) ?? []
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const byId = new Map((existing as any[]).map((it) => [String(it.id ?? it.nodeId), it]))
+        for (const u of updates) {
+          const obj = byId.get(String(u.framerItemId))
+          const fieldData = buildFieldDataInput(fields, u.values)
+          if (obj?.setAttributes) await obj.setAttributes({ slug: u.slug || undefined, fieldData })
+          else throw addErr
+        }
       }
     }
 
@@ -232,40 +244,65 @@ export async function probeWriteFramer(projectUrl: string, apiKey: string, colle
     const ex0 = (existing as any[])[0]
     const existingSample = ex0 ? { id: ex0.id, slug: ex0.slug, draft: ex0.draft, fieldDataKeys: Object.keys(ex0.fieldData ?? {}), fieldData: ex0.fieldData } : null
 
-    const marker = `NGM-DIAG-${Date.now()}`
+    const imageField = fields.find((f) => f.type === 'image')
     const isHtml = textField.type === 'formattedText'
-    // Kandidaat-vormen voor fieldData[fieldId].
-    const shapes: Array<{ name: string; value: unknown }> = [
-      { name: 'typed {type,value}', value: isHtml ? { type: 'formattedText', value: marker, contentType: 'html' } : { type: textField.type, value: marker } },
-      { name: 'value-only {value}', value: { value: marker } },
-      { name: 'bare string', value: marker },
-    ]
+    const textEntry = (val: string) => isHtml ? { type: 'formattedText', value: val, contentType: 'html' } : { type: textField.type, value: val }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const items = async () => ((await col.getItems?.()) ?? []) as any[]
+    const steps: Array<Record<string, unknown>> = []
+    const slug = `ngm-diag-${Date.now()}`
+    let tempId: string | null = null
 
-    const attempts: Array<Record<string, unknown>> = []
-    let winner: string | null = null
+    // STAP 1 — nieuw item toevoegen (bewezen typed-vorm).
+    const m1 = `NGM-ADD-${Date.now()}`
+    try {
+      await col.addItems?.([{ slug, fieldData: { [textField.id]: textEntry(m1) } }])
+      const created = (await items()).find((it) => String(it.slug) === slug)
+      tempId = created ? String(created.id ?? created.nodeId ?? '') : null
+      steps.push({ step: 'add', persisted: created ? JSON.stringify(created.fieldData ?? {}).includes(m1) : false, draft: created?.draft, itemId: tempId })
+    } catch (e) { steps.push({ step: 'add', error: String(e).slice(0, 300) }) }
 
-    for (let i = 0; i < shapes.length; i++) {
-      const shape = shapes[i]
-      const slug = `ngm-diag-${Date.now()}-${i}`
-      const fieldData = { [textField.id]: shape.value }
-      let createdId: string | null = null
+    if (tempId) {
+      // STAP 2a — bijwerken via addItems MÉT id.
+      const m2 = `NGM-UPD-ADD-${Date.now()}`
       try {
-        await col.addItems?.([{ slug, fieldData }])
-        const after = (await col.getItems?.()) ?? []
+        await col.addItems?.([{ id: tempId, fieldData: { [textField.id]: textEntry(m2) } }])
+        const upd = (await items()).find((it) => String(it.id ?? it.nodeId) === tempId)
+        steps.push({ step: 'update via addItems+id', applied: upd ? JSON.stringify(upd.fieldData ?? {}).includes(m2) : false })
+      } catch (e) { steps.push({ step: 'update via addItems+id', error: String(e).slice(0, 300) }) }
+
+      // STAP 2b — bijwerken via item.setAttributes().
+      const m3 = `NGM-UPD-SET-${Date.now()}`
+      try {
+        const obj = (await items()).find((it) => String(it.id ?? it.nodeId) === tempId)
+        if (obj?.setAttributes) {
+          await obj.setAttributes({ fieldData: { [textField.id]: textEntry(m3) } })
+          const upd = (await items()).find((it) => String(it.id ?? it.nodeId) === tempId)
+          steps.push({ step: 'update via setAttributes', applied: upd ? JSON.stringify(upd.fieldData ?? {}).includes(m3) : false })
+        } else steps.push({ step: 'update via setAttributes', skipped: 'setAttributes bestaat niet op item' })
+      } catch (e) { steps.push({ step: 'update via setAttributes', error: String(e).slice(0, 300) }) }
+
+      // STAP 3 — afbeelding-veld: welke value-vorm accepteert Framer?
+      if (imageField && existingSample) {
+        // Hergebruik een bestaande Framer-image-URL om zeker een geldige te hebben.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const created = (after as any[]).find((it) => String(it.slug) === slug)
-        createdId = created ? String(created.id ?? created.nodeId ?? '') : null
-        const persisted = created ? JSON.stringify(created.fieldData ?? {}).includes(marker) : false
-        attempts.push({ shape: shape.name, sent: fieldData, readBack: created?.fieldData ?? null, draft: created?.draft, persisted })
-        if (persisted && !winner) winner = shape.name
-      } catch (e) {
-        attempts.push({ shape: shape.name, sent: fieldData, error: String(e).slice(0, 300) })
-      } finally {
-        if (createdId) { try { await col.removeItems?.([createdId]) } catch { /* opruimen best-effort */ } }
+        const exImg: any = (existingSample.fieldData as any)?.[imageField.id]?.value
+        const testUrl = String(exImg?.url ?? 'https://framerusercontent.com/images/placeholder.png')
+        const marker = testUrl.split('/').pop()
+        for (const [name, val] of [['value:{url}', { url: testUrl }], ['value:string', testUrl]] as const) {
+          try {
+            await col.addItems?.([{ id: tempId, fieldData: { [imageField.id]: { type: 'image', value: val } } }])
+            const upd = (await items()).find((it) => String(it.id ?? it.nodeId) === tempId)
+            const iv = upd?.fieldData?.[imageField.id]
+            steps.push({ step: `image ${name}`, readBack: iv ?? null, applied: iv ? JSON.stringify(iv).includes(String(marker)) : false })
+          } catch (e) { steps.push({ step: `image ${name}`, error: String(e).slice(0, 300) }) }
+        }
       }
+
+      try { await col.removeItems?.([tempId]) } catch { /* opruimen best-effort */ }
     }
 
-    return { ok: true, collection: { id: col.id, name: col.name, readonly: col.readonly }, textField, fields, existingSample, winner, attempts }
+    return { ok: true, collection: { id: col.id, name: col.name, readonly: col.readonly }, textField, imageField: imageField ?? null, fields, existingSample, steps }
   })
 }
 
