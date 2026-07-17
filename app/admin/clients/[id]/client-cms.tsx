@@ -94,6 +94,11 @@ export function ClientCms({ clientId }: { clientId: string }) {
           <button onClick={analyze} disabled={analyzing || !status?.configured} className="btn-primary text-sm disabled:opacity-40 disabled:cursor-not-allowed" title={status?.configured ? 'Collecties + velden + items ophalen uit Framer' : 'Stel eerst project + key in'}>
             {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}Analyseer
           </button>
+          {status?.configured && (
+            <a href={`${base}/diag`} target="_blank" rel="noreferrer" className="btn-secondary text-sm" title="Ruwe Framer-respons bekijken (voor probleemoplossing)">
+              Diagnose
+            </a>
+          )}
         </div>
       </div>
 
