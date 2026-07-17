@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
       // 1) Verwijderde items schrappen in Framer.
       const toDelete = dirty.filter((r) => r.status === 'deleted' && r.framer_item_id)
       if (toDelete.length) {
-        await removeItems(projectUrl, apiKey, toDelete.map((r) => r.framer_item_id as string))
+        await removeItems(projectUrl, apiKey, col.framer_collection_id, toDelete.map((r) => r.framer_item_id as string))
         await admin.from('cms_items').delete().in('id', toDelete.map((r) => r.id))
         summary.deleted += toDelete.length
       }
