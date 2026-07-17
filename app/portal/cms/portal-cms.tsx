@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Loader2, Plus, Save, X, Trash2, Rocket, Pencil, Database } from 'lucide-react'
+import { Loader2, Plus, Save, X, Trash2, Rocket, Pencil, Database, RefreshCw, Upload, ImageIcon } from 'lucide-react'
 import { toast } from 'sonner'
 
 type Field = { id: string; name: string; type: string; editable?: boolean }
@@ -21,6 +21,7 @@ export function PortalCms() {
   const [active, setActive] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [publishing, setPublishing] = useState(false)
+  const [syncing, setSyncing] = useState(false)
   const [editItem, setEditItem] = useState<Item | 'new' | null>(null)
 
   const load = useCallback(async () => {
@@ -50,6 +51,16 @@ export function PortalCms() {
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Publiceren mislukt') } finally { setPublishing(false) }
   }
 
+  const sync = async () => {
+    setSyncing(true)
+    try {
+      const res = await fetch('/api/portal/cms/sync', { method: 'POST' })
+      const j = await res.json(); if (!res.ok) throw new Error(j.error)
+      toast.success('Actuele inhoud opgehaald van je website.')
+      await load()
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Verversen mislukt') } finally { setSyncing(false) }
+  }
+
   const remove = async (item: Item) => {
     if (!confirm('Dit item verwijderen?')) return
     try {
@@ -76,12 +87,17 @@ export function PortalCms() {
             </button>
           ))}
         </div>
-        <button onClick={publish} disabled={publishing || pendingCount === 0}
-          className="btn-primary text-sm disabled:opacity-40 disabled:cursor-not-allowed"
-          title={pendingCount === 0 ? 'Geen wijzigingen om te publiceren' : 'Wijzigingen live zetten'}>
-          {publishing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
-          Opslaan &amp; publiceren{pendingCount > 0 ? ` (${pendingCount})` : ''}
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={sync} disabled={syncing} className="btn-secondary text-sm" title="Actuele inhoud ophalen van je website">
+            {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}Ververs
+          </button>
+          <button onClick={publish} disabled={publishing || pendingCount === 0}
+            className="btn-primary text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+            title={pendingCount === 0 ? 'Geen wijzigingen om te publiceren' : 'Wijzigingen live zetten'}>
+            {publishing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
+            Opslaan &amp; publiceren{pendingCount > 0 ? ` (${pendingCount})` : ''}
+          </button>
+        </div>
       </div>
 
       {/* Items */}
@@ -201,10 +217,49 @@ function FieldInput({ field, value, onChange, inpClass }: { field: Field; value:
       return <input type="color" className="h-9 w-16 rounded border border-gray-200" value={value || '#000000'} onChange={(e) => onChange(e.target.value)} />
     case 'image':
     case 'file':
-      return <input type="url" className={inpClass} value={value} onChange={(e) => onChange(e.target.value)} placeholder="https://… (URL naar bestand/afbeelding)" />
+      return <MediaField field={field} value={value} onChange={onChange} inpClass={inpClass} />
     case 'link':
       return <input type="url" className={inpClass} value={value} onChange={(e) => onChange(e.target.value)} placeholder="https://…" />
     default:
       return <input type="text" className={inpClass} value={value} onChange={(e) => onChange(e.target.value)} />
   }
+}
+
+function MediaField({ field, value, onChange, inpClass }: { field: Field; value: string; onChange: (v: string) => void; inpClass: string }) {
+  const [uploading, setUploading] = useState(false)
+  const isImage = field.type === 'image'
+
+  const upload = async (file: File) => {
+    setUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch('/api/portal/cms/upload', { method: 'POST', body: fd })
+      const j = await res.json(); if (!res.ok) throw new Error(j.error)
+      onChange(j.url)
+      toast.success('Bestand geüpload.')
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Upload mislukt') } finally { setUploading(false) }
+  }
+
+  return (
+    <div className="space-y-2">
+      {value && isImage && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={value} alt="" className="max-h-32 rounded-lg border border-gray-100 object-contain" />
+      )}
+      <div className="flex items-center gap-2 flex-wrap">
+        <label className="btn-secondary text-sm cursor-pointer">
+          {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+          {value ? 'Vervangen' : (isImage ? 'Afbeelding uploaden' : 'Bestand uploaden')}
+          <input type="file" accept={isImage ? 'image/*' : undefined} className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f) }} />
+        </label>
+        {value && (
+          <button type="button" onClick={() => onChange('')} className="text-xs text-gray-400 hover:text-red-500">Verwijderen</button>
+        )}
+      </div>
+      {value && !isImage && <div className="text-[11px] text-gray-500 flex items-center gap-1 truncate"><ImageIcon className="h-3 w-3" />{value}</div>}
+      <input type="url" className={inpClass} value={value} onChange={(e) => onChange(e.target.value)} placeholder="…of plak een URL" />
+    </div>
+  )
 }

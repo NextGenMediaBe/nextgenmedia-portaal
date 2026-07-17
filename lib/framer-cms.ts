@@ -157,17 +157,26 @@ export async function pushItems(projectUrl: string, apiKey: string, collectionId
     if (!col) throw new Error('Collectie niet gevonden in Framer')
     if (items.length === 0) return {}
 
-    const payload = items.map((it) => ({
-      ...(it.framerItemId ? { id: it.framerItemId } : {}),
-      slug: it.slug || undefined,
-      fieldData: buildFieldDataInput(fields, it.values),
-    }))
-    await col.addItems?.(payload)
-
-    // Nieuwe items (zonder id) → hun Framer-item-id opzoeken via de slug.
-    const newIds: Record<string, string> = {}
+    // Bestaande items updaten via item.setAttributes() (gedocumenteerde weg).
+    const updates = items.filter((i) => i.framerItemId)
     const adds = items.filter((i) => !i.framerItemId)
+
+    if (updates.length) {
+      const existing = (await col.getItems?.()) ?? []
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const byId = new Map((existing as any[]).map((it) => [String(it.id ?? it.nodeId), it]))
+      for (const u of updates) {
+        const obj = byId.get(String(u.framerItemId))
+        const fieldData = buildFieldDataInput(fields, u.values)
+        if (obj?.setAttributes) await obj.setAttributes({ slug: u.slug || undefined, fieldData })
+        else await col.addItems?.([{ id: u.framerItemId, slug: u.slug || undefined, fieldData }])
+      }
+    }
+
+    // Nieuwe items toevoegen + hun Framer-item-id opzoeken via de slug.
+    const newIds: Record<string, string> = {}
     if (adds.length) {
+      await col.addItems?.(adds.map((a) => ({ slug: a.slug, fieldData: buildFieldDataInput(fields, a.values) })))
       const after = (await col.getItems?.()) ?? []
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const bySlug = new Map((after as any[]).map((it) => [String(it.slug), String(it.id ?? it.nodeId ?? '')]))

@@ -29,6 +29,7 @@ export async function POST(req: NextRequest) {
     const collections = cols ?? []
 
     const summary = { pushed: 0, deleted: 0, collections: 0 }
+    const errors: Array<{ collection: string; error: string }> = []
 
     for (const col of collections) {
       const { data: rows } = await admin
@@ -38,48 +39,55 @@ export async function POST(req: NextRequest) {
         .in('status', ['new', 'dirty', 'deleted'])
       const dirty = rows ?? []
       if (dirty.length === 0) continue
-      summary.collections++
 
       const fields = (Array.isArray(col.fields) ? col.fields : []) as FramerField[]
 
-      // 1) Verwijderde items schrappen in Framer.
-      const toDelete = dirty.filter((r) => r.status === 'deleted' && r.framer_item_id)
-      if (toDelete.length) {
-        await removeItems(projectUrl, apiKey, col.framer_collection_id, toDelete.map((r) => r.framer_item_id as string))
-        await admin.from('cms_items').delete().in('id', toDelete.map((r) => r.id))
-        summary.deleted += toDelete.length
-      }
-      // Nieuwe items die lokaal als 'deleted' gemarkeerd zijn (nooit gepusht) → gewoon lokaal weg.
-      const localDelete = dirty.filter((r) => r.status === 'deleted' && !r.framer_item_id)
-      if (localDelete.length) await admin.from('cms_items').delete().in('id', localDelete.map((r) => r.id))
-
-      // 2) Nieuwe + gewijzigde items terugschrijven.
-      const toPush = dirty.filter((r) => r.status === 'new' || r.status === 'dirty')
-      if (toPush.length) {
-        const items: PushItem[] = toPush.map((r, i) => ({
-          framerItemId: r.framer_item_id,
-          slug: r.slug || `item-${Date.now()}-${i}`,
-          values: (r.field_data && typeof r.field_data === 'object') ? (r.field_data as Record<string, string>) : {},
-        }))
-        const newIds = await pushItems(projectUrl, apiKey, col.framer_collection_id, fields, items)
-        // Nieuw aangemaakte items: bewaar het Framer-item-id + markeer synced.
-        for (const r of toPush) {
-          const patch: Record<string, unknown> = { status: 'synced' }
-          if (!r.framer_item_id) {
-            const nid = newIds[r.slug || '']
-            if (nid) patch.framer_item_id = nid
-          }
-          await admin.from('cms_items').update(patch).eq('id', r.id)
+      try {
+        // 1) Verwijderde items schrappen in Framer.
+        const toDelete = dirty.filter((r) => r.status === 'deleted' && r.framer_item_id)
+        if (toDelete.length) {
+          await removeItems(projectUrl, apiKey, col.framer_collection_id, toDelete.map((r) => r.framer_item_id as string))
+          await admin.from('cms_items').delete().in('id', toDelete.map((r) => r.id))
+          summary.deleted += toDelete.length
         }
-        summary.pushed += toPush.length
+        // Nieuwe items die lokaal als 'deleted' gemarkeerd zijn (nooit gepusht) → lokaal weg.
+        const localDelete = dirty.filter((r) => r.status === 'deleted' && !r.framer_item_id)
+        if (localDelete.length) await admin.from('cms_items').delete().in('id', localDelete.map((r) => r.id))
+
+        // 2) Nieuwe + gewijzigde items terugschrijven (met stabiele slug per rij).
+        const toPush = dirty.filter((r) => r.status === 'new' || r.status === 'dirty')
+        if (toPush.length) {
+          const withSlug = toPush.map((r, i) => ({ row: r, slug: r.slug || `item-${Date.now()}-${i}` }))
+          const items: PushItem[] = withSlug.map(({ row, slug }) => ({
+            framerItemId: row.framer_item_id,
+            slug,
+            values: (row.field_data && typeof row.field_data === 'object') ? (row.field_data as Record<string, string>) : {},
+          }))
+          const newIds = await pushItems(projectUrl, apiKey, col.framer_collection_id, fields, items)
+          for (const { row, slug } of withSlug) {
+            const patch: Record<string, unknown> = { status: 'synced' }
+            if (!row.framer_item_id && newIds[slug]) patch.framer_item_id = newIds[slug]
+            if (!row.slug) patch.slug = slug
+            await admin.from('cms_items').update(patch).eq('id', row.id)
+          }
+          summary.pushed += toPush.length
+        }
+        summary.collections++
+      } catch (e) {
+        errors.push({ collection: col.framer_collection_id, error: e instanceof Error ? e.message : 'Fout' })
       }
     }
 
-    // 3) Publiceren + live zetten.
-    await publishSite(projectUrl, apiKey)
+    // 3) Publiceren + live zetten (ook als sommige collecties faalden — de wél
+    //    doorgeschreven wijzigingen moeten live).
+    let published = true
+    try { await publishSite(projectUrl, apiKey) } catch (e) { published = false; errors.push({ collection: '(publish)', error: e instanceof Error ? e.message : 'Fout' }) }
 
-    await logPortalAction(g.session, 'cms.publish', { type: 'client', id: g.session.clientId }, { req, meta: summary })
-    return NextResponse.json({ ok: true, summary })
+    await logPortalAction(g.session, 'cms.publish', { type: 'client', id: g.session.clientId }, { req, meta: { ...summary, errors: errors.length } })
+    if (errors.length > 0) {
+      return NextResponse.json({ ok: false, summary, published, error: errors.map((e) => `${e.collection}: ${e.error}`).join(' | '), errors }, { status: 400 })
+    }
+    return NextResponse.json({ ok: true, summary, published })
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
   }
