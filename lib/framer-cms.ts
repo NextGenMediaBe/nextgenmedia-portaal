@@ -79,19 +79,50 @@ export async function listCollectionsWithSchema(projectUrl: string, apiKey: stri
     const out: FramerCollection[] = []
     for (const c of cols) {
       const managedBy = String(c.managedBy ?? (c.readonly ? 'anotherPlugin' : 'user'))
-      const editable = managedBy === 'user' && c.readonly !== true
-      let fields: FramerField[] = []
-      try { fields = fieldsFrom(await framer.getCollectionFields?.(c.id)) } catch { /* niet leesbaar */ }
+      // Ook managed collecties (bv. door onze blog-integratie gemaakt) mogen
+      // door de klant bewerkt worden — enkel écht read-only sluiten we uit.
+      const editable = c.readonly !== true
+      const fields = fieldsFrom(await readRawFields(framer, c.id))
       out.push({ id: String(c.id), name: String(c.name ?? ''), slugField: c.slugFieldName ?? null, managedBy, editable, fields })
     }
     return out
   })
 }
 
+/** Leest velddefinities via de méést werkende methode (user óf managed). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function readRawFields(framer: any, id: string): Promise<any[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tries: Array<() => Promise<any>> = [
+    () => framer.getCollectionFields2?.(id),
+    () => framer.getCollectionFields?.(id),
+    () => framer.getManagedCollectionFields2?.(id),
+    () => framer.getManagedCollectionFields?.(id),
+  ]
+  for (const t of tries) {
+    try { const r = await t(); if (Array.isArray(r) && r.length) return r } catch { /* volgende */ }
+  }
+  return []
+}
+
+/** Leest items via de méést werkende methode. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function readRawItems(framer: any, id: string): Promise<any[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const tries: Array<() => Promise<any>> = [
+    () => framer.getCollectionItems2?.(id),
+    () => framer.getCollectionItems?.(id),
+  ]
+  for (const t of tries) {
+    try { const r = await t(); if (Array.isArray(r) && r.length) return r } catch { /* volgende */ }
+  }
+  return []
+}
+
 /** Alle items van één collectie (genormaliseerd + ruwe fieldData bewaard). */
 export async function getCollectionItems(projectUrl: string, apiKey: string, collectionId: string): Promise<FramerItem[]> {
   return withFramer(projectUrl, apiKey, async (framer) => {
-    const items = (await (framer.getCollectionItems2?.(collectionId) ?? framer.getCollectionItems?.(collectionId))) ?? []
+    const items = await readRawItems(framer, collectionId)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return items.map((it: any) => {
       const fieldData = (it.fieldData ?? {}) as Record<string, unknown>
@@ -182,27 +213,36 @@ export async function publishSite(projectUrl: string, apiKey: string): Promise<{
   })
 }
 
-/** Diagnose: ruwe respons zodat we de exacte veldshapes kunnen bevestigen. */
+/** Diagnose: probeert per collectie ELKE lees-methode (user + managed) en toont
+ *  de ruwe respons/fout, zodat we exact zien wat werkt en hoe de velden/items
+ *  serialiseren. */
 export async function diagnoseFramer(projectUrl: string, apiKey: string) {
   return withFramer(projectUrl, apiKey, async (framer) => {
+    // Welke methodes bestaan op deze framer-versie?
+    const methodNames = ['getCollections', 'getCollectionFields', 'getCollectionFields2', 'getCollectionItems', 'getCollectionItems2', 'getManagedCollections', 'getManagedCollectionFields', 'getManagedCollectionFields2', 'getManagedCollectionItemIds', 'addCollectionItems2', 'setCollectionItemAttributes2', 'removeCollectionItems', 'publish', 'deploy']
+    const methods: Record<string, boolean> = {}
+    for (const m of methodNames) methods[m] = typeof framer[m] === 'function'
+
     const cols = (await framer.getCollections?.()) ?? []
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const first = cols.find((c: any) => (c.managedBy ? c.managedBy === 'user' : !c.readonly)) ?? cols[0]
-    let fieldsSample: unknown = null
-    let itemsSample: unknown = null
-    if (first) {
-      try { fieldsSample = await framer.getCollectionFields?.(first.id) } catch (e) { fieldsSample = String(e) }
-      try {
-        const items = await (framer.getCollectionItems2?.(first.id) ?? framer.getCollectionItems?.(first.id))
-        itemsSample = Array.isArray(items) ? items.slice(0, 2) : items
-      } catch (e) { itemsSample = String(e) }
+    const tryOne = async (fn: () => Promise<any>) => {
+      try { const r = await fn(); return { ok: true, count: Array.isArray(r) ? r.length : undefined, sample: Array.isArray(r) ? r.slice(0, 2) : r } }
+      catch (e) { return { ok: false, error: String(e).slice(0, 200) } }
     }
-    return {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      collections: cols.map((c: any) => ({ id: c.id, name: c.name, managedBy: c.managedBy, readonly: c.readonly, slugFieldName: c.slugFieldName })),
-      testedCollection: first?.id ?? null,
-      fieldsSample,
-      itemsSample,
+
+    const perCollection = []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const c of cols as any[]) {
+      perCollection.push({
+        id: c.id, name: c.name, managedBy: c.managedBy, readonly: c.readonly, slugFieldName: c.slugFieldName,
+        getCollectionFields: await tryOne(() => framer.getCollectionFields?.(c.id)),
+        getCollectionFields2: await tryOne(() => framer.getCollectionFields2?.(c.id)),
+        getManagedCollectionFields2: await tryOne(() => framer.getManagedCollectionFields2?.(c.id)),
+        getCollectionItems2: await tryOne(() => framer.getCollectionItems2?.(c.id)),
+        getCollectionItems: await tryOne(() => framer.getCollectionItems?.(c.id)),
+      })
     }
+
+    return { methods, collectionCount: cols.length, collections: perCollection }
   })
 }
