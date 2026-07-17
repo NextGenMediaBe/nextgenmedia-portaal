@@ -176,6 +176,20 @@ export async function pushItems(projectUrl: string, apiKey: string, collectionId
     if (!col) throw new Error('Collectie niet gevonden in Framer')
     if (items.length === 0) return {}
 
+    // Serialiseer met de LIVE veldtypes uit Framer: de opgeslagen fields
+    // (cms_collections.fields) kunnen stale/fout zijn, waardoor een veld met een
+    // verkeerd type wordt weggeschreven (bv. enum als image → object-waarde →
+    // "Expected a valid enum case, got: [object Object]"). Live is de waarheid.
+    let liveFields = fields
+    try { const lf = fieldsFrom(await col.getFields?.()); if (lf.length) liveFields = lf } catch { /* val terug op opgeslagen fields */ }
+
+    // Bij een schrijffout ook tonen WAT er verstuurd werd (per veld type+waarde),
+    // zodat een resterend probleemveld meteen zichtbaar is in de foutmelding.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const describe = (fd: Record<string, any>) => Object.entries(fd)
+      .map(([k, val]) => { const f = liveFields.find((x) => x.id === k); return `${f?.name ?? k}(${val?.type})=${typeof val?.value === 'object' ? JSON.stringify(val.value) : String(val?.value)}` })
+      .join(', ')
+
     const updates = items.filter((i) => i.framerItemId)
     const adds = items.filter((i) => !i.framerItemId)
 
@@ -186,7 +200,7 @@ export async function pushItems(projectUrl: string, apiKey: string, collectionId
       const payload = updates.map((u) => ({
         id: u.framerItemId as string,
         slug: u.slug || undefined,
-        fieldData: buildFieldDataInput(fields, u.values),
+        fieldData: buildFieldDataInput(liveFields, u.values),
       }))
       try {
         await col.addItems?.(payload)
@@ -196,9 +210,9 @@ export async function pushItems(projectUrl: string, apiKey: string, collectionId
         const byId = new Map((existing as any[]).map((it) => [String(it.id ?? it.nodeId), it]))
         for (const u of updates) {
           const obj = byId.get(String(u.framerItemId))
-          const fieldData = buildFieldDataInput(fields, u.values)
+          const fieldData = buildFieldDataInput(liveFields, u.values)
           if (obj?.setAttributes) await obj.setAttributes({ slug: u.slug || undefined, fieldData })
-          else throw addErr
+          else throw new Error(`${addErr instanceof Error ? addErr.message : 'schrijffout'} — verstuurd: ${describe(fieldData)}`)
         }
       }
     }
@@ -206,7 +220,12 @@ export async function pushItems(projectUrl: string, apiKey: string, collectionId
     // Nieuwe items toevoegen + hun Framer-item-id opzoeken via de slug.
     const newIds: Record<string, string> = {}
     if (adds.length) {
-      await col.addItems?.(adds.map((a) => ({ slug: a.slug, fieldData: buildFieldDataInput(fields, a.values) })))
+      const payload = adds.map((a) => ({ slug: a.slug, fieldData: buildFieldDataInput(liveFields, a.values) }))
+      try {
+        await col.addItems?.(payload)
+      } catch (e) {
+        throw new Error(`${e instanceof Error ? e.message : 'schrijffout'} — verstuurd: ${payload.map((p) => describe(p.fieldData)).join(' | ')}`)
+      }
       const after = (await col.getItems?.()) ?? []
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const bySlug = new Map((after as any[]).map((it) => [String(it.slug), String(it.id ?? it.nodeId ?? '')]))
