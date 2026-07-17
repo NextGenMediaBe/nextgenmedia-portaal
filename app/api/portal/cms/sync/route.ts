@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { requirePortalPermission } from '@/lib/portal-auth'
 import { framerConfigured, listCollectionsWithSchema, getCollectionItems } from '@/lib/framer-cms'
+import { mirrorSyncedItems } from '@/lib/cms-mirror'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -45,29 +46,9 @@ export async function POST() {
       const items = await getCollectionItems(projectUrl, apiKey, col.id)
       await admin.from('cms_collections').update({ fields: col.fields, item_count: items.length, synced_at: new Date().toISOString() }).eq('id', colRow.id)
 
-      // Bestaande 'synced'-rijen ophalen om verdwenen items op te ruimen.
-      const { data: current } = await admin
-        .from('cms_items').select('id, framer_item_id, status').eq('collection_id', colRow.id)
-      const liveIds = new Set(items.map((it) => it.framerItemId))
-      // Synced-rijen die niet meer in Framer bestaan → verwijderen.
-      const gone = (current ?? []).filter((r) => r.status === 'synced' && r.framer_item_id && !liveIds.has(r.framer_item_id))
-      if (gone.length) await admin.from('cms_items').delete().in('id', gone.map((r) => r.id))
-
-      // Live items upserten (enkel synced-rijen worden overschreven; new/dirty/deleted blijven).
-      for (let i = 0; i < items.length; i++) {
-        const it = items[i]
-        const existing = (current ?? []).find((r) => r.framer_item_id === it.framerItemId)
-        if (existing && existing.status !== 'synced') continue // lokale wijziging behouden
-        await admin.from('cms_items').upsert({
-          collection_id: colRow.id,
-          framer_item_id: it.framerItemId,
-          slug: it.slug,
-          field_data: it.values,
-          status: 'synced',
-          position: i,
-        }, { onConflict: 'collection_id,framer_item_id' })
-        syncedItems++
-      }
+      // Live items spiegelen (manueel update-of-insert; synced-rijen worden
+      // ververst, lokale new/dirty/deleted blijven behouden — zie cms-mirror).
+      syncedItems += await mirrorSyncedItems(admin, colRow.id, items)
     }
 
     return NextResponse.json({ ok: true, synced: syncedItems })

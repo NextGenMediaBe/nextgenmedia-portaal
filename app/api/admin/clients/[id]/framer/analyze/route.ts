@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { logAudit, requestMeta } from '@/lib/audit'
 import { framerConfigured, listCollectionsWithSchema, getCollectionItems } from '@/lib/framer-cms'
+import { mirrorSyncedItems } from '@/lib/cms-mirror'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -56,18 +57,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (colErr || !colRow) continue
       if (clientEditable) summary.editableCollections++
 
-      // Items spiegelen (upsert op framer_item_id). We laten lokale 'new'/'dirty'
-      // items met rust door enkel gesynchroniseerde items te vervangen.
+      // Items spiegelen (manueel update-of-insert op framer_item_id — zie cms-mirror).
+      // Lokale 'new'/'dirty'/'deleted'-items blijven met rust.
       if (col.editable && items.length > 0) {
-        const rows = items.map((it, i) => ({
-          collection_id: colRow.id,
-          framer_item_id: it.framerItemId,
-          slug: it.slug,
-          field_data: it.values,   // eenvoudige {fieldId: waarde}-map voor de editor
-          status: 'synced',
-          position: i,
-        }))
-        await admin.from('cms_items').upsert(rows, { onConflict: 'collection_id,framer_item_id' })
+        await mirrorSyncedItems(admin, colRow.id, items)
         summary.items += items.length
       }
     }
