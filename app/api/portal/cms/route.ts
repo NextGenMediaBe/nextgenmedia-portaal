@@ -24,11 +24,13 @@ export async function GET() {
     const collectionIds = (cols ?? []).map((c) => c.id)
     let items: unknown[] = []
     if (collectionIds.length > 0) {
+      // Ook 'deleted'-items teruggeven: de client verbergt ze uit de lijst, maar
+      // telt ze mee als openstaande wijziging zodat de publiceer-knop actief wordt
+      // en de verwijdering naar Framer wordt doorgezet.
       const { data } = await admin
         .from('cms_items')
         .select('id, collection_id, framer_item_id, slug, field_data, status, position')
         .in('collection_id', collectionIds)
-        .neq('status', 'deleted')
         .order('position', { ascending: true })
       items = data ?? []
     }

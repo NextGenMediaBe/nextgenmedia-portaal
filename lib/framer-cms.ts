@@ -256,12 +256,32 @@ export async function pushItems(projectUrl: string, apiKey: string, collectionId
   })
 }
 
-/** Verwijdert items uit een collectie (op het collectie-object, op item-id). */
+/** Verwijdert items uit een collectie op het collectie-object. Probeert eerst
+ *  col.removeItems(ids); valt terug op item.remove() per gevonden item, zodat de
+ *  verwijdering echt doorgaat ook als removeItems met de losse id's niets doet. */
 export async function removeItems(projectUrl: string, apiKey: string, collectionId: string, itemIds: string[]): Promise<void> {
   if (itemIds.length === 0) return
   return withFramer(projectUrl, apiKey, async (framer) => {
     const col = await findCollection(framer, collectionId)
-    if (col) await col.removeItems?.(itemIds)
+    if (!col) return
+    const idset = new Set(itemIds.map(String))
+    const existing = (await col.getItems?.()) ?? []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const targets = (existing as any[]).filter((it) => idset.has(String(it.id ?? it.nodeId)))
+    try {
+      await col.removeItems?.(itemIds)
+    } catch {
+      // val terug op per-item verwijderen
+    }
+    // Controleer of ze weg zijn; zo niet, verwijder via item.remove().
+    const still = (await col.getItems?.()) ?? []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const stillIds = new Set((still as any[]).map((it) => String(it.id ?? it.nodeId)))
+    for (const it of targets) {
+      if (stillIds.has(String(it.id ?? it.nodeId)) && typeof it.remove === 'function') {
+        try { await it.remove() } catch { /* best-effort */ }
+      }
+    }
   })
 }
 

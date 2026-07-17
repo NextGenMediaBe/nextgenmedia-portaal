@@ -39,8 +39,10 @@ export function PortalCms() {
   useEffect(() => { load() }, [load])
 
   const activeCol = collections.find((c) => c.id === active) ?? null
-  const colItems = useMemo(() => items.filter((i) => i.collection_id === active), [items, active])
-  const pendingCount = items.filter((i) => i.status === 'new' || i.status === 'dirty').length
+  // Verwijderde items niet tonen in de lijst, maar wél als openstaande wijziging tellen.
+  const colItems = useMemo(() => items.filter((i) => i.collection_id === active && i.status !== 'deleted'), [items, active])
+  const pendingCount = items.filter((i) => i.status === 'new' || i.status === 'dirty' || i.status === 'deleted').length
+  const pendingDeletes = items.filter((i) => i.status === 'deleted').length
 
   const publish = async () => {
     setPublishing(true)
@@ -117,7 +119,10 @@ export function PortalCms() {
       {/* Items */}
       <div className="card-base p-0 overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-          <span className="text-sm font-medium">{colItems.length} item(s)</span>
+          <span className="text-sm font-medium">
+            {colItems.length} item(s)
+            {pendingDeletes > 0 && <span className="ml-2 text-xs font-normal text-red-500">· {pendingDeletes} verwijderd (wacht op publiceren)</span>}
+          </span>
           <button onClick={() => setEditItem('new')} className="btn-secondary text-sm"><Plus className="h-4 w-4" />Nieuw item</button>
         </div>
         {colItems.length === 0 ? (
