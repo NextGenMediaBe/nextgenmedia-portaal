@@ -208,6 +208,67 @@ export async function publishSite(projectUrl: string, apiKey: string): Promise<{
   })
 }
 
+/** Schrijf-probe: voegt in een bewerkbare collectie één TESTitem toe, leest het
+ *  terug en ruimt het weer op. Probeert meerdere fieldData-vormen tot er één
+ *  blijft plakken → zo weten we exact hoe Framer waarden verwacht (en of items
+ *  als draft worden aangemaakt). Muteert enkel tijdelijk (add + remove), geen publish. */
+export async function probeWriteFramer(projectUrl: string, apiKey: string, collectionId?: string) {
+  return withFramer(projectUrl, apiKey, async (framer) => {
+    const cols = (await framer.getCollections?.()) ?? []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const list = cols as any[]
+    const col = collectionId
+      ? list.find((c) => String(c.id) === String(collectionId))
+      : list.find((c) => c.readonly !== true) ?? list[0]
+    if (!col) return { ok: false, error: 'Geen bewerkbare collectie gevonden' }
+
+    const fields = fieldsFrom(await col.getFields?.())
+    const textField = fields.find((f) => f.type === 'string') ?? fields.find((f) => f.type === 'formattedText') ?? fields[0]
+    if (!textField) return { ok: false, error: 'Collectie heeft geen velden' }
+
+    // Ruwe vorm van een BESTAAND item (canonieke read-shape + sleutels).
+    const existing = (await col.getItems?.()) ?? []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ex0 = (existing as any[])[0]
+    const existingSample = ex0 ? { id: ex0.id, slug: ex0.slug, draft: ex0.draft, fieldDataKeys: Object.keys(ex0.fieldData ?? {}), fieldData: ex0.fieldData } : null
+
+    const marker = `NGM-DIAG-${Date.now()}`
+    const isHtml = textField.type === 'formattedText'
+    // Kandidaat-vormen voor fieldData[fieldId].
+    const shapes: Array<{ name: string; value: unknown }> = [
+      { name: 'typed {type,value}', value: isHtml ? { type: 'formattedText', value: marker, contentType: 'html' } : { type: textField.type, value: marker } },
+      { name: 'value-only {value}', value: { value: marker } },
+      { name: 'bare string', value: marker },
+    ]
+
+    const attempts: Array<Record<string, unknown>> = []
+    let winner: string | null = null
+
+    for (let i = 0; i < shapes.length; i++) {
+      const shape = shapes[i]
+      const slug = `ngm-diag-${Date.now()}-${i}`
+      const fieldData = { [textField.id]: shape.value }
+      let createdId: string | null = null
+      try {
+        await col.addItems?.([{ slug, fieldData }])
+        const after = (await col.getItems?.()) ?? []
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const created = (after as any[]).find((it) => String(it.slug) === slug)
+        createdId = created ? String(created.id ?? created.nodeId ?? '') : null
+        const persisted = created ? JSON.stringify(created.fieldData ?? {}).includes(marker) : false
+        attempts.push({ shape: shape.name, sent: fieldData, readBack: created?.fieldData ?? null, draft: created?.draft, persisted })
+        if (persisted && !winner) winner = shape.name
+      } catch (e) {
+        attempts.push({ shape: shape.name, sent: fieldData, error: String(e).slice(0, 300) })
+      } finally {
+        if (createdId) { try { await col.removeItems?.([createdId]) } catch { /* opruimen best-effort */ } }
+      }
+    }
+
+    return { ok: true, collection: { id: col.id, name: col.name, readonly: col.readonly }, textField, fields, existingSample, winner, attempts }
+  })
+}
+
 /** Diagnose: probeert per collectie ELKE lees-methode (user + managed) en toont
  *  de ruwe respons/fout, zodat we exact zien wat werkt en hoe de velden/items
  *  serialiseren. */
