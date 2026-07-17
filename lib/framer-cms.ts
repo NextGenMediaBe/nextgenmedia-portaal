@@ -142,7 +142,10 @@ function buildFieldDataInput(fields: FramerField[], values: Record<string, strin
     // naar de onderliggende scalar (case-naam / url / tekst), anders wordt een
     // object ".toString()"'d tot "[object Object]" → Framer wijst het item af.
     const v = displayValue(values[f.id])
-    const empty = v.trim() === ''
+    // Vangrail: een kapotte waarde die eerder als object werd opgeslagen kan als
+    // de letterlijke tekst "[object Object]" in de DB staan → behandel als leeg
+    // zodat Framer het item niet afwijst.
+    const empty = v.trim() === '' || v === '[object Object]'
     switch (f.type) {
       case 'number': { if (empty) break; const n = Number(v); if (!Number.isNaN(n)) out[f.id] = { type: 'number', value: n }; break }
       case 'boolean': out[f.id] = { type: 'boolean', value: v === 'true' || v === '1' || v === 'on' }; break
