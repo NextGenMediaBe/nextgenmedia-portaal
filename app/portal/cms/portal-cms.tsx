@@ -23,6 +23,7 @@ export function PortalCms() {
   const [publishing, setPublishing] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [editItem, setEditItem] = useState<Item | 'new' | null>(null)
+  const [publishError, setPublishError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -43,12 +44,17 @@ export function PortalCms() {
 
   const publish = async () => {
     setPublishing(true)
+    setPublishError(null)
     try {
       const res = await fetch('/api/portal/cms/publish', { method: 'POST' })
       const j = await res.json(); if (!res.ok) throw new Error(j.error)
       toast.success('Je wijzigingen zijn gepubliceerd en gaan live.')
       await load()
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Publiceren mislukt') } finally { setPublishing(false) }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Publiceren mislukt'
+      setPublishError(msg)
+      toast.error(msg)
+    } finally { setPublishing(false) }
   }
 
   const sync = async () => {
@@ -99,6 +105,14 @@ export function PortalCms() {
           </button>
         </div>
       </div>
+
+      {/* Publiceer-fout (blijft staan tot volgende poging) */}
+      {publishError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="font-medium mb-0.5">Publiceren gaf een fout terug</div>
+          <div className="break-words whitespace-pre-wrap font-mono text-[12px]">{publishError}</div>
+        </div>
+      )}
 
       {/* Items */}
       <div className="card-base p-0 overflow-hidden">

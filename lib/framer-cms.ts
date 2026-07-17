@@ -121,27 +121,38 @@ export async function getCollectionItems(projectUrl: string, apiKey: string, col
 // Framer-veld-input per veldtype op. Beeld/bestand = URL-string; enum = case-id;
 // referenties = item-id('s). Bevestigen via /diag met echte data.
 
+/** 'YYYY-MM-DD' of ISO → volledige ISO-datum (zoals Framer die bewaart), of null. */
+function toIsoDate(v: string): string | null {
+  const d = new Date(v.length <= 10 ? `${v}T00:00:00.000Z` : v)
+  return Number.isNaN(d.getTime()) ? null : d.toISOString()
+}
+
+// Bouwt de Framer-fieldData-input. LEGE niet-tekstvelden (datum/enum/image/file/
+// referenties/getal) worden BEWUST overgeslagen: Framer valideert elke entry strikt
+// (typia) en wijst een heel item af bij één ongeldige/lege waarde. Tekstvelden mogen
+// wél leeg zijn (geldige lege string). Datum wordt naar volledige ISO genormaliseerd.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function buildFieldDataInput(fields: FramerField[], values: Record<string, string>): Record<string, any> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const out: Record<string, any> = {}
   for (const f of fields) {
     if (!(f.id in values)) continue
-    const v = values[f.id] ?? ''
+    const v = (values[f.id] ?? '').toString()
+    const empty = v.trim() === ''
     switch (f.type) {
-      case 'number': out[f.id] = { type: 'number', value: v === '' ? null : Number(v) }; break
+      case 'number': { if (empty) break; const n = Number(v); if (!Number.isNaN(n)) out[f.id] = { type: 'number', value: n }; break }
       case 'boolean': out[f.id] = { type: 'boolean', value: v === 'true' || v === '1' || v === 'on' }; break
-      case 'formattedText': out[f.id] = { type: 'formattedText', value: String(v), contentType: 'html' }; break
+      case 'formattedText': out[f.id] = { type: 'formattedText', value: v, contentType: 'html' }; break
       // Framer bewaart image/file als object { url, … } — niet als kale string.
-      case 'image': out[f.id] = { type: 'image', value: v ? { url: String(v) } : null }; break
-      case 'file': out[f.id] = { type: 'file', value: v ? { url: String(v) } : null }; break
-      case 'date': out[f.id] = { type: 'date', value: v || null }; break
-      case 'enum': out[f.id] = { type: 'enum', value: v || null }; break
-      case 'color': out[f.id] = { type: 'color', value: String(v) }; break
-      case 'link': out[f.id] = { type: 'link', value: String(v) }; break
-      case 'collectionReference': out[f.id] = { type: 'collectionReference', value: v || null }; break
-      case 'multiCollectionReference': out[f.id] = { type: 'multiCollectionReference', value: v ? v.split(',').map((s) => s.trim()).filter(Boolean) : [] }; break
-      default: out[f.id] = { type: 'string', value: String(v) }
+      case 'image': if (!empty) out[f.id] = { type: 'image', value: { url: v } }; break
+      case 'file': if (!empty) out[f.id] = { type: 'file', value: { url: v } }; break
+      case 'date': { if (empty) break; const iso = toIsoDate(v); if (iso) out[f.id] = { type: 'date', value: iso }; break }
+      case 'enum': if (!empty) out[f.id] = { type: 'enum', value: v }; break
+      case 'color': if (!empty) out[f.id] = { type: 'color', value: v }; break
+      case 'link': if (!empty) out[f.id] = { type: 'link', value: v }; break
+      case 'collectionReference': if (!empty) out[f.id] = { type: 'collectionReference', value: v }; break
+      case 'multiCollectionReference': { const ids = empty ? [] : v.split(',').map((s) => s.trim()).filter(Boolean); out[f.id] = { type: 'multiCollectionReference', value: ids }; break }
+      default: out[f.id] = { type: 'string', value: v }
     }
   }
   return out
