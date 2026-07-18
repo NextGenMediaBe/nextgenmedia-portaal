@@ -4,7 +4,7 @@ import { requirePortalPermission, logPortalAction } from '@/lib/portal-auth'
 import { framerConfigured, pushItems, removeItems, publishSite, type FramerField, type PushItem } from '@/lib/framer-cms'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
+export const maxDuration = 300
 
 // POST — publiceer de werkkopie naar de Framer-website: nieuwe/gewijzigde items
 // terugschrijven, verwijderde items schrappen, daarna publiceren + deployen.
@@ -81,13 +81,28 @@ export async function POST(req: NextRequest) {
     // 3) Publiceren + live zetten (ook als sommige collecties faalden — de wél
     //    doorgeschreven wijzigingen moeten live).
     let published = true
-    try { await publishSite(projectUrl, apiKey) } catch (e) { published = false; errors.push({ collection: '(publish)', error: e instanceof Error ? e.message : 'Fout' }) }
+    let publishWarning: string | null = null
+    try {
+      await publishSite(projectUrl, apiKey)
+    } catch (e) {
+      published = false
+      const msg = e instanceof Error ? e.message : 'Fout'
+      // Een publish-time-out is NIET fataal: de item-wijzigingen staan al in Framer;
+      // de website-publicatie loopt op de achtergrond door. Toon een waarschuwing
+      // i.p.v. een harde fout, zodat de klant niet denkt dat er iets misging.
+      publishWarning = /tim(e|ed)[\s-]?out/i.test(msg)
+        ? 'Je wijzigingen staan in Framer. Het live zetten van de website duurt iets langer en gebeurt op de achtergrond — bekijk je site over enkele minuten.'
+        : `De website-publicatie is mogelijk niet voltooid: ${msg}`
+    }
 
-    await logPortalAction(g.session, 'cms.publish', { type: 'client', id: g.session.clientId }, { req, meta: { ...summary, errors: errors.length } })
+    await logPortalAction(g.session, 'cms.publish', { type: 'client', id: g.session.clientId }, { req, meta: { ...summary, itemErrors: errors.length, published } })
+
+    // Alleen ECHTE schrijffouten (item toevoegen/bijwerken/verwijderen) zijn fataal.
+    // Een mislukte/trage site-publicatie is een waarschuwing, geen blokkade.
     if (errors.length > 0) {
       return NextResponse.json({ ok: false, summary, published, error: errors.map((e) => `${e.collection}: ${e.error}`).join(' | '), errors }, { status: 400 })
     }
-    return NextResponse.json({ ok: true, summary, published })
+    return NextResponse.json({ ok: true, summary, published, publishWarning })
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
   }

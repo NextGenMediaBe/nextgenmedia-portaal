@@ -50,7 +50,8 @@ export function PortalCms() {
     try {
       const res = await fetch('/api/portal/cms/publish', { method: 'POST' })
       const j = await res.json(); if (!res.ok) throw new Error(j.error)
-      toast.success('Je wijzigingen zijn gepubliceerd en gaan live.')
+      if (j.publishWarning) toast.warning(j.publishWarning, { duration: 8000 })
+      else toast.success('Je wijzigingen zijn gepubliceerd en gaan live.')
       await load()
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Publiceren mislukt'
