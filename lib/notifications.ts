@@ -1,6 +1,7 @@
 import 'server-only'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { followUp } from '@/lib/contract-status'
+import { FEATURES } from '@/lib/features'
 
 // Eén bron voor meldingen + "Vandaag": alles live afgeleid uit bestaande data
 // (geen nieuwe tabel). Gelezen/niet-gelezen wordt client-side in localStorage
@@ -63,8 +64,11 @@ export async function buildNotifications(): Promise<Notif[]> {
       href: `/admin/contracts/${c.id}`,
     })
   }
-  for (const b of blogs) {
-    out.push({ id: `blog:${b.id}`, kind: 'blog', priority: 'low', title: `Blog klaar voor publicatie — ${b.titel}`, date: null, href: '/admin/blog-calendar' })
+  // Blog-signalen enkel als de module aan staat (lib/features.ts).
+  if (FEATURES.blogs) {
+    for (const b of blogs) {
+      out.push({ id: `blog:${b.id}`, kind: 'blog', priority: 'low', title: `Blog klaar voor publicatie — ${b.titel}`, date: null, href: '/admin/blog-calendar' })
+    }
   }
   for (const w of webRequests) {
     out.push({ id: `website:${w.id}`, kind: 'website', priority: 'med', title: `Nieuwe websitefeedback — ${w.title}`, date: w.created_at ?? null, href: '/admin/services/website' })

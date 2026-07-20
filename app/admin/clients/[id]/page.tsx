@@ -15,6 +15,7 @@ import { ClientLifecycleBlock } from './client-lifecycle'
 import { ClientMonths } from './client-months'
 import { ClientTasks } from './client-tasks'
 import { ClientBlogs } from './client-blogs'
+import { FEATURES } from '@/lib/features'
 import { ClientCms } from './client-cms'
 
 async function getClient(id: string) {
@@ -180,8 +181,8 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
             <ClientTasks clientId={id} />
           </div>
 
-          {/* Blogs */}
-          <ClientBlogs clientId={id} />
+          {/* Blogs — tijdelijk verborgen via lib/features.ts */}
+          {FEATURES.blogs && <ClientBlogs clientId={id} />}
 
           {/* Website-CMS (Framer) */}
           <ClientCms clientId={id} />

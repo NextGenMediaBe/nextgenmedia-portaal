@@ -3,6 +3,7 @@ import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { formatEuro } from '@/lib/utils'
 import { FileText, Newspaper, TrendingUp, Receipt, Users, Globe, Calendar, ListChecks } from 'lucide-react'
 import { canonicalStatus } from '@/lib/contract-status'
+import { FEATURES } from '@/lib/features'
 
 // Klant als centrale hub: één klikbaar overzicht van alles wat aan deze klant hangt.
 // Alles afgeleid uit bestaande data (geen nieuwe tabellen), met deep-links.
@@ -39,7 +40,7 @@ export async function ClientHub({ clientId, btw }: { clientId: string; btw?: str
 
   const tiles: { icon: React.ElementType; value: string; label: string; href: string; accent?: string }[] = [
     { icon: FileText, value: String(contractCount), label: signedContracts ? `contracten · ${signedContracts} getekend` : 'contracten', href: '/admin/contracts' },
-    { icon: Newspaper, value: String(blogCount), label: 'blogs', href: '/admin/blogs' },
+    ...(FEATURES.blogs ? [{ icon: Newspaper, value: String(blogCount), label: 'blogs', href: '/admin/blogs' }] : []),
     { icon: TrendingUp, value: formatEuro(prognoseTotal), label: 'prognose', href: '/admin/revenue/omzet' },
     { icon: Receipt, value: String(invoicesToSend), label: 'te versturen', href: '/admin/invoices', accent: invoicesToSend > 0 ? 'text-amber-600' : undefined },
     { icon: Users, value: String(subaccounts), label: 'gebruikers', href: `/admin/clients/${clientId}#gebruikers` },

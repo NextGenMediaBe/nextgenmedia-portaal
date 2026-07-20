@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { pathToModule, canSeeModule, STAFF_API_WHITELIST, isStaffApiDenied, modulesForApiPath } from '@/lib/staff'
+import { isDisabledPath } from '@/lib/features'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 
 // Rol/rechten worden via de service-role client gelezen (bypasst RLS). Reden:
@@ -42,6 +43,14 @@ export async function updateSession(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
 
   const path = request.nextUrl.pathname
+
+  // Uitgeschakelde features (lib/features.ts) centraal dichtzetten — voor
+  // IEDEREEN, ook admin, zodat een verborgen module ook niet via een directe URL
+  // bereikbaar is. De code blijft bestaan; enkel de toegang is geblokkeerd.
+  if (isDisabledPath(path)) {
+    if (path.startsWith('/api/')) return NextResponse.json({ error: 'Niet beschikbaar' }, { status: 404 })
+    return NextResponse.redirect(new URL(user ? '/admin' : '/login', request.url))
+  }
 
   // Admin-API's: werknemers centraal per module afschermen (de route-guards
   // controleren identiteit; dit is de module-laag). Admin passeert altijd.

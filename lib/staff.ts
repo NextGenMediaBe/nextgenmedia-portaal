@@ -4,6 +4,8 @@
 // Admin = ziet alles. Werknemer = enkel modules in staff_members.permissions.
 // 'werknemers' (staff-beheer) is ALTIJD admin-only en nooit een togglebare module.
 
+import { DISABLED_MODULE_KEYS } from '@/lib/features'
+
 export type AdminModule = {
   key: string
   label: string
@@ -29,6 +31,11 @@ export const ADMIN_MODULES: AdminModule[] = [
   { key: 'email',       label: 'E-mailcenter',         prefixes: ['/admin/email', '/api/admin/email'] },
   { key: 'info',        label: 'Informatief',          prefixes: ['/admin/informatief', '/admin/onboarding', '/admin/maandplanning', '/api/admin/month-planning', '/api/admin/month-planning-clients'] },
 ]
+
+/** Modules die ZICHTBAAR/toewijsbaar zijn in de UI. ADMIN_MODULES blijft bewust
+ *  compleet (pathToModule moet alle paden blijven mappen); uitgeschakelde features
+ *  worden hier eruit gefilterd én in de middleware hard geblokkeerd. */
+export const VISIBLE_ADMIN_MODULES: AdminModule[] = ADMIN_MODULES.filter((m) => !DISABLED_MODULE_KEYS.includes(m.key))
 
 /** API-paden die élke actieve werknemer mag gebruiken (module-neutrale pickers).
  *  Bevat enkel niet-gevoelige lijstdata (bv. klantnamen voor dropdowns). */

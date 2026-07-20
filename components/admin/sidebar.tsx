@@ -10,6 +10,7 @@ import {
   Info, ClipboardList, CalendarDays, ShoppingCart, Mail, Receipt, Newspaper, Rocket, UserCog, CalendarClock, BarChart3,
 } from 'lucide-react'
 import { canSeeModule } from '@/lib/staff'
+import { DISABLED_MODULE_KEYS } from '@/lib/features'
 import { useState } from 'react'
 import { useRefresh } from '@/lib/use-refresh'
 import { Logo } from '@/components/logo'
@@ -165,6 +166,9 @@ export function AdminSidebar({ allowedModules, isEmployee = false }: { allowedMo
 
   // Werknemer ziet enkel toegestane modules; admin (allowedModules undefined) ziet alles.
   const canSee = (item: NavEntry) => {
+    // Uitgeschakelde features (lib/features.ts) tonen we voor niemand — ook niet
+    // voor admin; de middleware blokkeert die paden sowieso.
+    if (item.module && DISABLED_MODULE_KEYS.includes(item.module)) return false
     if (item.adminOnly && isEmployee) return false
     if (!item.module || !allowedModules) return true
     return canSeeModule(allowedModules, item.module)

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { UserCog, Plus, Loader2, X, Trash2, KeyRound, Power } from 'lucide-react'
 import { toast } from 'sonner'
-import { ADMIN_MODULES, STAFF_PRESETS } from '@/lib/staff'
+import { ADMIN_MODULES, VISIBLE_ADMIN_MODULES, STAFF_PRESETS } from '@/lib/staff'
 
 type Staff = { id: string; name: string | null; email: string | null; active: boolean; permissions: string[]; created_at: string; last_login_at: string | null }
 
@@ -121,7 +121,7 @@ function Dialog({ staff, onClose, onDone }: { staff: Staff | null; onClose: () =
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Zichtbare modules / dashboards</label>
             <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-              {ADMIN_MODULES.map((m) => (
+              {VISIBLE_ADMIN_MODULES.map((m) => (
                 <label key={m.key} className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={perms.includes(m.key)} onChange={() => toggle(m.key)} />{m.label}</label>
               ))}
             </div>

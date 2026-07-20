@@ -2,6 +2,8 @@
 // platform (contracten, social media, website, blogs, taken, bestanden).
 // Pure module — geen server-only imports, veilig in client- én servercomponenten.
 
+import { FEATURES } from '@/lib/features'
+
 export const PORTAL_MODULES = ['social_media', 'metricool', 'cms', 'website', 'contracts', 'blogs', 'tasks', 'files'] as const
 export type PortalModule = (typeof PORTAL_MODULES)[number]
 
@@ -37,7 +39,7 @@ export const MODULE_IMPLEMENTED: Record<PortalModule, boolean> = {
   cms:          true,
   website:      true,
   contracts:    true,
-  blogs:        true,
+  blogs:        FEATURES.blogs,   // tijdelijk uit — zie lib/features.ts
   tasks:        true,
   files:        false,
 }
