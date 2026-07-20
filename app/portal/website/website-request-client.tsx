@@ -161,7 +161,7 @@ export function WebsiteRequestClient({
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded">
+                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
                         {KIND_LABEL[displayKind] ?? displayKind}
                       </span>
                       <span className="text-xs text-gray-400">{formatDate(r.created_at)}</span>
@@ -172,7 +172,7 @@ export function WebsiteRequestClient({
                     )}
                   </div>
                   <div className="flex flex-col items-end gap-1.5 shrink-0">
-                    <span className={`status-badge ${STATUS_STYLE[r.status] ?? 'bg-gray-100 text-gray-500'}`}>
+                    <span className={`status-badge ${STATUS_STYLE[r.status] ?? 'bg-gray-100 text-gray-600'}`}>
                       {STATUS_LABEL[r.status] ?? r.status}
                     </span>
                     {/* Only editable while still 'new' (not yet picked up by admin) */}

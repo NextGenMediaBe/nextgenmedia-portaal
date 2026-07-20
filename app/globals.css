@@ -2,7 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 @layer base {
   :root {
@@ -35,7 +34,16 @@
 
   body {
     @apply bg-white text-[#0a0a0a] font-sans antialiased;
-    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    /* cv-features waren Inter-specifiek; Manrope profiteert van deze. */
+    font-feature-settings: 'ss01', 'kern';
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Bedragen en tabellen: cijfers even breed, zodat kolommen netjes uitlijnen.
+     In een app vol facturen/bedragen is dit het verschil tussen "af" en slordig. */
+  table,
+  .tabular {
+    font-variant-numeric: tabular-nums;
   }
 
   /* Hard guard tegen horizontale scroll op mobiel: niets mag breder zijn dan
@@ -80,6 +88,23 @@
 
   .btn-danger {
     @apply inline-flex items-center justify-center gap-2 px-4 py-2 bg-red-50 text-red-700 font-medium rounded-lg border border-red-200 shadow-sm hover:bg-red-100 active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-200 transition-all duration-150 text-sm disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  /* Micro-interacties: subtiel en functioneel. Staat bewust ná de knop-definities
+     zodat deze regels winnen. Een knop mag "meegeven" bij een klik, maar niets
+     beweegt dat geen feedback geeft — dit is een werkomgeving, geen landingspagina.
+     prefers-reduced-motion schakelt alles uit (zie onderaan dit bestand). */
+  .btn-primary:hover {
+    box-shadow: 0 2px 12px rgba(255, 248, 72, 0.5);
+  }
+  .btn-primary:active,
+  .btn-secondary:active,
+  .btn-danger:active {
+    transform: scale(0.98);
+  }
+  /* Kaarten in klikbare lijsten liften heel licht op bij hover. */
+  a.card-base:hover {
+    @apply shadow-[0_4px_16px_rgba(15,23,42,0.07)] border-gray-300/80;
   }
 
   .input-base {
@@ -154,4 +179,17 @@ img, svg, video, canvas {
 }
 [draggable=true]:active {
   cursor: grabbing;
+}
+
+/* Toegankelijkheid: wie in zijn systeem "minder beweging" heeft ingesteld,
+   krijgt geen animaties of transities. Verplicht bij micro-interacties. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -18,7 +18,7 @@ const STATUS_STYLE: Record<string, string> = {
   open: 'bg-blue-100 text-blue-700',
   in_progress: 'bg-purple-100 text-purple-700',
   completed: 'bg-green-100 text-green-700',
-  cancelled: 'bg-gray-100 text-gray-500',
+  cancelled: 'bg-gray-100 text-gray-600',
 }
 const STATUS_LABEL: Record<string, string> = {
   open: 'Openstaand', in_progress: 'Actief', completed: 'Afgerond', cancelled: 'Geannuleerd',
@@ -150,7 +150,7 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
           <h1 className="text-2xl font-bold truncate">{partner.name}</h1>
           <p className="text-sm text-gray-500">{partner.company ?? partner.email}</p>
         </div>
-        <span className={`status-badge shrink-0 ${partner.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+        <span className={`status-badge shrink-0 ${partner.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
           {partner.active ? 'Actief' : 'Inactief'}
         </span>
         <PartnerActions partnerId={partner.id} partnerName={partner.name} active={partner.active} />
@@ -349,7 +349,7 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
                     <td className="py-2.5">
                       <span className={`status-badge text-xs ${
                         l.status === 'settled' ? 'bg-green-100 text-green-700' :
-                        l.status === 'cancelled' ? 'bg-gray-100 text-gray-500' :
+                        l.status === 'cancelled' ? 'bg-gray-100 text-gray-600' :
                         'bg-amber-100 text-amber-700'
                       }`}>
                         {l.status === 'settled' ? 'Afgerekend' : l.status === 'cancelled' ? 'Geannuleerd' : 'Openstaand'}
@@ -396,7 +396,7 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
                     <td className="table-td font-medium">{a.title}</td>
                     <td className="table-td text-gray-500">{a.client?.company_name ?? '—'}</td>
                     <td className="table-td">
-                      <span className={`status-badge ${STATUS_STYLE[a.status] ?? 'bg-gray-100 text-gray-500'}`}>
+                      <span className={`status-badge ${STATUS_STYLE[a.status] ?? 'bg-gray-100 text-gray-600'}`}>
                         {STATUS_LABEL[a.status] ?? a.status}
                       </span>
                     </td>

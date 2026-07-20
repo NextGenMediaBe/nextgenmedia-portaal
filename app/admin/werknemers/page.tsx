@@ -56,7 +56,7 @@ export default function WerknemersPage() {
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 <button onClick={() => setEditing(s)} className="h-7 px-2 rounded-lg text-xs hover:bg-gray-100 text-gray-600">Bewerk</button>
-                <button onClick={() => toggleActive(s)} title={s.active ? 'Deactiveren' : 'Activeren'} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500"><Power className="h-3.5 w-3.5" /></button>
+                <button onClick={() => toggleActive(s)} title={s.active ? 'Deactiveren' : 'Activeren'} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-600"><Power className="h-3.5 w-3.5" /></button>
                 <button onClick={() => del(s)} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-red-50 text-red-400"><Trash2 className="h-3.5 w-3.5" /></button>
               </div>
             </div>

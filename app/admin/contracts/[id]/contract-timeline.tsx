@@ -21,7 +21,7 @@ const META: Record<string, { label: string; icon: React.ComponentType<{ classNam
   downloaded_signed:     { label: 'Getekend gedownload',   icon: Download,    cls: 'bg-gray-100 text-gray-600' },
   token_regenerated:     { label: 'Nieuwe tekenlink',      icon: RefreshCw,   cls: 'bg-gray-100 text-gray-600' },
   expired:               { label: 'Verlopen',              icon: Clock,       cls: 'bg-red-100 text-red-600' },
-  cancelled:             { label: 'Geannuleerd',           icon: XCircle,     cls: 'bg-gray-100 text-gray-500' },
+  cancelled:             { label: 'Geannuleerd',           icon: XCircle,     cls: 'bg-gray-100 text-gray-600' },
 }
 
 export function ContractTimeline({ events }: { events: Event[] }) {
@@ -34,7 +34,7 @@ export function ContractTimeline({ events }: { events: Event[] }) {
   return (
     <ol className="relative ml-1">
       {sorted.map((e, i) => {
-        const m = META[e.event_type] ?? { label: e.event_type, icon: Circle, cls: 'bg-gray-100 text-gray-500' }
+        const m = META[e.event_type] ?? { label: e.event_type, icon: Circle, cls: 'bg-gray-100 text-gray-600' }
         const Icon = m.icon
         const who = e.actor ?? e.actor_email
         const last = i === sorted.length - 1

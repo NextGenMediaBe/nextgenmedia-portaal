@@ -106,7 +106,7 @@ export default async function PartnersPage() {
                         : '—'}
                     </td>
                     <td className="table-td">
-                      <span className={`status-badge ${p.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                      <span className={`status-badge ${p.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
                         {p.active ? 'Actief' : 'Inactief'}
                       </span>
                     </td>

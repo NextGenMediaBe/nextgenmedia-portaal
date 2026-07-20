@@ -37,7 +37,7 @@ const STATUS_STYLE: Record<string, string> = {
   open: 'bg-orange-100 text-orange-700',
   in_progress: 'bg-blue-100 text-blue-700',
   completed: 'bg-green-100 text-green-700',
-  cancelled: 'bg-gray-100 text-gray-500',
+  cancelled: 'bg-gray-100 text-gray-600',
 }
 const STATUS_LABEL: Record<string, string> = {
   open: 'Open', in_progress: 'Actief', completed: 'Afgerond', cancelled: 'Geannuleerd',
@@ -252,12 +252,12 @@ function AssignmentCard({
               </span>
             )}
             {a.service_slug && (
-              <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded">
+              <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
                 {a.service_slug}
               </span>
             )}
             {a.roles && a.roles.length > 0 && a.roles.slice(0, 2).map((r) => (
-              <span key={r} className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded">
+              <span key={r} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
                 {roleLabels[r] ?? r}
               </span>
             ))}
@@ -284,7 +284,7 @@ function AssignmentCard({
         </div>
         <div className="flex flex-col items-end gap-1.5 shrink-0">
           {amount != null && <span className="text-sm font-bold">{formatEuro(amount)}</span>}
-          <span className={`status-badge ${STATUS_STYLE[a.status] ?? 'bg-gray-100 text-gray-500'}`}>
+          <span className={`status-badge ${STATUS_STYLE[a.status] ?? 'bg-gray-100 text-gray-600'}`}>
             {STATUS_LABEL[a.status] ?? a.status}
           </span>
           <div className="flex items-center gap-1">

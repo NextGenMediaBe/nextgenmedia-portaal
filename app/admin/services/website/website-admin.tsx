@@ -118,7 +118,7 @@ export function WebsiteAdmin({
                   <Globe className="h-4 w-4 text-gray-400 shrink-0" />
                   <div className="font-medium text-sm truncate">{c.company_name}</div>
                 </div>
-                <span className={`status-badge text-xs shrink-0 ${c.active ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-500'}`}>
+                <span className={`status-badge text-xs shrink-0 ${c.active ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-700'}`}>
                   {c.active ? 'Actief' : 'Wacht op toegang'}
                 </span>
               </div>
@@ -160,7 +160,7 @@ export function WebsiteAdmin({
                           {r.clients?.company_name ?? '—'} · {KIND_LABEL[friendlyKind] ?? friendlyKind} · {formatDate(r.created_at)}
                         </div>
                       </div>
-                      <span className={`status-badge shrink-0 ${STATUS_STYLE[r.status] ?? 'bg-gray-100 text-gray-500'}`}>
+                      <span className={`status-badge shrink-0 ${STATUS_STYLE[r.status] ?? 'bg-gray-100 text-gray-600'}`}>
                         {STATUS_LABEL[r.status] ?? r.status}
                       </span>
                     </div>

@@ -80,8 +80,8 @@ export function BlogAccountsManager() {
                   <div className="min-w-0">
                     <div className="font-medium flex items-center gap-2 flex-wrap">
                       {a.name}
-                      {!a.active && <span className="status-badge bg-gray-100 text-gray-500 text-[10px]">inactief</span>}
-                      {a.client_name ? <span className="status-badge bg-sky-100 text-sky-700 text-[10px]">klant: {a.client_name}</span> : <span className="status-badge bg-gray-100 text-gray-500 text-[10px]">geen klant</span>}
+                      {!a.active && <span className="status-badge bg-gray-100 text-gray-600 text-[10px]">inactief</span>}
+                      {a.client_name ? <span className="status-badge bg-sky-100 text-sky-700 text-[10px]">klant: {a.client_name}</span> : <span className="status-badge bg-gray-100 text-gray-600 text-[10px]">geen klant</span>}
                       {a.framer_valid
                         ? <span className="inline-flex items-center gap-1 text-[10px] text-green-700"><CheckCircle2 className="h-3 w-3" />Framer gekoppeld</span>
                         : <span className="inline-flex items-center gap-1 text-[10px] text-amber-600"><AlertTriangle className="h-3 w-3" />Framer niet gekoppeld</span>}

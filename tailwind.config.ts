@@ -19,7 +19,7 @@ const config: Config = {
         brand: '#fff848',
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
+        sans: ['var(--font-sans)', 'system-ui', 'sans-serif'],
       },
       borderRadius: {
         lg: '0.625rem',

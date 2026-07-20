@@ -16,7 +16,7 @@ const STATUS: Record<string, { label: string; cls: string }> = {
   open: { label: 'Open', cls: 'bg-blue-100 text-blue-700' },
   in_progress: { label: 'In behandeling', cls: 'bg-purple-100 text-purple-700' },
   done: { label: 'Voltooid', cls: 'bg-green-100 text-green-700' },
-  cancelled: { label: 'Geannuleerd', cls: 'bg-gray-100 text-gray-500' },
+  cancelled: { label: 'Geannuleerd', cls: 'bg-gray-100 text-gray-600' },
 }
 const PRIO: Record<string, { label: string; cls: string }> = {
   laag: { label: 'Laag', cls: 'bg-gray-100 text-gray-600' },
@@ -68,7 +68,7 @@ export function ClientTasks({ clientId }: { clientId: string }) {
       ) : (
         <div className="space-y-2">
           {tasks.map((t) => {
-            const st = STATUS[t.status] ?? { label: t.status, cls: 'bg-gray-100 text-gray-500' }
+            const st = STATUS[t.status] ?? { label: t.status, cls: 'bg-gray-100 text-gray-600' }
             const pr = PRIO[t.priority] ?? PRIO.normaal
             return (
               <div key={t.id} className="rounded-xl border border-gray-100 p-3">

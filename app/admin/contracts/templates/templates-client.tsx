@@ -91,7 +91,7 @@ export function TemplatesClient({
                   <h3 className="font-semibold truncate">{t.name}</h3>
                   {t.category && <p className="text-xs text-gray-500 mt-0.5">{t.category}</p>}
                 </div>
-                <span className={`status-badge shrink-0 ${t.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                <span className={`status-badge shrink-0 ${t.active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
                   {t.active ? 'Actief' : 'Inactief'}
                 </span>
               </div>

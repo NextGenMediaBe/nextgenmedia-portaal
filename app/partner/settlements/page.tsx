@@ -14,7 +14,7 @@ const KIND_LABEL: Record<string, string> = {
 const PAY_STATUS: Record<string, { label: string; cls: string }> = {
   pending: { label: 'In afwachting', cls: 'bg-amber-100 text-amber-700' },
   approved: { label: 'Goedgekeurd', cls: 'bg-green-100 text-green-700' },
-  cancelled: { label: 'Geannuleerd', cls: 'bg-gray-100 text-gray-500' },
+  cancelled: { label: 'Geannuleerd', cls: 'bg-gray-100 text-gray-600' },
 }
 
 export default async function PartnerSettlementsPage() {
@@ -112,7 +112,7 @@ export default async function PartnerSettlementsPage() {
           <div className="space-y-2">
             {payments.map((p) => {
               const wePay = p.direction === 'we_pay_partner'
-              const st = PAY_STATUS[p.status] ?? { label: p.status, cls: 'bg-gray-100 text-gray-500' }
+              const st = PAY_STATUS[p.status] ?? { label: p.status, cls: 'bg-gray-100 text-gray-600' }
               return (
                 <div key={p.id} className="flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2.5 flex-wrap">
                   <div className="min-w-0">

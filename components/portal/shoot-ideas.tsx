@@ -8,7 +8,7 @@ import { readJson, fileTooBig, MAX_UPLOAD_MB } from '@/lib/upload'
 export type Idea = { id: string; title: string | null; description: string | null; attachment_url?: string | null; status: string; created_at: string }
 
 const STATUS_LABEL: Record<string, string> = { new: 'Nieuw', seen: 'Bekeken', use: 'Wordt meegenomen', discard: 'Niet gebruikt' }
-const STATUS_CLS: Record<string, string> = { new: 'bg-blue-100 text-blue-700', seen: 'bg-gray-100 text-gray-600', use: 'bg-green-100 text-green-700', discard: 'bg-gray-100 text-gray-500' }
+const STATUS_CLS: Record<string, string> = { new: 'bg-blue-100 text-blue-700', seen: 'bg-gray-100 text-gray-600', use: 'bg-green-100 text-green-700', discard: 'bg-gray-100 text-gray-600' }
 
 export function ShootIdeas({ shootId, initialIdeas }: { shootId: string; initialIdeas: Idea[] }) {
   const router = useRouter()

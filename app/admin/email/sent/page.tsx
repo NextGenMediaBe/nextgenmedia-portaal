@@ -43,7 +43,7 @@ export default async function SentMailsPage() {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {rows.map((m) => {
-                const st = STATUS[m.status] ?? { label: m.status, cls: 'bg-gray-100 text-gray-500' }
+                const st = STATUS[m.status] ?? { label: m.status, cls: 'bg-gray-100 text-gray-600' }
                 return (
                   <tr key={m.id} className="hover:bg-gray-50/50">
                     <td className="py-2.5 text-gray-500 text-xs whitespace-nowrap">{formatDate(m.created_at)}</td>

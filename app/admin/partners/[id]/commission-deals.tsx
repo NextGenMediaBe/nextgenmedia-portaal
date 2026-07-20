@@ -130,7 +130,7 @@ export function CommissionDeals({
                   <div className="min-w-0">
                     <div className="font-medium text-sm flex items-center gap-2 flex-wrap">
                       {clientName(deal)}
-                      <span className={`status-badge text-xs ${deal.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                      <span className={`status-badge text-xs ${deal.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
                         {deal.status === 'active' ? 'Actief' : 'Beëindigd'}
                       </span>
                       <span className={`status-badge text-xs inline-flex items-center gap-1 ${partnerPaysUs ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>

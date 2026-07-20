@@ -22,7 +22,7 @@ const STATUS_STYLE: Record<string, string> = {
   open: 'bg-blue-100 text-blue-700',
   in_progress: 'bg-purple-100 text-purple-700',
   completed: 'bg-green-100 text-green-700',
-  cancelled: 'bg-gray-100 text-gray-500',
+  cancelled: 'bg-gray-100 text-gray-600',
 }
 const STATUS_LABEL: Record<string, string> = {
   open: 'Openstaand', in_progress: 'Actief', completed: 'Afgerond', cancelled: 'Geannuleerd',
@@ -395,7 +395,7 @@ export function PartnerAssignmentsClient({
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-medium text-sm">{a.title}</span>
                     {a.service_slug && (
-                      <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded">
+                      <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
                         {SERVICE_LABELS[a.service_slug] ?? a.service_slug}
                       </span>
                     )}
@@ -414,7 +414,7 @@ export function PartnerAssignmentsClient({
                   {(a.payout ?? a.budget) != null && (
                     <span className="text-sm font-bold">{formatEuro(a.payout ?? a.budget)}</span>
                   )}
-                  <span className={`status-badge ${STATUS_STYLE[a.status] ?? 'bg-gray-100 text-gray-500'}`}>
+                  <span className={`status-badge ${STATUS_STYLE[a.status] ?? 'bg-gray-100 text-gray-600'}`}>
                     {/* For partner proposals an "open" status means "awaiting approval" */}
                     {!isReceived && a.status === 'open' ? 'Wacht op goedkeuring' : (STATUS_LABEL[a.status] ?? a.status)}
                   </span>

@@ -138,8 +138,8 @@ export function PortalCms() {
                     {previewFields.slice(1).map((f) => it.field_data[f.id]).filter(Boolean).join(' · ') || it.slug}
                   </div>
                 </div>
-                <span className={`status-badge border text-[10px] shrink-0 ${STATUS_STYLE[it.status] ?? 'bg-gray-100 text-gray-500'}`}>{STATUS_LABEL[it.status] ?? it.status}</span>
-                <button onClick={() => setEditItem(it)} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500"><Pencil className="h-3.5 w-3.5" /></button>
+                <span className={`status-badge border text-[10px] shrink-0 ${STATUS_STYLE[it.status] ?? 'bg-gray-100 text-gray-600'}`}>{STATUS_LABEL[it.status] ?? it.status}</span>
+                <button onClick={() => setEditItem(it)} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-600"><Pencil className="h-3.5 w-3.5" /></button>
                 <button onClick={() => remove(it)} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-red-50 text-red-400"><Trash2 className="h-3.5 w-3.5" /></button>
               </div>
             ))}

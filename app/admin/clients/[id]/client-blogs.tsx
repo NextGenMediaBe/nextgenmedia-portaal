@@ -50,7 +50,7 @@ export function ClientBlogs({ clientId }: { clientId: string }) {
           <div className="text-sm flex items-center gap-2 flex-wrap">
             <span className="font-medium">{account.name}</span>
             {account.framer_valid ? <span className="inline-flex items-center gap-1 text-xs text-green-700">🟢 Framer gekoppeld</span> : <span className="inline-flex items-center gap-1 text-xs text-amber-700">🟠 Framer nog niet geconfigureerd</span>}
-            {!account.active && <span className="status-badge bg-gray-100 text-gray-500 text-[10px]">inactief</span>}
+            {!account.active && <span className="status-badge bg-gray-100 text-gray-600 text-[10px]">inactief</span>}
           </div>
           <div className="text-xs text-gray-400">Volgende generatie: {account.volgende_generatie_datum ?? '—'}</div>
           <div className="flex flex-wrap gap-1.5 text-[11px]">

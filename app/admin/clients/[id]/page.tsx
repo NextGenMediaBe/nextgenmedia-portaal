@@ -56,14 +56,14 @@ function ContractStatusBadge({ status }: { status: string }) {
     viewed: 'bg-amber-100 text-amber-700',
     signed: 'bg-green-100 text-green-700',
     expired: 'bg-red-100 text-red-700',
-    cancelled: 'bg-gray-100 text-gray-500',
+    cancelled: 'bg-gray-100 text-gray-600',
   }
   const labels: Record<string, string> = {
     draft: 'Concept', sent: 'Verstuurd', viewed: 'Bekeken',
     signed: 'Getekend', expired: 'Verlopen', cancelled: 'Geannuleerd',
   }
   return (
-    <span className={`status-badge ${map[status] ?? 'bg-gray-100 text-gray-500'}`}>
+    <span className={`status-badge ${map[status] ?? 'bg-gray-100 text-gray-600'}`}>
       {labels[status] ?? status}
     </span>
   )
@@ -259,7 +259,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                             : 'Geen contract'}
                         </div>
                       </div>
-                      <span className={`status-badge shrink-0 ${s.active ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-500'}`}>
+                      <span className={`status-badge shrink-0 ${s.active ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-700'}`}>
                         {s.active ? 'Actief' : 'Inactief'}
                       </span>
                     </div>
@@ -317,7 +317,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                             : `Aangemaakt op ${formatDate(c.created_at)}`}
                         </span>
                         {c.service_slug && (
-                          <span className="px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-[10px] uppercase tracking-wide">
+                          <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px] uppercase tracking-wide">
                             {SERVICE_LABELS[c.service_slug] ?? c.service_slug}
                           </span>
                         )}

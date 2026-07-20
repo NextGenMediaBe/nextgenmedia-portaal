@@ -101,7 +101,7 @@ export function RecoverClient() {
                 <input type="checkbox" checked={selected.has(o.id)} onChange={() => toggle(o.id)} />
                 <span className="text-sm font-medium flex-1 min-w-0 truncate">{o.title || '(geen titel)'}</span>
                 <span className="text-xs text-gray-400 shrink-0">{o.planned_date ?? '—'}</span>
-                <span className="status-badge bg-gray-100 text-gray-500 text-[10px] shrink-0">{o.status}</span>
+                <span className="status-badge bg-gray-100 text-gray-600 text-[10px] shrink-0">{o.status}</span>
               </label>
             ))}
           </div>

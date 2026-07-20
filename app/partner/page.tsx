@@ -70,7 +70,7 @@ export default async function PartnerDashboard() {
     open: 'bg-blue-100 text-blue-700',
     in_progress: 'bg-purple-100 text-purple-700',
     completed: 'bg-green-100 text-green-700',
-    cancelled: 'bg-gray-100 text-gray-500',
+    cancelled: 'bg-gray-100 text-gray-600',
   }
   const STATUS_LABEL: Record<string, string> = {
     open: 'Openstaand', in_progress: 'Actief', completed: 'Afgerond', cancelled: 'Geannuleerd',
@@ -169,7 +169,7 @@ export default async function PartnerDashboard() {
             </div>
           </div>
           <div className="card-base">
-            <h2 className="font-semibold text-gray-900 flex items-center gap-2 mb-3"><Layers className="h-4 w-4 text-purple-500" />Onderaanneming</h2>
+            <h2 className="font-semibold text-gray-900 flex items-center gap-2 mb-3"><Layers className="h-4 w-4 text-gray-400" />Onderaanneming</h2>
             <div className="space-y-1.5 text-sm">
               <div className="flex justify-between"><span className="text-gray-500">Werk voor ons ({fin.subToPartnerCount})</span><span className="font-bold text-green-600">{formatEuro(fin.subToPartnerTotal)}</span></div>
               <div className="flex justify-between"><span className="text-gray-500">Werk dat wij voor u deden ({fin.subByPartnerCount})</span><span className="font-bold text-red-600">{formatEuro(fin.subByPartnerTotal)}</span></div>
@@ -212,7 +212,7 @@ export default async function PartnerDashboard() {
                   {(a.payout ?? a.budget) != null && (
                     <span className="text-sm font-semibold">{formatEuro(a.payout ?? a.budget)}</span>
                   )}
-                  <span className={`status-badge ${STATUS_STYLE[a.status] ?? 'bg-gray-100 text-gray-500'}`}>
+                  <span className={`status-badge ${STATUS_STYLE[a.status] ?? 'bg-gray-100 text-gray-600'}`}>
                     {STATUS_LABEL[a.status] ?? a.status}
                   </span>
                 </div>

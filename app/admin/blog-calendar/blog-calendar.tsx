@@ -232,7 +232,7 @@ function BlogEditorModal({ blog, onClose }: { blog: CalBlog; onClose: () => void
           <div className="min-w-0">
             <h3 className="font-semibold truncate flex items-center gap-2"><FileText className="h-4 w-4 text-gray-400 shrink-0" />{blog.account_name}</h3>
             <div className="mt-0.5 flex items-center gap-2 text-[11px] text-gray-400">
-              <span className={`status-badge text-[10px] ${STATUS_CLS[blog.status] ?? 'bg-gray-100 text-gray-500'}`}>{STATUS_LABEL[blog.status] ?? blog.status}</span>
+              <span className={`status-badge text-[10px] ${STATUS_CLS[blog.status] ?? 'bg-gray-100 text-gray-600'}`}>{STATUS_LABEL[blog.status] ?? blog.status}</span>
               {blog.publish_at && blog.status === 'goedgekeurd' && <span className="text-amber-600">gepland {formatDate(blog.publish_at)}</span>}
               {blog.tags?.length ? blog.tags.map((t) => <span key={t} className="status-badge bg-indigo-50 text-indigo-700 text-[10px]">{t}</span>) : null}
             </div>

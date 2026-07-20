@@ -183,7 +183,7 @@ function BlogCard({ blog, editing, busy, selected, onToggle, onEdit, onSave, onA
         <div className="flex items-start gap-2.5 min-w-0">
           <input type="checkbox" checked={selected} onChange={onToggle} className="mt-1" />
           <div className="min-w-0">
-            <div className="font-medium flex items-center gap-2 flex-wrap">{blog.titel}<span className={`status-badge text-[10px] ${STATUS_CLS[blog.status] ?? 'bg-gray-100 text-gray-500'}`}>{STATUS_LABEL[blog.status] ?? blog.status}</span><SyncBadge blog={blog} /></div>
+            <div className="font-medium flex items-center gap-2 flex-wrap">{blog.titel}<span className={`status-badge text-[10px] ${STATUS_CLS[blog.status] ?? 'bg-gray-100 text-gray-600'}`}>{STATUS_LABEL[blog.status] ?? blog.status}</span><SyncBadge blog={blog} /></div>
             <div className="text-xs text-gray-400 mt-0.5 flex flex-wrap gap-x-2">
               <span>{blog.account_name} · {formatDate(blog.gegenereerd_op)} · /{blog.slug}</span>
               {blog.laatst_bewerkt_door && <span>· laatst bewerkt door {blog.laatst_bewerkt_door}</span>}
