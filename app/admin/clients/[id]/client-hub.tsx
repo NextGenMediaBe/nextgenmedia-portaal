@@ -17,12 +17,11 @@ export async function ClientHub({ clientId, btw }: { clientId: string; btw?: str
   }
 
   const [
-    contractRows, blogAccounts, revenueRows, invoiceRows, subaccounts, services, openTasks,
+    contractRows, blogAccounts, invoiceRows, subaccounts, services, openTasks,
   ] = await Promise.all([
     safe(admin.from('contracts').select('status').eq('client_id', clientId).then((r) => r.data ?? []), [] as { status: string }[]),
     safe(admin.from('blog_accounts').select('id').eq('client_id', clientId).then((r) => r.data ?? []), [] as { id: string }[]),
-    safe(admin.from('revenue_entries').select('type, amount, amount_per_month').eq('client_id', clientId).then((r) => r.data ?? []), [] as { type: string; amount: number | null; amount_per_month: number | null }[]),
-    safe(admin.from('invoices').select('status').eq('client_id', clientId).then((r) => r.data ?? []), [] as { status: string }[]),
+    safe(admin.from('invoices').select('status, amount_excl').eq('client_id', clientId).then((r) => r.data ?? []), [] as { status: string; amount_excl: number | null }[]),
     countOf('client_users', (q) => q.eq('client_id', clientId)),
     safe(admin.from('client_services').select('service_slug, active').eq('client_id', clientId).then((r) => r.data ?? []), [] as { service_slug: string; active: boolean }[]),
     countOf('client_tasks', (q) => q.eq('client_id', clientId).neq('status', 'done')),
@@ -32,7 +31,10 @@ export async function ClientHub({ clientId, btw }: { clientId: string; btw?: str
     : await countOf('blogs', (q) => q.in('account_id', blogAccounts.map((a) => a.id)))
 
   const contractCount = contractRows.length
-  const prognoseTotal = revenueRows.reduce((s, e) => s + (e.type === 'recurring' ? (e.amount_per_month ?? 0) : (e.amount ?? 0)), 0)
+  // Omzet van deze klant = som van zijn facturen (excl. btw, geannuleerde niet mee).
+  const omzetTotal = invoiceRows
+    .filter((i) => i.status !== 'geannuleerd')
+    .reduce((s, i) => s + Number(i.amount_excl ?? 0), 0)
   const invoicesToSend = invoiceRows.filter((i) => i.status === 'te_factureren').length
   const signedContracts = contractRows.filter((c) => canonicalStatus(c.status) === 'getekend').length
   const hasWebsite = services.some((s) => s.service_slug === 'webdesign' && s.active)
@@ -41,7 +43,7 @@ export async function ClientHub({ clientId, btw }: { clientId: string; btw?: str
   const tiles: { icon: React.ElementType; value: string; label: string; href: string; accent?: string }[] = [
     { icon: FileText, value: String(contractCount), label: signedContracts ? `contracten · ${signedContracts} getekend` : 'contracten', href: '/admin/contracts' },
     ...(FEATURES.blogs ? [{ icon: Newspaper, value: String(blogCount), label: 'blogs', href: '/admin/blogs' }] : []),
-    { icon: TrendingUp, value: formatEuro(prognoseTotal), label: 'prognose', href: '/admin/revenue/omzet' },
+    { icon: TrendingUp, value: formatEuro(omzetTotal), label: 'omzet', href: '/admin/invoices' },
     { icon: Receipt, value: String(invoicesToSend), label: 'te versturen', href: '/admin/invoices', accent: invoicesToSend > 0 ? 'text-amber-600' : undefined },
     { icon: Users, value: String(subaccounts), label: 'gebruikers', href: `/admin/clients/${clientId}#gebruikers` },
     { icon: Globe, value: hasWebsite ? '1' : '0', label: 'website', href: '/admin/services/website' },

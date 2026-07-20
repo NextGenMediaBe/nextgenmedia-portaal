@@ -1,54 +1,40 @@
 import Link from 'next/link'
-import { createAdminSupabaseClient } from '@/lib/supabase/server'
+
 import { loadCore } from '@/lib/finance-data'
 import { formatEuro } from '@/lib/utils'
 import {
-  thisMonthYM, monthLabel, expandRevenueForMonth, recurringActiveInMonth,
-  normalizeInvoiceStatus, type RevenueEntry, type RecurringInvoice,
+  thisMonthYM, monthLabel,
 } from '@/lib/invoices'
 import { TrendingUp, Receipt, ArrowRight } from 'lucide-react'
 
-// "Deze maand": Prognose · Gefactureerd · Kosten · Winst + voortgangsbalk Facturatie voltooid.
+// "Deze maand": Omzet · Gefactureerd · Kosten · Winst + voortgangsbalk Facturatie
+// voltooid. Omzet = facturen (los + terugkerend), niet langer een handmatige prognose.
 export async function FinanceWidget() {
-  let prognose = 0, gefactureerd = 0, kosten = 0
+  let omzet = 0, gefactureerd = 0, teFactureren = 0, kosten = 0
   let month = thisMonthYM()
   try {
-    const admin = createAdminSupabaseClient()
     month = thisMonthYM()
-    const [{ data: revenue }, { data: invoices }, { data: recurring }, { data: recMonths }] = await Promise.all([
-      admin.from('revenue_entries').select('*'),
-      admin.from('invoices').select('amount_excl, status').eq('invoice_month', month),
-      admin.from('recurring_invoices').select('*'),
-      admin.from('recurring_invoice_months').select('recurring_id, status').eq('month', month),
-    ])
-
-    prognose = expandRevenueForMonth((revenue ?? []) as RevenueEntry[], month).reduce((s, x) => s + x.amount_excl, 0)
-
-    for (const i of (invoices ?? []) as { amount_excl: number; status: string }[]) {
-      if (normalizeInvoiceStatus(i.status) !== 'geannuleerd') gefactureerd += Number(i.amount_excl) || 0
-    }
-    const statusByRec = new Map((recMonths ?? []).map((m: { recurring_id: string; status: string }) => [m.recurring_id, m.status]))
-    for (const r of (recurring ?? []) as RecurringInvoice[]) {
-      if (!recurringActiveInMonth(r, month)) continue
-      if (normalizeInvoiceStatus(statusByRec.get(r.id) ?? 'te_versturen') !== 'geannuleerd') gefactureerd += Number(r.amount_excl) || 0
-    }
-
     const core = await loadCore(Number(month.slice(0, 4)))
-    kosten = core.monthly[new Date().getMonth()]?.kostenManual ?? 0
+    const mi = Number(month.slice(5, 7)) - 1
+    const m = core.monthly[mi]
+    gefactureerd = m?.omzetInvoiced ?? 0
+    teFactureren = m?.omzetOpen ?? 0
+    omzet = m?.omzet ?? 0
+    kosten = m?.kostenManual ?? 0
   } catch {
     return null // tabellen nog niet aangemaakt → widget verbergen
   }
 
-  if (prognose === 0 && gefactureerd === 0 && kosten === 0) return null
+  if (omzet === 0 && kosten === 0) return null
 
-  const winst = gefactureerd - kosten
-  const pct = prognose > 0 ? Math.min(100, Math.round((gefactureerd / prognose) * 100)) : (gefactureerd > 0 ? 100 : 0)
+  const winst = omzet - kosten
+  const pct = omzet > 0 ? Math.min(100, Math.round((gefactureerd / omzet) * 100)) : 0
   const pctColor = pct >= 100 ? 'bg-green-500' : pct > 0 ? 'bg-amber-500' : 'bg-red-500'
 
   const cells = [
-    { label: 'Prognose', value: formatEuro(prognose), color: 'text-gray-900' },
+    { label: 'Omzet', value: formatEuro(omzet), color: 'text-gray-900' },
     { label: 'Gefactureerd', value: formatEuro(gefactureerd), color: 'text-green-600' },
-    { label: 'Kosten', value: formatEuro(kosten), color: 'text-red-600' },
+    { label: 'Nog te factureren', value: formatEuro(teFactureren), color: teFactureren > 0 ? 'text-amber-600' : 'text-gray-600' },
     { label: 'Winst', value: formatEuro(winst), color: winst >= 0 ? 'text-green-600' : 'text-red-600' },
   ]
 

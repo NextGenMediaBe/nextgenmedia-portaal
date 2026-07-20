@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
     for (const t of tasks) results.push({ type: 'task', label: 'Taak', title: t.title, subtitle: t.status ?? undefined, href: t.client_id ? `/admin/clients/${t.client_id}#taken` : '/admin/clients' })
     // Uitgeschakelde features niet in de zoekresultaten (lib/features.ts).
     if (FEATURES.blogs) for (const b of blogs) results.push({ type: 'blog', label: 'Blog', title: b.titel, subtitle: b.status ?? undefined, href: `/admin/blogs` })
-    for (const f of forecast) results.push({ type: 'forecast', label: 'Prognose', title: f.title || 'Prognose', href: `/admin/revenue/omzet` })
+    // Prognose bestaat niet meer als los concept — omzet volgt uit facturen.
     if (FEATURES.partners) for (const p of partners) results.push({ type: 'partner', label: 'Partner', title: p.name, href: `/admin/partners/${p.id}` })
 
     return NextResponse.json({ results })

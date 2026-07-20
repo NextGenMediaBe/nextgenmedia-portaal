@@ -7,7 +7,7 @@ import { usePathname, useSearchParams } from 'next/navigation'
 // (overzicht/cashflow/contracten/agency/aandeelhouders/instellingen) blijven
 // bestaan maar zijn niet meer gelinkt.
 const TABS = [
-  { href: '/admin/revenue/omzet', label: 'Prognose' },
+  { href: '/admin/revenue/omzet', label: 'Overzicht' },
   { href: '/admin/revenue/kosten', label: 'Kosten' },
 ]
 
