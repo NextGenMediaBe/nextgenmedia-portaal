@@ -39,7 +39,13 @@ export const VISIBLE_ADMIN_MODULES: AdminModule[] = ADMIN_MODULES.filter((m) => 
 
 /** API-paden die élke actieve werknemer mag gebruiken (module-neutrale pickers).
  *  Bevat enkel niet-gevoelige lijstdata (bv. klantnamen voor dropdowns). */
-export const STAFF_API_WHITELIST = ['/api/admin/clients-list']
+export const STAFF_API_WHITELIST = [
+  '/api/admin/clients-list',
+  // Shell-brede endpoints: globale zoek + notificaties. Deze routes filteren ZELF
+  // per module (lib/actor-modules.ts), dus een werknemer ziet enkel eigen data.
+  '/api/admin/search',
+  '/api/admin/notifications',
+]
 
 /** Gevoelige API-paden die ALTIJD admin-only blijven, ook al valt het pad binnen
  *  een module-prefix (wachtwoorden, portaaltoegang, subaccounts, koppel-beheer,

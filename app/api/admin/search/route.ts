@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
+import { createAdminSupabaseClient } from '@/lib/supabase/server'
+import { getActor, actorCanSee } from '@/lib/actor-modules'
 import { FEATURES } from '@/lib/features'
 
 // Globale zoekfunctie over de belangrijkste entiteiten. Admin-only.
@@ -7,17 +8,13 @@ import { FEATURES } from '@/lib/features'
 
 type Result = { type: string; label: string; title: string; subtitle?: string; href: string }
 
-async function requireAdmin() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return false
-  const { data } = await supabase.from('user_roles').select('role').eq('user_id', user.id).maybeSingle()
-  return data?.role === 'admin'
-}
-
 export async function GET(req: NextRequest) {
   try {
-    if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    // Admin ÉN werknemer mogen zoeken; een werknemer ziet enkel resultaten uit de
+    // modules waar hij recht op heeft (anders lekt de zoekbalk data).
+    const actor = await getActor()
+    if (!actor) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    const may = (m: string) => actorCanSee(actor, m)
     const q = (req.nextUrl.searchParams.get('q') ?? '').trim()
     if (q.length < 2) return NextResponse.json({ results: [] })
 
@@ -49,14 +46,14 @@ export async function GET(req: NextRequest) {
 
     // Vaste prioriteitsvolgorde: klanten → contracten → facturen → taken → blogs → prognose → partners.
     const results: Result[] = []
-    for (const c of clients) results.push({ type: 'client', label: 'Klant', title: c.company_name, subtitle: c.btw_nummer ?? undefined, href: `/admin/clients/${c.id}` })
-    for (const c of contracts) results.push({ type: 'contract', label: 'Contract', title: c.title, subtitle: c.signer_name ?? c.signer_email ?? undefined, href: `/admin/contracts/${c.id}` })
-    for (const i of invoices) results.push({ type: 'invoice', label: 'Factuur', title: i.description || 'Factuur', subtitle: i.status ?? undefined, href: `/admin/invoices` })
-    for (const t of tasks) results.push({ type: 'task', label: 'Taak', title: t.title, subtitle: t.status ?? undefined, href: t.client_id ? `/admin/clients/${t.client_id}#taken` : '/admin/clients' })
+    if (may('clients')) for (const c of clients) results.push({ type: 'client', label: 'Klant', title: c.company_name, subtitle: c.btw_nummer ?? undefined, href: `/admin/clients/${c.id}` })
+    if (may('contracts')) for (const c of contracts) results.push({ type: 'contract', label: 'Contract', title: c.title, subtitle: c.signer_name ?? c.signer_email ?? undefined, href: `/admin/contracts/${c.id}` })
+    if (may('invoices')) for (const i of invoices) results.push({ type: 'invoice', label: 'Factuur', title: i.description || 'Factuur', subtitle: i.status ?? undefined, href: `/admin/invoices` })
+    if (may('clients')) for (const t of tasks) results.push({ type: 'task', label: 'Taak', title: t.title, subtitle: t.status ?? undefined, href: t.client_id ? `/admin/clients/${t.client_id}#taken` : '/admin/clients' })
     // Uitgeschakelde features niet in de zoekresultaten (lib/features.ts).
-    if (FEATURES.blogs) for (const b of blogs) results.push({ type: 'blog', label: 'Blog', title: b.titel, subtitle: b.status ?? undefined, href: `/admin/blogs` })
+    if (FEATURES.blogs && may('blogs')) for (const b of blogs) results.push({ type: 'blog', label: 'Blog', title: b.titel, subtitle: b.status ?? undefined, href: `/admin/blogs` })
     // Prognose bestaat niet meer als los concept — omzet volgt uit facturen.
-    if (FEATURES.partners) for (const p of partners) results.push({ type: 'partner', label: 'Partner', title: p.name, href: `/admin/partners/${p.id}` })
+    if (FEATURES.partners && may('partners')) for (const p of partners) results.push({ type: 'partner', label: 'Partner', title: p.name, href: `/admin/partners/${p.id}` })
 
     return NextResponse.json({ results })
   } catch (err) {
