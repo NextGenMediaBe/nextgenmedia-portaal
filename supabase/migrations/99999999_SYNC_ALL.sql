@@ -1390,5 +1390,22 @@ DO $$ BEGIN
   CREATE TRIGGER trg_cms_items_updated BEFORE UPDATE ON public.cms_items FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+-- ── Website-platform + onderhoud ─────────────────────────────────────────────
+-- Per klant leggen we intern vast HOE de website gebouwd is (framer | custom) en
+-- of er onderhoud loopt. Dit is puur interne administratie: de klant ziet nooit
+-- het platform, enkel de functies die eruit volgen (CMS beheren of een knop naar
+-- zijn beheerplatform).
+ALTER TABLE public.clients
+  ADD COLUMN IF NOT EXISTS website_platform             text,     -- 'framer' | 'custom'
+  ADD COLUMN IF NOT EXISTS website_admin_url            text,     -- beheerplatform (custom code)
+  ADD COLUMN IF NOT EXISTS maintenance_included         boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS maintenance_start_date       date,
+  ADD COLUMN IF NOT EXISTS maintenance_months           integer NOT NULL DEFAULT 12,
+  -- Einddatum waarvoor de herinneringsmail al verstuurd is → nooit dubbel mailen.
+  ADD COLUMN IF NOT EXISTS maintenance_reminder_sent_for date;
+
+CREATE INDEX IF NOT EXISTS idx_clients_maintenance
+  ON public.clients (maintenance_start_date) WHERE maintenance_included;
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.

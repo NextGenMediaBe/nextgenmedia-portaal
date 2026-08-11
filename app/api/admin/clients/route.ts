@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createAdminSupabaseClient , isActiveStaff } from '@/lib/supabase/server'
+import { createClient, createAdminSupabaseClient, isActiveStaff, insertResilient } from '@/lib/supabase/server'
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { validateBtw } from '@/lib/btw'
@@ -23,6 +23,14 @@ const CreateClientSchema = z.object({
   reels_per_month: z.number().int().min(0).max(60).optional().default(0),
   stories_per_month: z.number().int().min(0).max(60).optional().default(0),
   webdesign_maintenance_included: z.boolean().optional().default(false),
+  // Website-administratie (intern): hoe is de site gebouwd + CMS/beheer + onderhoud.
+  website_platform: z.enum(['framer', 'custom']).nullable().optional(),
+  website_admin_url: z.string().max(500).optional().or(z.literal('')),
+  framer_project_url: z.string().max(500).optional().or(z.literal('')),
+  framer_api_key: z.string().max(500).optional().or(z.literal('')),
+  cms_enabled: z.boolean().optional().default(false),
+  maintenance_start_date: z.string().max(10).optional().or(z.literal('')),
+  maintenance_months: z.number().int().min(1).max(120).optional().default(12),
   ads_budget: z.number().nullable().optional(),
   // Per-service start month + duration
   service_configs: z.record(ServiceCfgSchema).optional().default({}),
@@ -80,24 +88,39 @@ export async function POST(req: NextRequest) {
 
     await admin.from('user_roles').insert({ user_id: newUserId, role: 'client' })
 
-    // Create client
-    const { data: client, error: clientErr } = await admin
-      .from('clients')
-      .insert({
+    // Create client — veerkrachtig: als de migratie met de nieuwe website-/
+    // onderhoudskolommen nog niet gedraaid is, worden die kolommen automatisch
+    // weggelaten i.p.v. dat het aanmaken van de klant faalt.
+    const { data: clientRow, error: clientErr } = await insertResilient(
+      admin,
+      'clients',
+      {
         owner_user_id: newUserId,
         company_name: data.company_name,
         contact_name: data.contact_name || null,
         email: data.email,
         niche: data.niche || null,
         website_url: data.website_url || null,
-      })
-      .select()
-      .single()
+        // Website-administratie. Framer-velden enkel bewaren bij een Framer-site;
+        // de beheerlink enkel bij custom code — zo blijft de data eenduidig.
+        website_platform: data.website_platform ?? null,
+        website_admin_url: data.website_platform === 'custom' ? (data.website_admin_url || null) : null,
+        framer_project_url: data.website_platform === 'framer' ? (data.framer_project_url || null) : null,
+        framer_api_key: data.website_platform === 'framer' ? (data.framer_api_key || null) : null,
+        cms_enabled: data.website_platform === 'framer' ? !!data.cms_enabled : false,
+        maintenance_included: !!data.webdesign_maintenance_included,
+        maintenance_start_date: data.webdesign_maintenance_included ? (data.maintenance_start_date || null) : null,
+        maintenance_months: data.maintenance_months ?? 12,
+      },
+      // Deze kolommen zijn essentieel: ontbreken ze, dan is er echt iets mis.
+      { select: 'id', required: ['owner_user_id', 'company_name', 'email'] },
+    )
 
-    if (clientErr || !client) {
+    if (clientErr || !clientRow) {
       await admin.auth.admin.deleteUser(newUserId)
       throw new Error(`Klant aanmaken mislukt: ${clientErr?.message}`)
     }
+    const client = { id: String(clientRow.id) }
 
     // Store the admin-chosen password so it can be viewed later (best effort —
     // ignored if the login_password column isn't migrated yet).
@@ -187,6 +210,16 @@ export async function POST(req: NextRequest) {
 
     if (contractRows.length > 0) {
       await admin.from('service_contracts').insert(contractRows)
+    }
+
+    // Framer-site met CMS: de inhoud meteen ophalen zodat de klant direct een
+    // gevulde CMS heeft. Best-effort — een mislukte import mag het aanmaken van
+    // de klant nooit ongedaan maken (de admin kan altijd "CMS ophalen" klikken).
+    if (data.website_platform === 'framer' && data.cms_enabled && data.framer_project_url && data.framer_api_key) {
+      try {
+        const { importFramerCms } = await import('@/lib/cms-import')
+        await importFramerCms(client.id)
+      } catch { /* zie CMS-kaart op de klantdetail */ }
     }
 
     // Invalidate caches so new client appears in lists immediately

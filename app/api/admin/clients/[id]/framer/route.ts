@@ -2,18 +2,23 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { logAudit, requestMeta } from '@/lib/audit'
 import { framerConfigured } from '@/lib/framer-cms'
+import { importFramerCms } from '@/lib/cms-import'
+import { maintenanceStatus } from '@/lib/maintenance'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
-// GET — koppelstatus + reeds geïmporteerde collecties (API-key NOOIT teruggeven).
+// Website-instellingen van één klant: hoe de site gebouwd is (framer | custom),
+// het CMS (enkel bij framer), de beheerlink (enkel bij custom) en het onderhoud.
+// De API-sleutel wordt NOOIT teruggegeven aan de browser.
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const { id } = await params
     const admin = createAdminSupabaseClient()
 
-    const { data: client } = await admin
-      .from('clients').select('id, framer_project_url, framer_api_key, cms_enabled').eq('id', id).maybeSingle()
+    // select('*') zodat een nog niet-gemigreerde kolom nooit de hele kaart breekt.
+    const { data: client } = await admin.from('clients').select('*').eq('id', id).maybeSingle()
     if (!client) return NextResponse.json({ error: 'Klant niet gevonden' }, { status: 404 })
 
     let collections: unknown[] = []
@@ -27,10 +32,18 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     } catch { /* tabel mogelijk nog niet gemigreerd */ }
 
     return NextResponse.json({
+      platform: client.website_platform ?? '',
+      adminUrl: client.website_admin_url ?? '',
       projectUrl: client.framer_project_url ?? '',
-      hasApiKey: !!client.framer_api_key,        // enkel of er een key is, nooit de key zelf
+      hasApiKey: !!client.framer_api_key,        // enkel of er een sleutel is, nooit de sleutel zelf
       cmsEnabled: !!client.cms_enabled,
       configured: framerConfigured(client),
+      maintenance: {
+        included: !!client.maintenance_included,
+        startDate: client.maintenance_start_date ?? '',
+        months: client.maintenance_months ?? 12,
+        status: maintenanceStatus(client),
+      },
       collections,
     })
   } catch (err) {
@@ -38,37 +51,70 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   }
 }
 
-// POST — koppeling opslaan. body: { projectUrl, apiKey?, cmsEnabled }
-// apiKey leeg = bestaande key behouden (zodat we 'm niet hoeven terug te tonen).
+// POST — instellingen opslaan. Lege apiKey = bestaande sleutel behouden.
+// Bij een complete Framer-koppeling wordt de CMS meteen opgehaald, zodat de
+// klant direct alle velden en items ziet zonder extra handeling.
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const actor = await requireStaff()
     if (!actor) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const { id } = await params
-    const { projectUrl, apiKey, cmsEnabled } = await req.json()
+    const body = await req.json()
     const admin = createAdminSupabaseClient()
 
     const { data: client } = await admin.from('clients').select('id, company_name').eq('id', id).maybeSingle()
     if (!client) return NextResponse.json({ error: 'Klant niet gevonden' }, { status: 404 })
 
     const patch: Record<string, unknown> = {}
-    if (projectUrl !== undefined) patch.framer_project_url = String(projectUrl).trim() || null
-    if (typeof apiKey === 'string' && apiKey.trim()) patch.framer_api_key = apiKey.trim()
-    if (typeof cmsEnabled === 'boolean') patch.cms_enabled = cmsEnabled
+    if (body.platform !== undefined) {
+      const p = String(body.platform).trim()
+      patch.website_platform = p === 'framer' || p === 'custom' ? p : null
+    }
+    if (body.adminUrl !== undefined) patch.website_admin_url = String(body.adminUrl).trim() || null
+    if (body.projectUrl !== undefined) patch.framer_project_url = String(body.projectUrl).trim() || null
+    if (typeof body.apiKey === 'string' && body.apiKey.trim()) patch.framer_api_key = body.apiKey.trim()
+    if (typeof body.cmsEnabled === 'boolean') patch.cms_enabled = body.cmsEnabled
+
+    if (body.maintenance && typeof body.maintenance === 'object') {
+      const m = body.maintenance
+      if (typeof m.included === 'boolean') patch.maintenance_included = m.included
+      if (m.startDate !== undefined) patch.maintenance_start_date = String(m.startDate).trim() || null
+      if (m.months !== undefined) {
+        const n = Number(m.months)
+        patch.maintenance_months = Number.isFinite(n) && n > 0 ? Math.round(n) : 12
+      }
+      // Instellingen gewijzigd → herinnering mag opnieuw uitgaan voor de nieuwe einddatum.
+      patch.maintenance_reminder_sent_for = null
+    }
+
     if (Object.keys(patch).length === 0) return NextResponse.json({ ok: true })
 
     const { error } = await admin.from('clients').update(patch).eq('id', id)
     if (error) throw new Error(error.message)
 
+    // CMS meteen ophalen wanneer de koppeling compleet is en het CMS aan staat.
+    let imported: { collections: number; items: number } | null = null
+    let importError: string | null = null
+    const { data: fresh } = await admin
+      .from('clients').select('framer_project_url, framer_api_key, cms_enabled, website_platform').eq('id', id).maybeSingle()
+    if (fresh?.website_platform === 'framer' && fresh.cms_enabled && framerConfigured(fresh)) {
+      try {
+        const s = await importFramerCms(id)
+        imported = { collections: s.collections, items: s.items }
+      } catch (e) {
+        importError = e instanceof Error ? e.message : 'Ophalen mislukt'
+      }
+    }
+
     const meta = requestMeta(req)
     await logAudit({
-      action: 'client.framer.link', entityType: 'client', entityId: id,
-      summary: `Framer-CMS-koppeling bijgewerkt voor ${client.company_name}`,
+      action: 'client.website.settings', entityType: 'client', entityId: id,
+      summary: `Website-instellingen bijgewerkt voor ${client.company_name}`,
       actorUserId: actor.id, actorEmail: actor.email ?? null, actorRole: 'admin',
-      metadata: { hasProject: !!patch.framer_project_url, keyUpdated: !!patch.framer_api_key, cmsEnabled: patch.cms_enabled },
+      metadata: { platform: patch.website_platform, keyUpdated: !!patch.framer_api_key, cmsEnabled: patch.cms_enabled, imported },
       ip: meta.ip, userAgent: meta.userAgent,
     })
-    return NextResponse.json({ ok: true })
+    return NextResponse.json({ ok: true, imported, importError })
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
   }

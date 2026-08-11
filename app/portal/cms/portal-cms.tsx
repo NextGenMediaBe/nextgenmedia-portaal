@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Loader2, Plus, Save, X, Trash2, Rocket, Pencil, Database, RefreshCw, Upload, ImageIcon } from 'lucide-react'
+import { Loader2, Plus, Save, X, Trash2, Rocket, Pencil, Database, RefreshCw, Upload, ImageIcon, Settings2, Check } from 'lucide-react'
 import { toast } from 'sonner'
 
 type Field = { id: string; name: string; type: string; editable?: boolean; options?: { id: string; name: string }[] }
@@ -24,6 +24,7 @@ export function PortalCms() {
   const [syncing, setSyncing] = useState(false)
   const [editItem, setEditItem] = useState<Item | 'new' | null>(null)
   const [publishError, setPublishError] = useState<string | null>(null)
+  const [manageFields, setManageFields] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -97,6 +98,9 @@ export function PortalCms() {
           ))}
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={() => setManageFields(true)} disabled={!activeCol} className="btn-secondary text-sm" title="Velden van deze collectie beheren">
+            <Settings2 className="h-4 w-4" />Velden
+          </button>
           <button onClick={sync} disabled={syncing} className="btn-secondary text-sm" title="Actuele inhoud ophalen van je website">
             {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}Ververs
           </button>
@@ -149,6 +153,10 @@ export function PortalCms() {
 
       <p className="text-[11px] text-gray-400">Wijzigingen worden bewaard als concept tot je op <b>Opslaan &amp; publiceren</b> klikt — dan gaan ze live op je website.</p>
 
+      {manageFields && activeCol && (
+        <FieldManager collection={activeCol} onClose={() => setManageFields(false)} onChanged={load} />
+      )}
+
       {editItem && activeCol && (
         <ItemEditor
           collection={activeCol}
@@ -157,6 +165,163 @@ export function PortalCms() {
           onSaved={() => { setEditItem(null); load() }}
         />
       )}
+    </div>
+  )
+}
+
+// Veldtypes die de klant zelf mag aanmaken — in gewone taal, geen jargon.
+const FIELD_TYPES: { type: string; label: string }[] = [
+  { type: 'string', label: 'Korte tekst' },
+  { type: 'formattedText', label: 'Lange tekst' },
+  { type: 'number', label: 'Getal' },
+  { type: 'boolean', label: 'Aan/uit' },
+  { type: 'date', label: 'Datum' },
+  { type: 'image', label: 'Afbeelding' },
+  { type: 'file', label: 'Bestand' },
+  { type: 'link', label: 'Link' },
+  { type: 'color', label: 'Kleur' },
+  { type: 'enum', label: 'Keuzelijst' },
+]
+const typeLabel = (t: string) => FIELD_TYPES.find((f) => f.type === t)?.label ?? t
+
+/** Veldbeheer: velden bekijken, hernoemen, verwijderen en toevoegen.
+ *  Velden zijn structuur — die gaan direct naar de website (geen concept). */
+function FieldManager({ collection, onClose, onChanged }: {
+  collection: Collection
+  onClose: () => void
+  onChanged: () => void | Promise<void>
+}) {
+  const [fields, setFields] = useState<Field[]>(collection.fields ?? [])
+  const [busy, setBusy] = useState(false)
+  const [renaming, setRenaming] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [adding, setAdding] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newType, setNewType] = useState('string')
+  const [newCases, setNewCases] = useState('')
+
+  const inp = 'w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#fff848]/50'
+
+  const after = async (j: { fields?: Field[] }) => {
+    if (Array.isArray(j.fields)) setFields(j.fields)
+    await onChanged()
+  }
+
+  const addField = async () => {
+    if (!newName.trim()) { toast.error('Geef het veld een naam'); return }
+    setBusy(true)
+    try {
+      const res = await fetch('/api/portal/cms/field', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          collectionId: collection.id, name: newName.trim(), type: newType,
+          cases: newType === 'enum' ? newCases.split(',').map((s) => s.trim()).filter(Boolean) : undefined,
+        }),
+      })
+      const j = await res.json(); if (!res.ok) throw new Error(j.error)
+      await after(j)
+      setNewName(''); setNewCases(''); setAdding(false)
+      toast.success('Veld toegevoegd op je website.')
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Toevoegen mislukt') } finally { setBusy(false) }
+  }
+
+  const saveRename = async (fieldId: string) => {
+    if (!renameValue.trim()) return
+    setBusy(true)
+    try {
+      const res = await fetch('/api/portal/cms/field', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ collectionId: collection.id, fieldId, name: renameValue.trim() }),
+      })
+      const j = await res.json(); if (!res.ok) throw new Error(j.error)
+      await after(j)
+      setRenaming(null)
+      toast.success('Veldnaam aangepast.')
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Hernoemen mislukt') } finally { setBusy(false) }
+  }
+
+  const deleteField = async (f: Field) => {
+    if (!confirm(`Veld "${f.name}" verwijderen? De inhoud van dit veld verdwijnt bij alle items op je website.`)) return
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/portal/cms/field?collectionId=${collection.id}&fieldId=${encodeURIComponent(f.id)}`, { method: 'DELETE' })
+      const j = await res.json(); if (!res.ok) throw new Error(j.error)
+      await after(j)
+      toast.success('Veld verwijderd.')
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Verwijderen mislukt') } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90dvh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between p-5 border-b border-gray-100">
+          <div>
+            <h3 className="font-semibold text-gray-900">Velden — {collection.name || '(naamloos)'}</h3>
+            <p className="text-[11px] text-gray-500 mt-0.5">Wijzigingen aan velden gaan meteen door op je website.</p>
+          </div>
+          <button onClick={onClose} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-gray-100"><X className="h-4 w-4" /></button>
+        </div>
+
+        <div className="p-5 overflow-y-auto space-y-2">
+          {fields.length === 0 && <p className="text-sm text-gray-500">Deze collectie heeft nog geen velden.</p>}
+          {fields.map((f) => (
+            <div key={f.id} className="flex items-center gap-2 rounded-lg border border-gray-100 px-3 py-2">
+              {renaming === f.id ? (
+                <>
+                  <input className={inp} value={renameValue} autoFocus onChange={(e) => setRenameValue(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') saveRename(f.id); if (e.key === 'Escape') setRenaming(null) }} />
+                  <button onClick={() => saveRename(f.id)} disabled={busy} className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-green-600" title="Opslaan"><Check className="h-4 w-4" /></button>
+                  <button onClick={() => setRenaming(null)} className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500" title="Annuleren"><X className="h-4 w-4" /></button>
+                </>
+              ) : (
+                <>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium truncate">{f.name}</div>
+                    <div className="text-[11px] text-gray-500">{typeLabel(f.type)}</div>
+                  </div>
+                  <button onClick={() => { setRenaming(f.id); setRenameValue(f.name) }} disabled={busy}
+                    className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-600" title="Hernoemen"><Pencil className="h-3.5 w-3.5" /></button>
+                  <button onClick={() => deleteField(f)} disabled={busy}
+                    className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-600" title="Verwijderen"><Trash2 className="h-3.5 w-3.5" /></button>
+                </>
+              )}
+            </div>
+          ))}
+
+          {adding ? (
+            <div className="rounded-lg border border-gray-200 p-3 space-y-2">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Naam van het veld</label>
+                <input className={inp} value={newName} autoFocus onChange={(e) => setNewName(e.target.value)} placeholder="bijv. Ondertitel" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Soort veld</label>
+                <select className={inp} value={newType} onChange={(e) => setNewType(e.target.value)}>
+                  {FIELD_TYPES.map((t) => <option key={t.type} value={t.type}>{t.label}</option>)}
+                </select>
+              </div>
+              {newType === 'enum' && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Keuzes <span className="text-gray-400">— gescheiden door komma&apos;s</span></label>
+                  <input className={inp} value={newCases} onChange={(e) => setNewCases(e.target.value)} placeholder="Nieuws, Tips, Overig" />
+                </div>
+              )}
+              <div className="flex gap-2">
+                <button onClick={addField} disabled={busy} className="btn-primary text-sm flex-1">
+                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}Veld toevoegen
+                </button>
+                <button onClick={() => setAdding(false)} className="btn-secondary text-sm">Annuleer</button>
+              </div>
+            </div>
+          ) : (
+            <button onClick={() => setAdding(true)} className="btn-secondary text-sm w-full"><Plus className="h-4 w-4" />Nieuw veld</button>
+          )}
+        </div>
+
+        <div className="p-4 border-t border-gray-100">
+          <button onClick={onClose} className="btn-secondary w-full">Sluiten</button>
+        </div>
+      </div>
     </div>
   )
 }

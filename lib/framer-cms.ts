@@ -256,6 +256,60 @@ export async function pushItems(projectUrl: string, apiKey: string, collectionId
   })
 }
 
+// ── Veldbeheer (een echt CMS: velden toevoegen, hernoemen, verwijderen) ───────
+
+export type NewFieldInput = { name: string; type: string; cases?: string[] }
+
+/** Voegt nieuwe velden toe aan een Framer-collectie. Enum-velden krijgen hun
+ *  keuze-opties mee; de overige types hebben enkel naam + type nodig. */
+export async function addFields(projectUrl: string, apiKey: string, collectionId: string, fields: NewFieldInput[]): Promise<FramerField[]> {
+  if (fields.length === 0) return []
+  return withFramer(projectUrl, apiKey, async (framer) => {
+    const col = await findCollection(framer, collectionId)
+    if (!col) throw new Error('Collectie niet gevonden in Framer')
+    if (typeof col.addFields !== 'function') throw new Error('Deze Framer-versie ondersteunt geen velden toevoegen')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const payload: any[] = fields.map((f) => {
+      const base: Record<string, unknown> = { type: f.type, name: f.name }
+      if (f.type === 'enum') base.cases = (f.cases ?? []).filter(Boolean).map((c) => ({ name: c }))
+      return base
+    })
+    const created = await col.addFields(payload)
+    return fieldsFrom(Array.isArray(created) ? created : [])
+  })
+}
+
+/** Hernoemt één veld (via field.setAttributes). */
+export async function renameField(projectUrl: string, apiKey: string, collectionId: string, fieldId: string, name: string): Promise<void> {
+  return withFramer(projectUrl, apiKey, async (framer) => {
+    const col = await findCollection(framer, collectionId)
+    if (!col) throw new Error('Collectie niet gevonden in Framer')
+    const all = (await col.getFields?.()) ?? []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const target = (all as any[]).find((f) => String(f.id) === String(fieldId))
+    if (!target) throw new Error('Veld niet gevonden')
+    if (typeof target.setAttributes !== 'function') throw new Error('Dit veld kan niet hernoemd worden')
+    await target.setAttributes({ name })
+  })
+}
+
+/** Verwijdert velden uit een collectie (op veld-id). */
+export async function removeFields(projectUrl: string, apiKey: string, collectionId: string, fieldIds: string[]): Promise<void> {
+  if (fieldIds.length === 0) return
+  return withFramer(projectUrl, apiKey, async (framer) => {
+    const col = await findCollection(framer, collectionId)
+    if (!col) throw new Error('Collectie niet gevonden in Framer')
+    if (typeof col.removeFields === 'function') { await col.removeFields(fieldIds); return }
+    // Fallback: per veld via field.remove()
+    const all = (await col.getFields?.()) ?? []
+    const ids = new Set(fieldIds.map(String))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const f of (all as any[]).filter((x) => ids.has(String(x.id)))) {
+      if (typeof f.remove === 'function') await f.remove()
+    }
+  })
+}
+
 /** Verwijdert items uit een collectie op het collectie-object. Probeert eerst
  *  col.removeItems(ids); valt terug op item.remove() per gevonden item, zodat de
  *  verwijdering echt doorgaat ook als removeItems met de losse id's niets doet. */

@@ -63,11 +63,11 @@ export function ClientEditForm({
   const [reels, setReels] = useState(String(socialConfig.reels ?? 0))
   const [stories, setStories] = useState(String(socialConfig.stories ?? 0))
   const [platforms, setPlatforms] = useState<string[]>(socialConfig.channels ?? [])
-  const [maintenanceIncluded, setMaintenanceIncluded] = useState(webdesignConfig.maintenance_included ?? false)
+  // Onderhoud beheer je in de Website-kaart; hier geven we de bestaande waarde ongewijzigd door.
+  const maintenanceIncluded = webdesignConfig.maintenance_included ?? false
   const [adsBudget, setAdsBudget] = useState(String(adsConfig.budget ?? ''))
 
   const hasSocial = services.includes('social-media')
-  const hasWebdesign = services.includes('webdesign')
   const hasAds = services.includes('ads')
 
   const toggleService = (slug: string) =>
@@ -221,21 +221,8 @@ export function ClientEditForm({
         </div>
       )}
 
-      {/* Webdesign settings */}
-      {hasWebdesign && (
-        <div className="border-t border-gray-100 pt-3">
-          <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Website instellingen</h3>
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={maintenanceIncluded}
-              onChange={e => setMaintenanceIncluded(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 accent-[#fff848]"
-            />
-            <span className="text-sm text-gray-700">Onderhoud inbegrepen</span>
-          </label>
-        </div>
-      )}
+      {/* Website-instellingen (type site, CMS, beheerlink én onderhoud) staan
+          bewust in de Website-kaart op deze pagina — één plek, geen dubbele bron. */}
 
       {/* Ads settings */}
       {hasAds && (
