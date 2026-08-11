@@ -44,6 +44,13 @@ export async function POST(req: NextRequest) {
 
     const admin = createAdminSupabaseClient()
 
+    // Aanpassingen aanvragen is onderhoudswerk: zonder lopend onderhoudspakket
+    // mag er geen aanvraag binnenkomen (de UI verbergt het al; dit is de gate).
+    const { data: cRow } = await admin.from('clients').select('*').eq('id', client_id).maybeSingle()
+    if (!(cRow as { maintenance_included?: boolean | null } | null)?.maintenance_included) {
+      return NextResponse.json({ error: 'Onderhoud is niet inbegrepen voor dit account.' }, { status: 403 })
+    }
+
     // Upload all images in parallel; preserve order in the returned arrays.
     const uploadResults = await Promise.all(
       imageFiles

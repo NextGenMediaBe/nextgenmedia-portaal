@@ -38,6 +38,17 @@ export default async function PortalLayout({ children }: { children: React.React
     }
   } catch { hasCms = false }
 
+  // Website-tab: aanpassingen aanvragen hoort bij ONDERHOUD. Zonder onderhoud
+  // tonen we die tab alleen nog als er een eigen beheeromgeving is om naartoe te
+  // linken — anders is de pagina leeg en verwarrend voor de klant.
+  let hasWebsitePage = false
+  try {
+    const { data: w } = await admin
+      .from('clients').select('maintenance_included, website_admin_url').eq('id', session.clientId).maybeSingle()
+    const row = w as { maintenance_included?: boolean | null; website_admin_url?: string | null } | null
+    hasWebsitePage = !!row?.maintenance_included || !!(row?.website_admin_url ?? '').trim()
+  } catch { hasWebsitePage = false }
+
   // Actieve diensten + blogs (gating naast rechten).
   let activeServices: string[] = []
   let hasBlogs = false
@@ -60,6 +71,7 @@ export default async function PortalLayout({ children }: { children: React.React
         hasBlogs={hasBlogs}
         hasMetricool={hasMetricool}
         hasCms={hasCms}
+        hasWebsitePage={hasWebsitePage}
         allowedModules={allowedModules}
         lang={lang}
       />

@@ -25,8 +25,11 @@ export default async function PortalWebsitePage() {
   // Beheerlink: alleen relevant als de site een eigen beheeromgeving heeft.
   // De klant ziet enkel de knop — nooit hoe of waarmee de site gebouwd is.
   const { data: clientRow } = await admin
-    .from('clients').select('website_url, website_admin_url').eq('id', session.clientId).maybeSingle()
-  const adminUrl = (clientRow?.website_admin_url ?? '').trim()
+    .from('clients').select('*').eq('id', session.clientId).maybeSingle()
+  const row = clientRow as { website_admin_url?: string | null; maintenance_included?: boolean | null } | null
+  const adminUrl = (row?.website_admin_url ?? '').trim()
+  // Aanpassingen aanvragen is ONDERHOUDSWERK: zonder onderhoud tonen we dat niet.
+  const hasMaintenance = !!row?.maintenance_included
 
   if (!service?.active) {
     return (
@@ -36,11 +39,24 @@ export default async function PortalWebsitePage() {
     )
   }
 
+  // Geen onderhoud én geen eigen beheeromgeving → hier valt niets te doen.
+  // (De tab staat dan ook niet in het menu; dit vangt een directe link af.)
+  if (!hasMaintenance && !adminUrl) {
+    return (
+      <div className="text-center py-20 text-gray-400">
+        <p className="text-sm">Er is momenteel geen websitebeheer voor uw account.</p>
+        <p className="text-xs mt-1">Vragen over uw website? Neem gerust contact op met NextGenMedia.</p>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
-        <h1 className="text-2xl font-bold">Website aanpassingen</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Kleine aanpassingen aan uw website aanvragen</p>
+        <h1 className="text-2xl font-bold">{hasMaintenance ? 'Website aanpassingen' : 'Website'}</h1>
+        <p className="text-sm text-gray-500 mt-0.5">
+          {hasMaintenance ? 'Kleine aanpassingen aan uw website aanvragen' : 'Beheer de inhoud van uw website'}
+        </p>
       </div>
 
       {adminUrl && (
@@ -55,18 +71,20 @@ export default async function PortalWebsitePage() {
         </div>
       )}
 
-      <WebsiteRequestClient
-        clientId={session.clientId}
-        canRequest={canRequest}
-        initialRequests={(requests ?? []).map((r) => ({
-          id: r.id,
-          title: r.title,
-          description: r.description,
-          kind: r.kind,
-          status: r.status,
-          created_at: r.created_at,
-        }))}
-      />
+      {hasMaintenance && (
+        <WebsiteRequestClient
+          clientId={session.clientId}
+          canRequest={canRequest}
+          initialRequests={(requests ?? []).map((r) => ({
+            id: r.id,
+            title: r.title,
+            description: r.description,
+            kind: r.kind,
+            status: r.status,
+            created_at: r.created_at,
+          }))}
+        />
+      )}
     </div>
   )
 }

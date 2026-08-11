@@ -21,6 +21,7 @@ type NavItem = {
   requiresBlogs?: boolean
   requiresMetricool?: boolean
   requiresCms?: boolean
+  requiresWebsitePage?: boolean
   module?: string
 }
 
@@ -31,7 +32,7 @@ const NAV: NavItem[] = [
   { tKey: 'nav.social',     href: '/portal/social-media',  icon: Calendar, requiresService: 'social-media', module: 'social_media' },
   { tKey: 'nav.metricool',  href: '/portal/metricool',     icon: CalendarClock, requiresMetricool: true, module: 'metricool' },
   { tKey: 'nav.cms',        href: '/portal/cms',           icon: Database, requiresCms: true, module: 'cms' },
-  { tKey: 'nav.website',    href: '/portal/website',       icon: Globe,    requiresService: 'webdesign', module: 'website' },
+  { tKey: 'nav.website',    href: '/portal/website',       icon: Globe,    requiresService: 'webdesign', requiresWebsitePage: true, module: 'website' },
   { tKey: 'nav.blogs',      href: '/portal/blogs',         icon: Newspaper, requiresBlogs: true, module: 'blogs' },
 ]
 
@@ -41,6 +42,7 @@ export function PortalSidebar({
   hasBlogs = false,
   hasMetricool = false,
   hasCms = false,
+  hasWebsitePage = false,
   allowedModules,
   lang = 'nl',
 }: {
@@ -49,6 +51,8 @@ export function PortalSidebar({
   hasBlogs?: boolean
   hasMetricool?: boolean
   hasCms?: boolean
+  /** Website-tab enkel bij onderhoud of een eigen beheeromgeving. */
+  hasWebsitePage?: boolean
   /** Modules met view-recht. Undefined = alles tonen (owner/backward compat). */
   allowedModules?: string[]
   lang?: Lang
@@ -73,6 +77,7 @@ export function PortalSidebar({
       (!item.requiresBlogs || hasBlogs) &&
       (!item.requiresMetricool || hasMetricool) &&
       (!item.requiresCms || hasCms) &&
+      (!item.requiresWebsitePage || hasWebsitePage) &&
       (!item.module || !allowedModules || allowedModules.includes(item.module))
   )
 
