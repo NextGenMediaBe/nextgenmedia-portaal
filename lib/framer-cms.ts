@@ -161,9 +161,11 @@ function buildFieldDataInput(fields: FramerField[], values: Record<string, strin
       case 'number': { if (empty) break; const n = Number(v); if (!Number.isNaN(n)) out[f.id] = { type: 'number', value: n }; break }
       case 'boolean': out[f.id] = { type: 'boolean', value: v === 'true' || v === '1' || v === 'on' }; break
       case 'formattedText': out[f.id] = { type: 'formattedText', value: v, contentType: 'html' }; break
-      // Framer bewaart image/file als object { url, … } — niet als kale string.
-      case 'image': if (!empty) out[f.id] = { type: 'image', value: { url: v } }; break
-      case 'file': if (!empty) out[f.id] = { type: 'file', value: { url: v } }; break
+      // LET OP — lees- en schrijfvorm verschillen bij image/file:
+      // lezen geeft een object (ImageFieldDataEntry.value = { id, url, … }),
+      // maar schrijven verwacht de kale URL (…EntryInput.value = string | null).
+      case 'image': if (!empty) out[f.id] = { type: 'image', value: v }; break
+      case 'file': if (!empty) out[f.id] = { type: 'file', value: v }; break
       case 'date': { if (empty) break; const iso = toIsoDate(v); if (iso) out[f.id] = { type: 'date', value: iso }; break }
       case 'enum': {
         if (empty) break
