@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { pathToModule, canSeeModule, STAFF_API_WHITELIST, isStaffApiDenied, modulesForApiPath } from '@/lib/staff'
 import { isDisabledPath } from '@/lib/features'
+import { verifyToken, TWO_FA_COOKIE } from '@/lib/two-factor'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 
 // Rol/rechten worden via de service-role client gelezen (bypasst RLS). Reden:
@@ -59,13 +60,22 @@ export async function updateSession(request: NextRequest) {
     const db = roleReader(supabase)
     const { data: roleData } = await db
       .from('user_roles').select('role').eq('user_id', user.id).limit(1).maybeSingle()
-    if (roleData?.role === 'admin') return supabaseResponse
+
+    // Interne accounts moeten óók de tweestapsverificatie hebben doorlopen —
+    // anders zou een geldig wachtwoord alleen al volstaan voor de API's.
+    const twoFaOk = await verifyToken(request.cookies.get(TWO_FA_COOKIE)?.value, user.id)
+
+    if (roleData?.role === 'admin') {
+      if (!twoFaOk) return NextResponse.json({ error: 'Verificatie vereist', code: '2fa_required' }, { status: 401 })
+      return supabaseResponse
+    }
 
     // Geen admin → enkel actieve werknemers, binnen hun modules.
     const { data: staff } = await db
       .from('staff_members').select('active, permissions').eq('auth_user_id', user.id).maybeSingle()
     const activeStaff = !!staff && staff.active !== false
     if (!activeStaff) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
+    if (!twoFaOk) return NextResponse.json({ error: 'Verificatie vereist', code: '2fa_required' }, { status: 401 })
     if (isStaffApiDenied(path)) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     if (STAFF_API_WHITELIST.some((p) => path === p || path.startsWith(p + '?'))) return supabaseResponse
     const perms = Array.isArray(staff!.permissions) ? (staff!.permissions as string[]) : []
@@ -82,6 +92,7 @@ export async function updateSession(request: NextRequest) {
   // Public routes
   if (
     path === '/login' ||
+    path === '/login/verify' ||   // stap 2 van het inloggen (eigen controle in de pagina)
     path === '/' ||
     path.startsWith('/sign/') ||
     path.startsWith('/_next') ||
@@ -123,6 +134,19 @@ export async function updateSession(request: NextRequest) {
       .maybeSingle()
     staff = data
     if (staff && staff.active !== false) role = 'employee'
+  }
+
+  // Interne accounts (admin + werknemer): tweestapsverificatie verplicht.
+  // Klanten en partners loggen gewoon met wachtwoord in.
+  if ((role === 'admin' || role === 'employee') && path.startsWith('/admin')) {
+    const twoFaOk = await verifyToken(request.cookies.get(TWO_FA_COOKIE)?.value, user.id)
+    if (!twoFaOk) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/login/verify'
+      url.search = ''
+      url.searchParams.set('redirect', path)
+      return NextResponse.redirect(url)
+    }
   }
 
   // Role-based routing

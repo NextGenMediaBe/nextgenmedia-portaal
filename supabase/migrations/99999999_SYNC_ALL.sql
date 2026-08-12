@@ -1407,5 +1407,22 @@ ALTER TABLE public.clients
 CREATE INDEX IF NOT EXISTS idx_clients_maintenance
   ON public.clients (maintenance_start_date) WHERE maintenance_included;
 
+-- ── Tweestapsverificatie voor interne accounts ───────────────────────────────
+-- Admins en werknemers loggen in met wachtwoord + een code per e-mail.
+-- De code wordt NOOIT leesbaar bewaard: enkel een SHA-256-hash.
+-- BEWUST GEEN RLS-policies: alleen de service-role (server) mag hierbij.
+CREATE TABLE IF NOT EXISTS public.login_codes (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     uuid NOT NULL,
+  code_hash   text NOT NULL,
+  expires_at  timestamptz NOT NULL,
+  consumed_at timestamptz,
+  attempts    integer NOT NULL DEFAULT 0,
+  ip          text,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_login_codes_user ON public.login_codes (user_id, created_at DESC);
+ALTER TABLE public.login_codes ENABLE ROW LEVEL SECURITY;
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.

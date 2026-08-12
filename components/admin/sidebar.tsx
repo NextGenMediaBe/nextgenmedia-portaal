@@ -179,6 +179,8 @@ export function AdminSidebar({ allowedModules, isEmployee = false }: { allowedMo
 
   const handleLogout = async () => {
     const supabase = createClient()
+    // Ook de verificatie-cookie wissen, zodat opnieuw inloggen weer een code vraagt.
+    try { await fetch('/api/auth/2fa/logout', { method: 'POST' }) } catch { }
     await supabase.auth.signOut()
     router.replace('/login')
   }
