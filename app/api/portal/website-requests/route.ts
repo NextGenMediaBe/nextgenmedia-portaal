@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { randomUUID } from 'crypto'
+import { checkUpload } from '@/lib/upload-guard'
 import { revalidatePath } from 'next/cache'
 import { notifyMaintenanceRequest } from '@/lib/admin-alerts'
 import { requirePortalPermission, logPortalAction, type PortalSession } from '@/lib/portal-auth'
@@ -9,7 +10,10 @@ import { requirePortalPermission, logPortalAction, type PortalSession } from '@/
 // under a webdesign/ prefix so they stay separate from contract PDFs.
 const STORAGE_BUCKET = 'contracts'
 const IMAGE_PATH_PREFIX = 'webdesign'
-const SIGNED_URL_TTL = 60 * 60 * 24 * 365 * 2 // 2 years
+// 24 uur: een signed URL is een sleutel zonder slot — wie hem heeft, kan erbij.
+// De admin-weergave genereert bij elke paginalading een verse URL, dus een korte
+// levensduur kost niets en beperkt de schade als een link uitlekt.
+const SIGNED_URL_TTL = 60 * 60 * 24 // 24 uur
 
 // All portal-submitted requests are minor by definition; the schema-level kind
 // has a CHECK ('minor','major') constraint, so we always store 'minor' and
@@ -56,12 +60,18 @@ export async function POST(req: NextRequest) {
       imageFiles
         .filter((img) => img && img.size > 0)
         .map(async (img) => {
-          const ext = (img.name.split('.').pop() ?? 'jpg').replace(/[^a-z0-9]/gi, '').toLowerCase() || 'jpg'
-          const storagePath = `${IMAGE_PATH_PREFIX}/${client_id}/${randomUUID()}.${ext}`
+          // Werkelijk type uit de bytes bepalen; bestandsnaam en Content-Type
+          // komen van de client en zijn niet te vertrouwen.
+          const checked = await checkUpload(img, { maxBytes: 10 * 1024 * 1024, allow: ['image'] })
+          if (!checked.ok) {
+            console.error('[website-requests] geweigerde upload:', checked.error)
+            return null
+          }
+          const storagePath = `${IMAGE_PATH_PREFIX}/${client_id}/${randomUUID()}.${checked.ext}`
           const { error: uploadErr } = await admin.storage
             .from(STORAGE_BUCKET)
-            .upload(storagePath, Buffer.from(await img.arrayBuffer()), {
-              contentType: img.type || 'image/jpeg',
+            .upload(storagePath, checked.buffer, {
+              contentType: checked.mime,
               upsert: false,
             })
           if (uploadErr) {

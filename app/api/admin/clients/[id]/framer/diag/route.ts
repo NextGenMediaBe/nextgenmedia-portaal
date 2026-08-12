@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
-import { framerConfigured, diagnoseFramer, probeWriteFramer } from '@/lib/framer-cms'
+import { framerConfigured, framerApiKey, diagnoseFramer, probeWriteFramer } from '@/lib/framer-cms'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -18,7 +18,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     if (!framerConfigured(client)) return NextResponse.json({ error: 'Framer nog niet geconfigureerd' }, { status: 400 })
 
     const url = client.framer_project_url as string
-    const key = client.framer_api_key as string
+    const key = framerApiKey(client)
 
     // ?probe=1 → schrijf-test (voegt tijdelijk 1 testitem toe + ruimt op) om te
     // bepalen welke fieldData-vorm Framer accepteert. ?collection=<id> optioneel.

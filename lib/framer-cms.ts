@@ -5,6 +5,7 @@
 // naar de browser). framer-api is ESM + beta → dynamisch importeren + defensief.
 
 import 'server-only'
+import { decryptSecret } from '@/lib/crypto'
 
 export type FramerEnumCase = { id: string; name: string }
 export type FramerField = { id: string; name: string; type: string; editable: boolean; options?: FramerEnumCase[] }
@@ -25,6 +26,16 @@ export type FramerItem = {
 
 export function framerConfigured(c: { framer_project_url?: string | null; framer_api_key?: string | null } | null | undefined): boolean {
   return !!(c?.framer_project_url && c?.framer_api_key)
+}
+
+/**
+ * De opgeslagen API-sleutel omzetten naar een bruikbare sleutel.
+ * Sleutels worden versleuteld opgeslagen (AES-256-GCM, zie lib/crypto.ts);
+ * reeds bestaande onversleutelde sleutels blijven werken omdat decryptSecret
+ * een onbekend formaat ongewijzigd teruggeeft. Zo is de overgang naadloos.
+ */
+export function framerApiKey(c: { framer_api_key?: string | null } | null | undefined): string {
+  return decryptSecret(c?.framer_api_key ?? '')
 }
 
 /** Verbindt met het Framer-project, voert fn uit en verbreekt daarna netjes. */

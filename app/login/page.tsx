@@ -10,7 +10,11 @@ import { Logo } from '@/components/logo'
 function LoginForm() {
   const router = useRouter()
   const params = useSearchParams()
-  const redirect = params.get('redirect') || '/'
+  // Alleen doorsturen bínnen deze app. Een ongevalideerde ?redirect= laat een
+  // phishinglink toe die op ons eigen domein start en na het inloggen naar een
+  // namaaksite stuurt (open redirect). '//host' is óók extern.
+  const rawRedirect = params.get('redirect') || '/'
+  const redirect = rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : '/'
   const supabase = createClient()
 
   const [email, setEmail] = useState('')

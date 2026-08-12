@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { requirePortalPermission, logPortalAction } from '@/lib/portal-auth'
-import { framerConfigured, pushItems, removeItems, publishSite, type FramerField, type PushItem } from '@/lib/framer-cms'
+import { framerConfigured, framerApiKey, pushItems, removeItems, publishSite, type FramerField, type PushItem } from '@/lib/framer-cms'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     if (!framerConfigured(client)) return NextResponse.json({ error: 'Framer niet geconfigureerd' }, { status: 400 })
 
     const projectUrl = client.framer_project_url as string
-    const apiKey = client.framer_api_key as string
+    const apiKey = framerApiKey(client)
 
     const { data: cols } = await admin
       .from('cms_collections')

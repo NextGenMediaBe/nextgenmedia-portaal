@@ -162,7 +162,6 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
           <CredentialsCard
             endpoint={`/api/admin/clients/${id}/credentials`}
             email={client.email ?? null}
-            storedPassword={(client.login_password ?? null) as string | null}
           />
 
           {/* Subaccounts & rechten */}

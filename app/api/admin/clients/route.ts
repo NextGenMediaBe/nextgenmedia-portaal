@@ -3,6 +3,7 @@ import { createClient, createAdminSupabaseClient, isActiveStaff, insertResilient
 import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { validateBtw } from '@/lib/btw'
+import { encryptSecret } from '@/lib/crypto'
 
 const ServiceCfgSchema = z.object({
   start_month: z.string(),                          // YYYY-MM
@@ -106,7 +107,9 @@ export async function POST(req: NextRequest) {
         website_platform: data.website_platform ?? null,
         website_admin_url: data.website_platform === 'custom' ? (data.website_admin_url || null) : null,
         framer_project_url: data.website_platform === 'framer' ? (data.framer_project_url || null) : null,
-        framer_api_key: data.website_platform === 'framer' ? (data.framer_api_key || null) : null,
+        // Versleuteld opslaan — zie lib/crypto.ts (vereist BLOG_ENC_KEY).
+        framer_api_key: data.website_platform === 'framer' && data.framer_api_key
+          ? encryptSecret(data.framer_api_key) : null,
         cms_enabled: data.website_platform === 'framer' ? !!data.cms_enabled : false,
         maintenance_included: !!data.webdesign_maintenance_included,
         maintenance_start_date: data.webdesign_maintenance_included ? (data.maintenance_start_date || null) : null,
@@ -122,9 +125,10 @@ export async function POST(req: NextRequest) {
     }
     const client = { id: String(clientRow.id) }
 
-    // Store the admin-chosen password so it can be viewed later (best effort —
-    // ignored if the login_password column isn't migrated yet).
-    try { await admin.from('clients').update({ login_password: data.password }).eq('id', client.id) } catch { }
+    // Wachtwoord wordt BEWUST niet bewaard: Supabase Auth heeft het al veilig
+    // gehasht. Een leesbare kopie zou bij een datalek alle klantwachtwoorden
+    // prijsgeven (die mensen vaak hergebruiken). Admin kan altijd een nieuw
+    // wachtwoord instellen via de credentials-kaart.
 
     // BTW-nummer (best effort — kolom kan nog ontbreken vóór migratie).
     if (btw.value) { try { await admin.from('clients').update({ btw_nummer: btw.value }).eq('id', client.id) } catch { } }

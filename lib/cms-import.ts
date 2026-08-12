@@ -1,6 +1,6 @@
 import 'server-only'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
-import { framerConfigured, listCollectionsWithSchema, getCollectionItems } from '@/lib/framer-cms'
+import { framerConfigured, framerApiKey, listCollectionsWithSchema, getCollectionItems } from '@/lib/framer-cms'
 import { mirrorSyncedItems } from '@/lib/cms-mirror'
 
 export type ImportSummary = { collections: number; items: number; editableCollections: number }
@@ -21,7 +21,7 @@ export async function importFramerCms(clientId: string): Promise<ImportSummary> 
   if (!framerConfigured(client)) throw new Error('Projectlink + API-sleutel eerst instellen')
 
   const projectUrl = client.framer_project_url as string
-  const apiKey = client.framer_api_key as string
+  const apiKey = framerApiKey(client)
 
   const collections = await listCollectionsWithSchema(projectUrl, apiKey)
 

@@ -12,14 +12,13 @@ import { KeyRound, Eye, EyeOff, Loader2, Check, Copy, Mail } from 'lucide-react'
 export function CredentialsCard({
   endpoint,
   email,
-  storedPassword,
 }: {
   endpoint: string            // e.g. /api/admin/clients/<id>/credentials
   email: string | null
-  storedPassword: string | null
 }) {
   const router = useRouter()
   const [editing, setEditing] = useState(false)
+  // Enkel om het NIEUW ingetypte wachtwoord zichtbaar te maken tijdens invoeren.
   const [showPw, setShowPw] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -87,26 +86,15 @@ export function CredentialsCard({
             </div>
           </div>
 
-          {/* Password */}
+          {/* Wachtwoord — bewust NIET opvraagbaar. Wachtwoorden worden alleen
+              gehasht bewaard door Supabase Auth; een leesbare kopie zou bij een
+              datalek alle klantwachtwoorden prijsgeven. Wel: opnieuw instellen. */}
           <div>
             <div className="text-xs text-gray-500 mb-1">Wachtwoord</div>
-            {storedPassword ? (
-              <div className="flex items-center gap-2">
-                <code className="flex-1 text-sm bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 truncate font-mono">
-                  {showPw ? storedPassword : '•'.repeat(Math.min(storedPassword.length, 12))}
-                </code>
-                <button onClick={() => setShowPw((v) => !v)} className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400" title={showPw ? 'Verbergen' : 'Tonen'}>
-                  {showPw ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                </button>
-                <button onClick={() => copy(storedPassword, 'pw')} className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400" title="Kopiëren">
-                  {copied === 'pw' ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
-                </button>
-              </div>
-            ) : (
-              <p className="text-xs text-gray-400 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5">
-                Niet zichtbaar — stel een nieuw wachtwoord in om het te kunnen tonen.
-              </p>
-            )}
+            <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5">
+              Wachtwoorden worden versleuteld bewaard en zijn niet op te vragen — ook niet door ons.
+              Kwijt? Stel hieronder een nieuw wachtwoord in en geef dat door.
+            </p>
           </div>
 
           <button onClick={() => { setEditing(true); setForm({ email: email ?? '', password: '' }) }} className="btn-secondary w-full text-sm">
@@ -135,7 +123,7 @@ export function CredentialsCard({
                 {showPw ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
               </button>
             </div>
-            <p className="text-[11px] text-gray-400 mt-1">Min. 8 tekens. Wordt zichtbaar bewaard zodat je het later kan terugzien.</p>
+            <p className="text-[11px] text-gray-400 mt-1">Min. 8 tekens. Noteer het nu — het is later niet meer op te vragen.</p>
           </div>
 
           {error && <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</div>}

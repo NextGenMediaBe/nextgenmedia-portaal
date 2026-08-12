@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { requirePortalPermission, logPortalAction } from '@/lib/portal-auth'
-import { framerConfigured, addFields, renameField, removeFields, listCollectionsWithSchema } from '@/lib/framer-cms'
+import { framerConfigured, framerApiKey, addFields, renameField, removeFields, listCollectionsWithSchema } from '@/lib/framer-cms'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -34,7 +34,7 @@ async function resolveCollection(clientId: string, collectionId: string) {
   const { data: client } = await admin
     .from('clients').select('id, cms_enabled, framer_project_url, framer_api_key').eq('id', clientId).maybeSingle()
   if (!client?.cms_enabled || !framerConfigured(client)) return null
-  return { admin, col, projectUrl: client.framer_project_url as string, apiKey: client.framer_api_key as string }
+  return { admin, col, projectUrl: client.framer_project_url as string, apiKey: framerApiKey(client) }
 }
 
 /** Na een structuurwijziging: velden opnieuw uit Framer lezen en spiegelen. */

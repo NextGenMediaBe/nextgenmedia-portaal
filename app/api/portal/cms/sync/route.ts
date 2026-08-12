@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { requirePortalPermission } from '@/lib/portal-auth'
-import { framerConfigured, listCollectionsWithSchema, getCollectionItems } from '@/lib/framer-cms'
+import { framerConfigured, framerApiKey, listCollectionsWithSchema, getCollectionItems } from '@/lib/framer-cms'
 import { mirrorSyncedItems } from '@/lib/cms-mirror'
 
 export const dynamic = 'force-dynamic'
@@ -21,7 +21,7 @@ export async function POST() {
     if (!framerConfigured(client)) return NextResponse.json({ error: 'Framer niet geconfigureerd' }, { status: 400 })
 
     const projectUrl = client.framer_project_url as string
-    const apiKey = client.framer_api_key as string
+    const apiKey = framerApiKey(client)
 
     // Enkel de door de klant bewerkbare collecties.
     const { data: editableCols } = await admin

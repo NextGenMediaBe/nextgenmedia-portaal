@@ -44,7 +44,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // Mirror onto the clients row: email (for display) + the admin-set password
     const rowPatch: Record<string, unknown> = {}
     if (email) rowPatch.email = String(email).trim()
-    if (password) rowPatch.login_password = String(password)
+    // Wachtwoord bewust NIET spiegelen naar de tabel: Supabase Auth bewaart het
+    // al gehasht. Een leesbare kopie is een onnodig datalekrisico.
     if (Object.keys(rowPatch).length > 0) {
       // Resilient: drop login_password if the column isn't migrated yet.
       let { error } = await admin.from('clients').update(rowPatch).eq('id', clientId)

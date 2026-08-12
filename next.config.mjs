@@ -18,6 +18,9 @@ const securityHeaders = [
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Verberg dat dit een Next.js-app is: minder gratis informatie voor een
+  // aanvaller die gericht op frameworkversies zoekt.
+  poweredByHeader: false,
   experimental: {
     serverActions: {
       bodySizeLimit: '10mb',

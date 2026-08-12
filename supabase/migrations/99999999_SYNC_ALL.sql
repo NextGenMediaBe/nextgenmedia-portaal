@@ -1424,5 +1424,16 @@ CREATE TABLE IF NOT EXISTS public.login_codes (
 CREATE INDEX IF NOT EXISTS idx_login_codes_user ON public.login_codes (user_id, created_at DESC);
 ALTER TABLE public.login_codes ENABLE ROW LEVEL SECURITY;
 
+-- ── Security: leesbare wachtwoorden verwijderen ──────────────────────────────
+-- clients.login_password / freelancers.login_password bewaarden het door de
+-- admin ingestelde wachtwoord in KLARE TEKST, puur om het later te kunnen tonen.
+-- Supabase Auth bewaart het echte wachtwoord al gehasht; deze kopie was dus
+-- overbodig en zou bij een datalek alle klant- en partnerwachtwoorden prijsgeven
+-- (die mensen vaak hergebruiken). Eerst overschrijven, dan de kolom weghalen.
+UPDATE public.clients     SET login_password = NULL WHERE login_password IS NOT NULL;
+UPDATE public.freelancers SET login_password = NULL WHERE login_password IS NOT NULL;
+ALTER TABLE public.clients     DROP COLUMN IF EXISTS login_password;
+ALTER TABLE public.freelancers DROP COLUMN IF EXISTS login_password;
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.

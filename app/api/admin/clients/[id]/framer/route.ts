@@ -3,6 +3,7 @@ import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { logAudit, requestMeta } from '@/lib/audit'
 import { framerConfigured } from '@/lib/framer-cms'
 import { importFramerCms } from '@/lib/cms-import'
+import { encryptSecret } from '@/lib/crypto'
 import { maintenanceStatus } from '@/lib/maintenance'
 
 export const dynamic = 'force-dynamic'
@@ -72,7 +73,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
     if (body.adminUrl !== undefined) patch.website_admin_url = String(body.adminUrl).trim() || null
     if (body.projectUrl !== undefined) patch.framer_project_url = String(body.projectUrl).trim() || null
-    if (typeof body.apiKey === 'string' && body.apiKey.trim()) patch.framer_api_key = body.apiKey.trim()
+    // Versleuteld opslaan (AES-256-GCM): een databaselek geeft dan geen directe
+    // schrijftoegang tot de website van de klant. Vereist BLOG_ENC_KEY in de env.
+    if (typeof body.apiKey === 'string' && body.apiKey.trim()) patch.framer_api_key = encryptSecret(body.apiKey.trim())
     if (typeof body.cmsEnabled === 'boolean') patch.cms_enabled = body.cmsEnabled
 
     if (body.maintenance && typeof body.maintenance === 'object') {

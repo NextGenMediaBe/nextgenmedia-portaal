@@ -214,7 +214,6 @@ export default async function PartnerDetailPage({ params }: { params: Promise<{ 
         <CredentialsCard
           endpoint={`/api/admin/partners/${id}/credentials`}
           email={partner.email ?? null}
-          storedPassword={(partner.login_password ?? null) as string | null}
         />
         </div>
 

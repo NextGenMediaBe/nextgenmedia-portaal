@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { requirePortalPermission } from '@/lib/portal-auth'
 import { randomUUID } from 'crypto'
+import { checkUpload } from '@/lib/upload-guard'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -18,17 +19,21 @@ export async function POST(req: NextRequest) {
   try {
     const fd = await req.formData()
     const file = fd.get('file') as File | null
-    if (!file || file.size === 0) return NextResponse.json({ error: 'Geen bestand' }, { status: 400 })
-    if (file.size > MAX) return NextResponse.json({ error: 'Bestand te groot (max 20 MB)' }, { status: 400 })
+    if (!file) return NextResponse.json({ error: 'Geen bestand' }, { status: 400 })
+
+    // Type bepalen uit de ECHTE bytes, niet uit bestandsnaam of Content-Type:
+    // deze bucket is publiek, dus een als afbeelding vermomd HTML/SVG-bestand
+    // zou anders als uitvoerbare pagina geserveerd worden (opgeslagen XSS).
+    const checked = await checkUpload(file, { maxBytes: MAX, allow: ['image', 'document'] })
+    if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 })
 
     const admin = createAdminSupabaseClient()
     // Bucket idempotent aanmaken (publiek) zodat de URL rechtstreeks werkt.
     try { await admin.storage.createBucket(BUCKET, { public: true }) } catch { /* bestaat al */ }
 
-    const ext = (file.name.split('.').pop() ?? 'bin').replace(/[^a-z0-9]/gi, '').toLowerCase() || 'bin'
-    const path = `${g.session.clientId}/${randomUUID()}.${ext}`
-    const { error } = await admin.storage.from(BUCKET).upload(path, Buffer.from(await file.arrayBuffer()), {
-      contentType: file.type || 'application/octet-stream', upsert: false,
+    const path = `${g.session.clientId}/${randomUUID()}.${checked.ext}`
+    const { error } = await admin.storage.from(BUCKET).upload(path, checked.buffer, {
+      contentType: checked.mime, upsert: false,
     })
     if (error) throw new Error(error.message)
 
