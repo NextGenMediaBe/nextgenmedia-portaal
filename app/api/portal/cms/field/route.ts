@@ -1,3 +1,4 @@
+import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { requirePortalPermission, logPortalAction } from '@/lib/portal-auth'
@@ -74,7 +75,7 @@ export async function POST(req: NextRequest) {
     await logPortalAction(g.session, 'cms.field.create', { type: 'cms_collection', id: ctx.col.id }, { req, meta: { name: label, type } })
     return NextResponse.json({ ok: true, fields })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }
 
@@ -96,7 +97,7 @@ export async function PATCH(req: NextRequest) {
     await logPortalAction(g.session, 'cms.field.rename', { type: 'cms_collection', id: ctx.col.id }, { req, meta: { fieldId, name: label } })
     return NextResponse.json({ ok: true, fields })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }
 
@@ -125,6 +126,6 @@ export async function DELETE(req: NextRequest) {
     await logPortalAction(g.session, 'cms.field.delete', { type: 'cms_collection', id: ctx.col.id }, { req, meta: { fieldId } })
     return NextResponse.json({ ok: true, fields })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }

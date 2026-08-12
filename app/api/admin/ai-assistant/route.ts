@@ -1,3 +1,4 @@
+import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { buildAiSnapshot } from '@/lib/ai-context'
@@ -84,6 +85,6 @@ ${clientLines}`
       plan, hasDestructive,
     })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }

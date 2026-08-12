@@ -1,3 +1,4 @@
+import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient , isActiveStaff } from '@/lib/supabase/server'
 
@@ -19,7 +20,7 @@ export async function GET() {
     if (error) throw error
     return NextResponse.json({ costs: data ?? [] })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }
 
@@ -56,7 +57,7 @@ export async function POST(req: NextRequest) {
     if (error) throw new Error(error.message)
     return NextResponse.json({ cost: data })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }
 
@@ -70,6 +71,6 @@ export async function DELETE(req: NextRequest) {
     if (error) throw error
     return NextResponse.json({ ok: true })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }

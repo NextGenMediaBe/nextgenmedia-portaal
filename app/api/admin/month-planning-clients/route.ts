@@ -1,3 +1,4 @@
+import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { MONTH_CLIENT_TYPE_KEYS } from '@/lib/month-phases'
@@ -21,7 +22,7 @@ export async function GET(req: NextRequest) {
     if (error) throw new Error(error.message)
     return NextResponse.json({ entries: data ?? [] })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }
 
@@ -51,7 +52,7 @@ export async function POST(req: NextRequest) {
     if (error) throw new Error(error.message)
     return NextResponse.json({ id: data.id })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }
 
@@ -70,7 +71,7 @@ export async function PATCH(req: NextRequest) {
     if (error) throw new Error(error.message)
     return NextResponse.json({ ok: true })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }
 
@@ -85,6 +86,6 @@ export async function DELETE(req: NextRequest) {
     if (error) throw new Error(error.message)
     return NextResponse.json({ ok: true })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }

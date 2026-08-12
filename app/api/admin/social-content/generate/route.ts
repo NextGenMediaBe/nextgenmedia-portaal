@@ -1,3 +1,4 @@
+import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient , isActiveStaff } from '@/lib/supabase/server'
 import { generatePlan } from '@/lib/content-planner'
@@ -41,7 +42,7 @@ export async function GET(req: NextRequest) {
       channels: Array.isArray(cfg.channels) ? (cfg.channels as string[]) : [],
     })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }
 
@@ -108,6 +109,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, created: data?.length ?? 0, items: data ?? [] })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }

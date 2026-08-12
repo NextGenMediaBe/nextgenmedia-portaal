@@ -1,3 +1,4 @@
+import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { metricoolConfigured, fetchAllPostStats, summarizeStats, engagementOf, type PostStat } from '@/lib/metricool'
@@ -100,6 +101,6 @@ ${dataBlock}`
 
     return NextResponse.json({ markdown, clientName: client.company_name, days, totalPosts: summary.totalPosts })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }

@@ -1,3 +1,4 @@
+import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { requirePortalPermission } from '@/lib/portal-auth'
@@ -34,6 +35,6 @@ export async function GET(req: NextRequest) {
     const posts = list.map((p) => ({ ...p, clientId: client.id, clientName: client.company_name }))
     return NextResponse.json({ configured: true, linked: true, count: posts.length, posts })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }

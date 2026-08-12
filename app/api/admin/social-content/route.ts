@@ -1,3 +1,4 @@
+import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient , isActiveStaff } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest) {
     if (error) throw new Error(error.message)
     return NextResponse.json({ items: data ?? [] })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }
 
@@ -65,7 +66,7 @@ export async function POST(req: NextRequest) {
     if (error) throw new Error(error.message)
     return NextResponse.json({ id: row.id })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }
 
@@ -91,7 +92,7 @@ export async function PATCH(req: NextRequest) {
     if (error) throw new Error(error.message)
     return NextResponse.json({ ok: true })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }
 
@@ -148,6 +149,6 @@ export async function DELETE(req: NextRequest) {
 
     return NextResponse.json({ ok: true, deleted: targetIds.length, clickupDeleted, clickupFailed })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }

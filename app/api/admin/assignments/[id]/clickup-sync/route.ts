@@ -1,3 +1,4 @@
+import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient , isActiveStaff } from '@/lib/supabase/server'
 import { clickupConfigured, listClickupMembers, upsertAssignmentTask } from '@/lib/clickup'
@@ -50,7 +51,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       match,
     })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }
 
@@ -99,6 +100,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     try { revalidatePath('/admin/assignments'); if (ctx.a.freelancer_id) revalidatePath(`/admin/partners/${ctx.a.freelancer_id}`) } catch { }
     return NextResponse.json({ ok: true, taskId: result.taskId, match, warning: match ? null : 'Geen overeenkomende partner in ClickUp gevonden — taak zonder verantwoordelijke aangemaakt.' })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }

@@ -1,3 +1,4 @@
+import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireStaff } from '@/lib/supabase/server'
 import { buildClientMailContext } from '@/lib/email-context'
@@ -19,6 +20,6 @@ export async function GET(req: NextRequest) {
     if (!ctx) return NextResponse.json({ error: 'Klant niet gevonden' }, { status: 404 })
     return NextResponse.json(ctx)
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }

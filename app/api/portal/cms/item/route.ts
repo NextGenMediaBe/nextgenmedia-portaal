@@ -1,3 +1,4 @@
+import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { requirePortalPermission, logPortalAction } from '@/lib/portal-auth'
@@ -48,7 +49,7 @@ export async function POST(req: NextRequest) {
     await logPortalAction(g.session, 'cms.item.create', { type: 'cms_item', id: row.id }, { req })
     return NextResponse.json({ ok: true, id: row.id })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }
 
@@ -77,6 +78,6 @@ export async function DELETE(req: NextRequest) {
     await logPortalAction(g.session, 'cms.item.delete', { type: 'cms_item', id }, { req })
     return NextResponse.json({ ok: true })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }

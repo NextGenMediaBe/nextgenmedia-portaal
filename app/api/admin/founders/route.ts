@@ -1,3 +1,4 @@
+import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
 import { logAudit, requestMeta } from '@/lib/audit'
@@ -13,7 +14,7 @@ export async function GET() {
     const existing = FOUNDERS.filter((f) => emails.has(f.email.toLowerCase())).map((f) => f.email)
     return NextResponse.json({ existing, total: FOUNDERS.length })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }
 
@@ -63,6 +64,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, result })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }

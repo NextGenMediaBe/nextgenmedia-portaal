@@ -1,3 +1,4 @@
+import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
 import { logAudit, requestMeta } from '@/lib/audit'
@@ -13,7 +14,7 @@ export async function GET() {
     const { data } = await admin.from('staff_members').select('id, name, email, active, permissions, created_at, last_login_at').order('created_at', { ascending: true })
     return NextResponse.json({ staff: data ?? [] })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }
 
@@ -65,6 +66,6 @@ export async function POST(req: NextRequest) {
     try { revalidatePath('/admin/werknemers') } catch { }
     return NextResponse.json({ ok: true, id: row.id })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }

@@ -1,6 +1,8 @@
+import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient, isActiveStaff } from '@/lib/supabase/server'
 import { logAudit, requestMeta } from '@/lib/audit'
+import { rateLimit, clientIp } from '@/lib/rate-limit'
 import {
   hashCode, safeEqual, createToken, TWO_FA_COOKIE, SESSION_TTL_MS, MAX_ATTEMPTS,
 } from '@/lib/two-factor'
@@ -24,6 +26,17 @@ export async function POST(req: NextRequest) {
 
     const role = await internalRole(user.id)
     if (!role) return NextResponse.json({ error: 'Niet van toepassing' }, { status: 403 })
+
+    // Rem per IP bovenop de 5 pogingen per code: zonder deze rem zou iemand
+    // steeds een nieuwe code kunnen aanvragen en telkens 5 keer mogen raden.
+    const ip = clientIp(req)
+    const rl = await rateLimit(`2fa-verify:${ip}`, { limit: 20, windowSec: 15 * 60 })
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: 'Te veel pogingen. Probeer het over een kwartier opnieuw.' },
+        { status: 429, headers: { 'Retry-After': String(rl.retryAfterSec) } },
+      )
+    }
 
     const { code } = await req.json()
     const entered = String(code ?? '').trim()
@@ -77,6 +90,6 @@ export async function POST(req: NextRequest) {
     })
     return res
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }

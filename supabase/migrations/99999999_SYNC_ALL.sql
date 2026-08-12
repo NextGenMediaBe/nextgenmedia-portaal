@@ -1435,5 +1435,17 @@ UPDATE public.freelancers SET login_password = NULL WHERE login_password IS NOT 
 ALTER TABLE public.clients     DROP COLUMN IF EXISTS login_password;
 ALTER TABLE public.freelancers DROP COLUMN IF EXISTS login_password;
 
+-- ── Rate limiting (brute-force-rem op inloggen en codes) ─────────────────────
+-- Eén rij per poging; de code telt de rijen binnen een tijdvenster.
+-- BEWUST GEEN RLS-policies: alleen de service-role (server) schrijft hierin.
+-- Bevat geen persoonsgegevens: de sleutel is 'actie:ip', geen e-mailadres.
+CREATE TABLE IF NOT EXISTS public.rate_limit_hits (
+  id         bigserial PRIMARY KEY,
+  key        text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_rate_limit_key_time ON public.rate_limit_hits (key, created_at DESC);
+ALTER TABLE public.rate_limit_hits ENABLE ROW LEVEL SECURITY;
+
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.

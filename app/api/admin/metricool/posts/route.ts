@@ -1,3 +1,4 @@
+import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { metricoolConfigured, listScheduledPosts, type MetricoolPost } from '@/lib/metricool'
@@ -44,6 +45,6 @@ export async function GET(req: NextRequest) {
     posts.sort((a, b) => (a.datetime ?? '').localeCompare(b.datetime ?? ''))
     return NextResponse.json({ configured: true, start, end, count: posts.length, posts, errors })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }

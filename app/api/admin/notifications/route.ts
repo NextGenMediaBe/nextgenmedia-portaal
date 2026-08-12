@@ -1,3 +1,4 @@
+import { safeMessage } from '@/lib/api-error'
 import { NextResponse } from 'next/server'
 import { getActor, actorCanSee } from '@/lib/actor-modules'
 import { buildNotifications } from '@/lib/notifications'
@@ -21,6 +22,6 @@ export async function GET() {
     })
     return NextResponse.json({ notifications })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }

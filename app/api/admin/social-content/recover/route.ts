@@ -1,3 +1,4 @@
+import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 
@@ -42,7 +43,7 @@ export async function GET() {
       clients: (clients ?? []).sort((a, b) => (a.company_name ?? '').localeCompare(b.company_name ?? '')),
     })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }
 
@@ -60,6 +61,6 @@ export async function POST(req: NextRequest) {
     if (error) throw new Error(error.message)
     return NextResponse.json({ ok: true, reassigned: cleanIds.length })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }

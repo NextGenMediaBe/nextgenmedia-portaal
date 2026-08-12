@@ -1,3 +1,4 @@
+import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient , isActiveStaff } from '@/lib/supabase/server'
 import { analyzeContractPdf } from '@/lib/contract-ai'
@@ -42,6 +43,6 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     }
     return NextResponse.json({ fields: analysis.fields, signature: analysis.signature })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }

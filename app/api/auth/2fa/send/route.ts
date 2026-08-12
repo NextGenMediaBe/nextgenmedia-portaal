@@ -1,9 +1,11 @@
+import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient, isActiveStaff } from '@/lib/supabase/server'
 import { sendEmail } from '@/lib/email'
 import { buildEmailHtml, buildEmailText } from '@/lib/email-html'
 import { generateCode, hashCode, CODE_TTL_MS, RESEND_COOLDOWN_MS } from '@/lib/two-factor'
 import { requestMeta } from '@/lib/audit'
+import { rateLimit, clientIp } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,6 +28,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Niet van toepassing' }, { status: 403 })
     }
     if (!user.email) return NextResponse.json({ error: 'Geen e-mailadres bekend' }, { status: 400 })
+
+    // Rem per IP: voorkomt dat iemand met een gestolen wachtwoord (of een script)
+    // eindeloos codes laat versturen — zowel mailbom als brute-force-aanloop.
+    const ip = clientIp(req)
+    const rl = await rateLimit(`2fa-send:${ip}`, { limit: 10, windowSec: 15 * 60 })
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: 'Te veel pogingen. Probeer het over een kwartier opnieuw.' },
+        { status: 429, headers: { 'Retry-After': String(rl.retryAfterSec) } },
+      )
+    }
 
     const admin = createAdminSupabaseClient()
 
@@ -82,6 +95,6 @@ export async function POST(req: NextRequest) {
     const masked = `${name.slice(0, 2)}${'•'.repeat(Math.max(1, name.length - 2))}@${domain}`
     return NextResponse.json({ ok: true, sentTo: masked })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }

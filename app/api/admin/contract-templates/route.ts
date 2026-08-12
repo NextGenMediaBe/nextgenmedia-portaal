@@ -1,3 +1,4 @@
+import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient, insertResilient , isActiveStaff } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
@@ -22,7 +23,7 @@ export async function GET() {
       .order('created_at', { ascending: false })
     return NextResponse.json({ templates: data ?? [] })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }
 
@@ -64,6 +65,6 @@ export async function POST(req: NextRequest) {
     try { revalidatePath('/admin/contracts/templates') } catch { }
     return NextResponse.json({ id: templateId })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { runMaintenanceReminders } from '@/lib/maintenance-report'
+import { pruneRateLimits } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -17,5 +18,7 @@ function authorized(req: NextRequest): boolean {
 export async function GET(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ error: 'Niet geautoriseerd' }, { status: 401 })
   const res = await runMaintenanceReminders()
-  return NextResponse.json({ ok: true, ...res })
+  // Meteen de oude rate-limit-tellers opruimen (>24u) zodat die tabel klein blijft.
+  const pruned = await pruneRateLimits()
+  return NextResponse.json({ ok: true, ...res, rateLimitsPruned: pruned })
 }

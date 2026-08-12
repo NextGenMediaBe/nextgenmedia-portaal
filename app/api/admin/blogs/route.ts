@@ -1,3 +1,4 @@
+import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
@@ -36,7 +37,7 @@ export async function GET(req: NextRequest) {
     if (error) throw new Error(error.message)
     return NextResponse.json({ blogs: data ?? [] })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }
 
@@ -76,7 +77,7 @@ export async function POST(req: NextRequest) {
     try { revalidatePath('/admin/blogs'); revalidatePath('/admin/blog-calendar') } catch { }
     return NextResponse.json({ created: created.length })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }
 
@@ -210,7 +211,7 @@ export async function PATCH(req: NextRequest) {
     try { revalidatePath('/admin/blogs') } catch { }
     return NextResponse.json({ ok: true })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }
 
@@ -225,6 +226,6 @@ export async function DELETE(req: NextRequest) {
     try { revalidatePath('/admin/blogs') } catch { }
     return NextResponse.json({ ok: true })
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : 'Fout' }, { status: 400 })
+    return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
 }
