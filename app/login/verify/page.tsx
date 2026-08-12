@@ -33,8 +33,14 @@ function VerifyForm() {
       // Niet ingelogd → terug naar stap 1. Geen intern account (klant/partner) →
       // deze stap geldt niet voor hen; stuur ze naar hun eigen portaal.
       if (res.status === 401) { router.replace('/login'); return }
-      if (res.status === 403) { router.replace('/'); return }
       const j = await res.json()
+      // 403 = deze stap geldt niet voor dit account. NIET stil doorsturen: dat
+      // maakte een verkeerd ingesteld werknemersaccount onzichtbaar (eindeloze
+      // lus zonder code én zonder melding). Toon het gewoon.
+      if (res.status === 403) {
+        setError('Voor dit account is de extra verificatie niet ingesteld. Neem contact op met NextGenMedia.')
+        return
+      }
       // 429 = er is net al een code verstuurd. Dat is geen fout: de vorige code
       // is nog geldig, dus melden we het rustig i.p.v. met een rode foutmelding.
       if (res.status === 429) { setInfo('Je code is al onderweg. Kijk in je mailbox.'); setCooldown(60); return }

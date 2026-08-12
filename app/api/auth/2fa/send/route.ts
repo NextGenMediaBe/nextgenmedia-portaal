@@ -70,7 +70,11 @@ export async function POST(req: NextRequest) {
       text: buildEmailText({ bodyText }),
       html: buildEmailHtml({ bodyText }),
     })
-    if (!res.ok) return NextResponse.json({ error: res.error ?? 'Code versturen mislukt' }, { status: 502 })
+    if (!res.ok) {
+      // Fout van de mailprovider letterlijk doorgeven — dit is precies waar een
+      // niet-geverifieerd afzenderdomein of een geblokkeerd adres zichtbaar wordt.
+      return NextResponse.json({ error: `De code kon niet verstuurd worden: ${res.error ?? 'onbekende fout bij de mailprovider'}` }, { status: 502 })
+    }
 
     // Het e-mailadres gemaskeerd terugsturen, zodat de gebruiker ziet waar de
     // code heen ging zonder het volledige adres te tonen.
