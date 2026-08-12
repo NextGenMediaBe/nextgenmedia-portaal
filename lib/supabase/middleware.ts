@@ -15,6 +15,17 @@ function roleReader(fallback: ReturnType<typeof createServerClient>) {
   try { return createAdminSupabaseClient() } catch { return fallback }
 }
 
+/**
+ * Kopieert de cookies die Supabase op de doorloop-response zette (o.a. een
+ * vernieuwd auth-token) naar een nieuwe response. Nodig bij elke redirect:
+ * NextResponse.redirect() begint met een lege set cookies, waardoor een net
+ * vernieuwde sessie verloren zou gaan → uitgelogd raken of een redirect-lus.
+ */
+function copyAuthCookies(from: NextResponse, to: NextResponse): NextResponse {
+  for (const cookie of from.cookies.getAll()) to.cookies.set(cookie)
+  return to
+}
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
 
@@ -145,7 +156,11 @@ export async function updateSession(request: NextRequest) {
       url.pathname = '/login/verify'
       url.search = ''
       url.searchParams.set('redirect', path)
-      return NextResponse.redirect(url)
+      // BELANGRIJK: een verse NextResponse.redirect() gooit de cookies weg die
+      // Supabase op supabaseResponse zette bij een tokenvernieuwing. Zonder die
+      // cookies raakt de sessie verlopen en beland je in een inlog-lus. Daarom
+      // kopiëren we ze mee.
+      return copyAuthCookies(supabaseResponse, NextResponse.redirect(url))
     }
   }
 

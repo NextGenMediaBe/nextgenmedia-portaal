@@ -6,6 +6,12 @@ import { createClient } from '@/lib/supabase/client'
 import { Loader2, ShieldCheck, RotateCw } from 'lucide-react'
 import { Logo } from '@/components/logo'
 
+/** Alleen doorsturen binnen deze app: een meegegeven ?redirect= mag nooit naar
+ *  een externe site wijzen (open-redirect). */
+function safeRedirect(target: string): string {
+  return target.startsWith('/') && !target.startsWith('//') ? target : '/admin'
+}
+
 function VerifyForm() {
   const router = useRouter()
   const params = useSearchParams()
@@ -29,6 +35,9 @@ function VerifyForm() {
       if (res.status === 401) { router.replace('/login'); return }
       if (res.status === 403) { router.replace('/'); return }
       const j = await res.json()
+      // 429 = er is net al een code verstuurd. Dat is geen fout: de vorige code
+      // is nog geldig, dus melden we het rustig i.p.v. met een rode foutmelding.
+      if (res.status === 429) { setInfo('Je code is al onderweg. Kijk in je mailbox.'); setCooldown(60); return }
       if (!res.ok) throw new Error(j.error ?? 'Code versturen mislukt')
       setInfo(`We stuurden een code naar ${j.sentTo}.`)
       setCooldown(60)
@@ -38,9 +47,18 @@ function VerifyForm() {
   }, [router])
 
   // Eén keer automatisch een code sturen bij het openen van deze pagina.
+  // Zijn we hier terechtgekomen ná een geslaagde verificatie? Dan is het cookie
+  // niet bewaard (bv. cookies geblokkeerd) — dat melden we, i.p.v. eindeloos
+  // opnieuw codes te sturen.
   useEffect(() => {
     if (sentOnce.current) return
     sentOnce.current = true
+    if (sessionStorage.getItem('ngm_2fa_done') === '1') {
+      sessionStorage.removeItem('ngm_2fa_done')
+      setSending(false)
+      setError('De verificatie lukte, maar je browser bewaarde de beveiligingscookie niet. Sta cookies toe voor deze site (of schakel een privacy-blokkering uit) en probeer opnieuw.')
+      return
+    }
     send()
   }, [send])
 
@@ -60,12 +78,18 @@ function VerifyForm() {
       })
       const j = await res.json()
       if (!res.ok) throw new Error(j.error ?? 'Verificatie mislukt')
-      router.replace(redirect)
-      router.refresh()
+      // Markeren dat de code klopte: belanden we tóch weer hier, dan weten we
+      // dat het cookie niet bewaard is en tonen we dat als uitleg.
+      try { sessionStorage.setItem('ngm_2fa_done', '1') } catch { /* private mode */ }
+      // HARDE navigatie: een client-side router.replace kan een gecachete
+      // RSC-payload serveren waarin het net gezette cookie nog niet meetelt,
+      // waardoor de middleware je terugstuurt naar deze pagina (eindeloos laden).
+      // Een volledige paginalading stuurt het cookie gegarandeerd mee.
+      window.location.replace(safeRedirect(redirect))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Verificatie mislukt')
       setCode('')
-      setVerifying(false)
+      setVerifying(false)   // spinner altijd stoppen, anders lijkt het te hangen
     }
   }
 

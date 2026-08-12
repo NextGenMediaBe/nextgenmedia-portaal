@@ -58,13 +58,14 @@ export async function POST(req: NextRequest) {
     // Correct → code eenmalig verbruiken en de sessie markeren als geverifieerd.
     await admin.from('login_codes').update({ consumed_at: new Date().toISOString() }).eq('id', row.id)
 
+    // Loggen mag het inloggen NOOIT ophouden: niet awaiten en fouten slikken.
     const meta = requestMeta(req)
-    await logAudit({
+    void logAudit({
       action: 'auth.2fa.verified', entityType: 'user', entityId: user.id,
       summary: `Tweestapsverificatie geslaagd (${role})`,
       actorUserId: user.id, actorEmail: user.email ?? null, actorRole: role,
       ip: meta.ip, userAgent: meta.userAgent,
-    })
+    }).catch(() => { /* audit is bijzaak */ })
 
     const res = NextResponse.json({ ok: true })
     res.cookies.set(TWO_FA_COOKIE, await createToken(user.id), {
