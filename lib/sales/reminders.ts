@@ -1,6 +1,6 @@
 import 'server-only'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
-import { sendEmail, baseUrl } from '@/lib/email'
+import { sendEmail, cancelScheduledEmail, baseUrl, SCHEDULE_HORIZON_MS } from '@/lib/email'
 import { listPipelines, type SalesPipeline } from '@/lib/sales/pipelines'
 
 // Herinneringsmail naar de prospect vóór een geboekte afspraak (§8).
@@ -11,22 +11,27 @@ import { listPipelines, type SalesPipeline } from '@/lib/sales/pipelines'
 //     inboeken. Dat kwartier is er om nog te kunnen ingrijpen als er iets fout
 //     geboekt is.
 //
-// Per afspraak gaat dit maximaal één keer uit; dat wordt afgedwongen met een
-// unieke index op (afspraak, soort), niet met een tijdvenstertruc. Mislukt het
-// versturen, dan wordt het bij de volgende ronde opnieuw geprobeerd.
+// HOE het op tijd vertrekt: we PLANNEN de mail bij Resend in op precies dat
+// moment (die houdt hem tot 72 uur vast). Er hoeft dus geen cron elk kwartier
+// te draaien — dat kan ook niet op een Vercel Hobby-plan, waar één cron per dag
+// het maximum is. De dagelijkse cron is enkel een vangnet voor afspraken die
+// verder dan 72 uur vooruit geboekt zijn: die worden ingepland zodra ze binnen
+// die horizon komen.
 //
-// De brochure van het juiste merk gaat mee als bijlage: een lead uit de
-// NextGenSolutions-pipeline krijgt de NextGenSolutions-one-pager.
+// Wordt de afspraak geannuleerd of verplaatst, dan halen we de ingeplande mail
+// weer weg. Een herinnering voor een afgezegde afspraak is erger dan geen.
+//
+// Per afspraak gaat dit maximaal één keer uit; dat wordt afgedwongen met een
+// unieke index, niet met een tijdvenstertruc.
 
 export type ReminderResult = { checked: number; sent: number; skipped: number; errors: string[] }
 
-const REMINDER_KIND = 'day_before'
 const LAST_MINUTE_DELAY_MS = 15 * 60 * 1000
 
 type ApptRow = {
-  id: string; starts_at: string; created_at: string
-  attendee_email: string | null; meet_url: string | null
-  pipeline_id: string | null; lead_id: string | null; calendar_id: string | null
+  id: string; starts_at: string; created_at: string; status: string
+  attendee_email: string | null
+  pipeline_id: string | null; calendar_id: string | null
 }
 
 const escapeHtml = (s: string) =>
@@ -81,93 +86,121 @@ function attachmentFor(p: SalesPipeline): { filename: string; path: string }[] {
   return [{ filename: p.brochure_filename || 'Kennismaking.pdf', path: url }]
 }
 
-/** Stuurt de herinneringen die nu aan de beurt zijn. */
+type ScheduleOutcome = 'scheduled' | 'skipped' | 'too_far' | 'error'
+
+/**
+ * Plant de herinnering voor één afspraak in bij Resend.
+ * Idempotent: staat er al een herinnering voor deze afspraak, dan gebeurt er
+ * niets. Ligt het verzendmoment verder dan 72 uur weg, dan doen we nog niets —
+ * de dagelijkse cron pikt hem later op.
+ */
+export async function scheduleReminderFor(
+  appointmentId: string, now = new Date(),
+): Promise<{ outcome: ScheduleOutcome; error?: string }> {
+  const admin = createAdminSupabaseClient()
+
+  const { data } = await admin.from('sales_appointments')
+    .select('id, starts_at, created_at, status, attendee_email, pipeline_id, calendar_id')
+    .eq('id', appointmentId).maybeSingle()
+  const a = data as ApptRow | null
+  if (!a || a.status !== 'scheduled') return { outcome: 'skipped' }
+  if (!a.attendee_email) return { outcome: 'skipped' }       // geen adres → niets te sturen
+
+  const { data: existing } = await admin.from('sales_appointment_reminders')
+    .select('id').eq('appointment_id', a.id).maybeSingle()
+  if (existing) return { outcome: 'skipped' }                 // al ingepland of verstuurd
+
+  const pipelines = await listPipelines()
+  const pipeline = pipelines.find((p) => p.id === a.pipeline_id)
+  // Zonder merk weten we niet welke brochure erbij hoort. Dan liever niets
+  // sturen dan de verkeerde one-pager.
+  if (!pipeline || !pipeline.reminder_enabled) return { outcome: 'skipped' }
+
+  const startsMs = new Date(a.starts_at).getTime()
+  const due = dueAt(startsMs, new Date(a.created_at).getTime())
+  if (due >= startsMs) return { outcome: 'skipped' }          // zou ná de afspraak vallen
+  if (due - now.getTime() > SCHEDULE_HORIZON_MS) return { outcome: 'too_far' }
+
+  const { data: org } = await admin.from('sales_clients')
+    .select('timezone').order('created_at', { ascending: true }).limit(1).maybeSingle()
+  const tz = (org as { timezone?: string } | null)?.timezone ?? 'Europe/Brussels'
+
+  const { data: owner } = a.calendar_id
+    ? await admin.from('sales_calendar_connections').select('name').eq('id', a.calendar_id).maybeSingle()
+    : { data: null }
+  const signer = (owner as { name?: string | null } | null)?.name ?? null
+
+  const hour = hourText(a.starts_at, tz)
+  // "Vandaag" of "Morgen" hangt af van de dag waarop de mail VERTREKT, niet van
+  // vandaag: hij kan tot 72 uur vooruit ingepland worden.
+  const today = sameDay(new Date(a.starts_at), new Date(Math.max(due, now.getTime())), tz)
+
+  const lines = reminderBody({ hour, today, signer })
+  const html = `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.6;color:#111">${
+    lines.map((l) => (l === '' ? '<br>' : `<div>${escapeHtml(l)}</div>`)).join('')
+  }</div>`
+
+  const res = await sendEmail({
+    to: a.attendee_email,
+    subject: today ? `Tot straks om ${hour}` : `Tot morgen om ${hour}`,
+    text: lines.join('\n'), html,
+    from: pipeline.reminder_from,
+    replyTo: pipeline.reminder_reply_to,
+    attachments: attachmentFor(pipeline),
+    // In het verleden inplannen mag niet; dan meteen versturen.
+    scheduledAt: due > now.getTime() ? new Date(due).toISOString() : null,
+  })
+  if (!res.ok) return { outcome: 'error', error: res.error }
+
+  // Pas ná een geslaagde inplanning vastleggen, zodat een mislukte poging
+  // morgen opnieuw geprobeerd wordt.
+  await admin.from('sales_appointment_reminders').insert({
+    appointment_id: a.id, days_before: 1, kind: 'day_before',
+    resend_id: res.id ?? null, scheduled_for: new Date(due).toISOString(),
+  })
+  return { outcome: 'scheduled' }
+}
+
+/**
+ * Herinnering weer intrekken — bij annuleren of verplaatsen. De rij verdwijnt
+ * ook, zodat een verplaatste afspraak gewoon opnieuw ingepland kan worden.
+ */
+export async function cancelReminderFor(appointmentId: string): Promise<void> {
+  const admin = createAdminSupabaseClient()
+  const { data } = await admin.from('sales_appointment_reminders')
+    .select('id, resend_id').eq('appointment_id', appointmentId).maybeSingle()
+  const row = data as { id: string; resend_id: string | null } | null
+  if (!row) return
+  if (row.resend_id) await cancelScheduledEmail(row.resend_id)
+  await admin.from('sales_appointment_reminders').delete().eq('id', row.id)
+}
+
+/**
+ * Dagelijks vangnet: afspraken die verder dan 72 uur vooruit geboekt zijn,
+ * konden bij het boeken nog niet ingepland worden. Zodra hun verzendmoment
+ * binnen die horizon valt, gebeurt dat hier alsnog.
+ */
 export async function runSalesReminders(now = new Date()): Promise<ReminderResult> {
   const admin = createAdminSupabaseClient()
   const out: ReminderResult = { checked: 0, sent: 0, skipped: 0, errors: [] }
 
-  const pipelines = await listPipelines()
-  const byPipeline = new Map(pipelines.map((p) => [p.id, p]))
-  if (pipelines.length === 0) return out
-
-  const { data: clientRow } = await admin
-    .from('sales_clients').select('id, timezone').neq('status', 'archived')
-    .order('created_at', { ascending: true }).limit(1).maybeSingle()
-  const tz = (clientRow as { timezone?: string } | null)?.timezone ?? 'Europe/Brussels'
-
-  // Alles wat nog moet plaatsvinden binnen de komende 24 uur plus een marge:
-  // verder vooruit is de herinnering per definitie nog niet aan de beurt.
-  const horizon = new Date(now.getTime() + 25 * 3600 * 1000).toISOString()
-  const { data: apptRows } = await admin
-    .from('sales_appointments')
-    .select('id, starts_at, created_at, attendee_email, meet_url, pipeline_id, lead_id, calendar_id')
+  // Ruim venster: alles wat binnen ~4 dagen begint kan een verzendmoment binnen
+  // de 72 uur hebben.
+  const horizon = new Date(now.getTime() + 4 * 24 * 3600 * 1000).toISOString()
+  const { data } = await admin.from('sales_appointments')
+    .select('id')
     .eq('status', 'scheduled')
     .gte('starts_at', now.toISOString())
     .lte('starts_at', horizon)
 
-  const appts = (apptRows ?? []) as ApptRow[]
-  out.checked = appts.length
-  if (appts.length === 0) return out
+  const ids = ((data ?? []) as { id: string }[]).map((r) => r.id)
+  out.checked = ids.length
 
-  const { data: sentRows } = await admin
-    .from('sales_appointment_reminders')
-    .select('appointment_id')
-    .in('appointment_id', appts.map((a) => a.id))
-  const alreadySent = new Set(
-    ((sentRows ?? []) as { appointment_id: string }[]).map((r) => r.appointment_id),
-  )
-
-  // Namen van de agenda-eigenaars, om de mail te ondertekenen met de persoon
-  // die de prospect straks effectief spreekt.
-  const { data: owners } = await admin
-    .from('sales_calendar_connections').select('id, name')
-  const ownerName = new Map(
-    ((owners ?? []) as { id: string; name: string | null }[]).map((o) => [o.id, o.name]),
-  )
-
-  for (const a of appts) {
-    if (alreadySent.has(a.id)) continue
-    if (!a.attendee_email) { out.skipped++; continue }   // geen adres → niets te sturen
-
-    const pipeline = a.pipeline_id ? byPipeline.get(a.pipeline_id) : undefined
-    // Zonder merk weten we niet welke brochure erbij hoort. Dan liever niets
-    // sturen dan de verkeerde one-pager.
-    if (!pipeline) { out.skipped++; continue }
-    if (!pipeline.reminder_enabled) { out.skipped++; continue }
-
-    const startsMs = new Date(a.starts_at).getTime()
-    const createdMs = new Date(a.created_at).getTime()
-    if (now.getTime() < dueAt(startsMs, createdMs)) continue     // nog niet aan de beurt
-
-    const hour = hourText(a.starts_at, tz)
-    const today = sameDay(new Date(a.starts_at), now, tz)
-    const signer = (a.calendar_id ? ownerName.get(a.calendar_id) : null) ?? null
-
-    const lines = reminderBody({ hour, today, signer })
-    const text = lines.join('\n')
-    const html = `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.6;color:#111">${
-      lines.map((l) => (l === '' ? '<br>' : `<div>${escapeHtml(l)}</div>`)).join('')
-    }</div>`
-
-    const res = await sendEmail({
-      to: a.attendee_email,
-      subject: today ? `Tot straks om ${hour}` : `Tot morgen om ${hour}`,
-      text, html,
-      from: pipeline.reminder_from,
-      replyTo: pipeline.reminder_reply_to,
-      attachments: attachmentFor(pipeline),
-    })
-
-    if (res.ok) {
-      // Pas ná een geslaagde verzending vastleggen, zodat een mislukte poging
-      // bij de volgende ronde opnieuw geprobeerd wordt.
-      await admin.from('sales_appointment_reminders')
-        .insert({ appointment_id: a.id, days_before: 1, kind: REMINDER_KIND })
-      out.sent++
-    } else {
-      out.errors.push(`${pipeline.name}: ${res.error ?? 'versturen mislukt'}`)
-    }
+  for (const id of ids) {
+    const r = await scheduleReminderFor(id, now)
+    if (r.outcome === 'scheduled') out.sent++
+    else if (r.outcome === 'error') out.errors.push(r.error ?? 'inplannen mislukt')
+    else out.skipped++
   }
-
   return out
 }

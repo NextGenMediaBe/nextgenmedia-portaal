@@ -30,6 +30,10 @@ export async function sendEmail(opts: {
   /** Bijlagen. `path` is een publiek bereikbare URL; Resend haalt het bestand
    *  zelf op, zodat wij geen megabytes door een serverless functie duwen. */
   attachments?: { filename: string; path: string }[]
+  /** ISO-tijdstip waarop de mail moet vertrekken. Resend houdt hem tot dan vast
+   *  — maximaal 72 uur vooruit. Zo halen we een verzendmoment op de minuut
+   *  zonder dat er elk kwartier een cron moet draaien. */
+  scheduledAt?: string | null
 }): Promise<SendResult> {
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) return { ok: false, error: 'Geen mailprovider geconfigureerd (RESEND_API_KEY ontbreekt).' }
@@ -48,6 +52,7 @@ export async function sendEmail(opts: {
         html,
         ...(opts.replyTo ? { reply_to: opts.replyTo } : {}),
         ...(opts.attachments?.length ? { attachments: opts.attachments } : {}),
+        ...(opts.scheduledAt ? { scheduled_at: opts.scheduledAt } : {}),
       }),
     })
     const json = await res.json().catch(() => ({}))
@@ -55,6 +60,33 @@ export async function sendEmail(opts: {
     return { ok: true, id: json?.id }
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Verzenden mislukt' }
+  }
+}
+
+/** Uiterste horizon van Resend voor een ingeplande mail. */
+export const SCHEDULE_HORIZON_MS = 72 * 3600 * 1000
+
+/**
+ * Een ingeplande mail alsnog tegenhouden — bijvoorbeeld wanneer de afspraak
+ * geannuleerd of verplaatst wordt. Faalt dit, dan melden we dat: een
+ * herinnering voor een afgezegde afspraak is erger dan geen herinnering.
+ */
+export async function cancelScheduledEmail(id: string): Promise<SendResult> {
+  const apiKey = process.env.RESEND_API_KEY
+  if (!apiKey) return { ok: false, error: 'Geen mailprovider geconfigureerd.' }
+  if (!id) return { ok: false, error: 'Geen mail-id' }
+  try {
+    const res = await fetch(`https://api.resend.com/emails/${encodeURIComponent(id)}/cancel`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}` },
+    })
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}))
+      return { ok: false, error: json?.message || `Resend-fout (${res.status})` }
+    }
+    return { ok: true, id }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Annuleren mislukt' }
   }
 }
 

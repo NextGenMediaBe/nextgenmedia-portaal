@@ -7,6 +7,7 @@ import { APPOINTMENT_STAGE } from '@/lib/sales/stages'
 import { createEvent, moveEvent, deleteEvent } from '@/lib/sales/google-calendar'
 import { normalizePhone } from '@/lib/sales/dedupe'
 import { listPipelines, defaultPipelineId } from '@/lib/sales/pipelines'
+import { scheduleReminderFor, cancelReminderFor } from '@/lib/sales/reminders'
 import { logAudit, requestMeta } from '@/lib/audit'
 
 export const dynamic = 'force-dynamic'
@@ -173,6 +174,11 @@ export async function POST(req: NextRequest) {
       })
     }
 
+    // 5) Herinneringsmail inplannen bij Resend op het juiste moment. Mislukt
+    //    dat, dan blijft de afspraak gewoon staan — het dagelijkse vangnet
+    //    probeert het opnieuw. Een boeking mag hier nooit op stuklopen.
+    try { await scheduleReminderFor(appt.id as string) } catch { /* vangnet volgt */ }
+
     const meta = requestMeta(req)
     await logAudit({
       action: 'sales.appointment.book', entityType: 'sales_appointment', entityId: appt.id as string,
@@ -215,6 +221,12 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: dup ? 'Er staat al een afspraak op dit moment.' : 'Verplaatsen mislukt' }, { status: 409 })
     }
 
+    // De herinnering hoort bij het OUDE uur: intrekken en opnieuw inplannen.
+    try {
+      await cancelReminderFor(id)
+      await scheduleReminderFor(id)
+    } catch { /* vangnet volgt */ }
+
     if (appt.external_event_id) {
       try {
         await moveEvent(appt.calendar_id as string, appt.external_event_id as string, start, end, pipeline.timezone)
@@ -243,6 +255,8 @@ export async function DELETE(req: NextRequest) {
     if (!appt) return NextResponse.json({ error: 'Afspraak niet gevonden' }, { status: 404 })
 
     await admin.from('sales_appointments').update({ status: 'cancelled' }).eq('id', id)
+    // Een ingeplande herinnering voor een afgezegde afspraak moet weg.
+    try { await cancelReminderFor(id) } catch { /* niet blokkerend */ }
     if (appt.external_event_id) {
       await deleteEvent(appt.calendar_id as string, appt.external_event_id as string)
     }

@@ -83,7 +83,8 @@ export function ReminderSettings({ onClose }: { onClose: () => void }) {
               <Mail className="h-4 w-4 text-gray-400" />Herinneringsmail
             </h3>
             <p className="text-sm text-gray-600 mt-0.5">
-              Gaat de dag voor de afspraak uit — of een kwartier na het inboeken als het sneller is dan dat.
+              Gaat 24 uur voor de afspraak uit — of een kwartier na het inboeken als er minder dan een dag
+              tussen zit. De mail wordt bij het boeken al ingepland, dus het uur klopt op de minuut.
             </p>
           </div>
           <button onClick={onClose} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-gray-100"><X className="h-4 w-4" /></button>

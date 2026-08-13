@@ -1888,3 +1888,10 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $sales$;
 -- De herinnering kent nu soorten ('day_before'), niet enkel een aantal dagen.
 ALTER TABLE public.sales_appointment_reminders
   ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'day_before';
+
+-- De herinnering wordt bij Resend INGEPLAND op het exacte verzendmoment (tot
+-- 72 uur vooruit). We bewaren het mail-id zodat een geannuleerde of verplaatste
+-- afspraak zijn herinnering nog kan tegenhouden.
+ALTER TABLE public.sales_appointment_reminders
+  ADD COLUMN IF NOT EXISTS resend_id     text,
+  ADD COLUMN IF NOT EXISTS scheduled_for timestamptz;
