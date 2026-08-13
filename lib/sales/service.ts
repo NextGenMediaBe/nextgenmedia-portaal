@@ -1,0 +1,216 @@
+import 'server-only'
+import { createAdminSupabaseClient } from '@/lib/supabase/server'
+import { STAGES } from '@/lib/sales/stages'
+import { companyDedupeKey, normalizePhone } from '@/lib/sales/dedupe'
+import {
+  bookableSegments, type Interval, type WorkRule, type WorkException,
+} from '@/lib/sales/availability'
+import { fetchBusy } from '@/lib/sales/google-calendar'
+
+export type SalesClient = {
+  id: string; name: string; timezone: string; status: string
+  buffer_before_min: number; buffer_after_min: number
+  min_notice_min: number; max_horizon_days: number; max_per_day: number
+  slot_interval_min: number; default_duration_min: number
+}
+
+export async function getSalesClient(id: string): Promise<SalesClient | null> {
+  const admin = createAdminSupabaseClient()
+  const { data } = await admin.from('sales_clients').select('*').eq('id', id).maybeSingle()
+  return (data as SalesClient) ?? null
+}
+
+/** Elke klant krijgt dezelfde vaste fase-set (§3). Idempotent. */
+export async function ensureStages(salesClientId: string): Promise<void> {
+  const admin = createAdminSupabaseClient()
+  const rows = STAGES.map((s) => ({
+    sales_client_id: salesClientId,
+    key: s.key, label: s.label, position: s.position,
+    is_won: 'isWon' in s ? !!s.isWon : false,
+    is_lost: 'isLost' in s ? !!s.isLost : false,
+  }))
+  await admin.from('sales_stages').upsert(rows, { onConflict: 'sales_client_id,key' })
+}
+
+/** Standaard werkuren voor een nieuwe klant: ma–vr 09:00–17:00. */
+export async function seedDefaultAvailability(salesClientId: string): Promise<void> {
+  const admin = createAdminSupabaseClient()
+  const { count } = await admin.from('sales_availability_rules')
+    .select('id', { count: 'exact', head: true }).eq('sales_client_id', salesClientId)
+  if ((count ?? 0) > 0) return
+  await admin.from('sales_availability_rules').insert(
+    [0, 1, 2, 3, 4].map((weekday) => ({ sales_client_id: salesClientId, weekday, start_time: '09:00', end_time: '17:00' })),
+  )
+}
+
+export type NewLeadInput = {
+  salesClientId: string
+  company: { name: string; website?: string; sector?: string; employees?: number; city?: string; region?: string; country?: string; phone?: string; linkedin?: string }
+  contact: { name?: string; role?: string; email?: string; phone?: string; mobile?: string; linkedin?: string }
+  labels?: string[]
+}
+
+export type NewLeadResult =
+  | { ok: true; leadId: string }
+  | { ok: false; error: string; existingLeadId?: string }
+
+/**
+ * Lead aanmaken met ontdubbeling op bedrijf (§11): bestaat er al een ACTIEVE
+ * lead voor dit bedrijf bij deze klant, dan maken we er geen tweede maar
+ * verwijzen we naar de bestaande.
+ */
+export async function createLead(input: NewLeadInput): Promise<NewLeadResult> {
+  const admin = createAdminSupabaseClient()
+  const name = input.company.name.trim()
+  if (!name) return { ok: false, error: 'Bedrijfsnaam is verplicht' }
+
+  const dedupe = companyDedupeKey(name, input.company.website)
+
+  // Bestaat het bedrijf al bij deze klant?
+  const { data: existingCompany } = await admin
+    .from('sales_companies').select('id')
+    .eq('sales_client_id', input.salesClientId).eq('dedupe_key', dedupe).maybeSingle()
+
+  let companyId = existingCompany?.id as string | undefined
+
+  if (companyId) {
+    const { data: openLead } = await admin
+      .from('sales_leads').select('id')
+      .eq('sales_client_id', input.salesClientId).eq('company_id', companyId)
+      .is('archived_at', null).maybeSingle()
+    if (openLead) {
+      return { ok: false, error: `Er staat al een lead voor ${name} in deze pipeline.`, existingLeadId: openLead.id as string }
+    }
+  } else {
+    const { data: created, error } = await admin.from('sales_companies').insert({
+      sales_client_id: input.salesClientId,
+      name,
+      website: input.company.website || null,
+      dedupe_key: dedupe,
+      sector: input.company.sector || null,
+      employees: input.company.employees ?? null,
+      city: input.company.city || null,
+      region: input.company.region || null,
+      country: input.company.country || null,
+      phone: input.company.phone || null,
+      linkedin: input.company.linkedin || null,
+    }).select('id').single()
+    if (error || !created) return { ok: false, error: error?.message ?? 'Bedrijf aanmaken mislukt' }
+    companyId = created.id as string
+  }
+
+  const phone = input.contact.phone || input.contact.mobile || input.company.phone || null
+  const { data: contact } = await admin.from('sales_contacts').insert({
+    company_id: companyId,
+    name: input.contact.name || null,
+    role: input.contact.role || null,
+    email: input.contact.email || null,
+    phone: input.contact.phone || null,
+    mobile: input.contact.mobile || null,
+    linkedin: input.contact.linkedin || null,
+    phone_digits: normalizePhone(phone),
+  }).select('id').single()
+
+  const { data: lead, error: leadErr } = await admin.from('sales_leads').insert({
+    sales_client_id: input.salesClientId,
+    company_id: companyId,
+    contact_id: contact?.id ?? null,
+    stage_key: 'to_contact',
+    labels: input.labels ?? [],
+  }).select('id').single()
+  if (leadErr || !lead) return { ok: false, error: leadErr?.message ?? 'Lead aanmaken mislukt' }
+
+  return { ok: true, leadId: lead.id as string }
+}
+
+/** Gebeurtenis op de tijdlijn van een lead (belpoging, notitie, fasewissel). */
+export async function logLeadEvent(leadId: string, e: {
+  kind: 'call' | 'note' | 'stage' | 'system'
+  body?: string | null
+  fromStage?: string | null
+  toStage?: string | null
+  actorId?: string | null
+  actorEmail?: string | null
+}): Promise<void> {
+  const admin = createAdminSupabaseClient()
+  await admin.from('sales_lead_events').insert({
+    lead_id: leadId, kind: e.kind, body: e.body ?? null,
+    from_stage: e.fromStage ?? null, to_stage: e.toStage ?? null,
+    actor_id: e.actorId ?? null, actor_email: e.actorEmail ?? null,
+  })
+}
+
+export type CalendarData = {
+  client: SalesClient
+  segments: Interval[]                 // WIT = boekbaar
+  appointments: {
+    id: string; starts_at: string; ends_at: string; status: string
+    lead_id: string | null; company: string | null; contact: string | null
+  }[]
+  connected: boolean
+}
+
+/**
+ * Alles wat de kalender nodig heeft voor één venster. De witte segmenten worden
+ * hier op de SERVER berekend en zo doorgegeven aan de UI, zodat tekenen en
+ * hervalideren gegarandeerd dezelfde bron gebruiken.
+ */
+export async function loadCalendar(salesClientId: string, from: number, to: number): Promise<CalendarData | null> {
+  const admin = createAdminSupabaseClient()
+  const client = await getSalesClient(salesClientId)
+  if (!client) return null
+
+  const [{ data: rules }, { data: exceptions }, { data: appts }, { data: conn }] = await Promise.all([
+    admin.from('sales_availability_rules').select('weekday, start_time, end_time').eq('sales_client_id', salesClientId),
+    admin.from('sales_availability_exceptions').select('date, closed, start_time, end_time').eq('sales_client_id', salesClientId),
+    admin.from('sales_appointments')
+      .select('id, starts_at, ends_at, status, lead_id, contact_id')
+      .eq('sales_client_id', salesClientId).neq('status', 'cancelled')
+      // Ruime marge: een afspraak die vóór het venster start kan erin doorlopen.
+      .gte('starts_at', new Date(from - 86400000).toISOString())
+      .lte('starts_at', new Date(to + 86400000).toISOString()),
+    admin.from('sales_calendar_connections').select('status').eq('sales_client_id', salesClientId).eq('provider', 'google').maybeSingle(),
+  ])
+
+  const appointments = (appts ?? []) as { id: string; starts_at: string; ends_at: string; status: string; lead_id: string | null; contact_id: string | null }[]
+  const busy = await fetchBusy(salesClientId, from, to)
+
+  const segments = bookableSegments({
+    from, to, tz: client.timezone,
+    rules: (rules ?? []) as WorkRule[],
+    exceptions: (exceptions ?? []) as WorkException[],
+    busy,
+    appointments: appointments.map((a) => ({ start: new Date(a.starts_at).getTime(), end: new Date(a.ends_at).getTime() })),
+    booking: {
+      bufferBeforeMin: client.buffer_before_min,
+      bufferAfterMin: client.buffer_after_min,
+      minNoticeMin: client.min_notice_min,
+      maxHorizonDays: client.max_horizon_days,
+      slotIntervalMin: client.slot_interval_min,
+    },
+  })
+
+  // Namen erbij voor de blokjes in de kalender.
+  const leadIds = appointments.map((a) => a.lead_id).filter(Boolean) as string[]
+  const nameByLead = new Map<string, { company: string | null; contact: string | null }>()
+  if (leadIds.length) {
+    const { data: leads } = await admin
+      .from('sales_leads')
+      .select('id, sales_companies(name), sales_contacts(name)')
+      .in('id', leadIds)
+    for (const l of (leads ?? []) as { id: string; sales_companies?: { name?: string } | null; sales_contacts?: { name?: string } | null }[]) {
+      nameByLead.set(l.id, { company: l.sales_companies?.name ?? null, contact: l.sales_contacts?.name ?? null })
+    }
+  }
+
+  return {
+    client,
+    segments,
+    connected: (conn as { status?: string } | null)?.status === 'connected',
+    appointments: appointments.map((a) => ({
+      id: a.id, starts_at: a.starts_at, ends_at: a.ends_at, status: a.status, lead_id: a.lead_id,
+      company: a.lead_id ? nameByLead.get(a.lead_id)?.company ?? null : null,
+      contact: a.lead_id ? nameByLead.get(a.lead_id)?.contact ?? null : null,
+    })),
+  }
+}

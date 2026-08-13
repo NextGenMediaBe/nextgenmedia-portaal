@@ -1449,3 +1449,284 @@ ALTER TABLE public.rate_limit_hits ENABLE ROW LEVEL SECURITY;
 
 -- ── Done ──────────────────────────────────────────────────────────────────────
 -- Alle kolommen, tabellen, policies en triggers staan nu in sync met de code.
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  MODULE VERKOOP — appointment setting + pipeline
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Wij bellen prospects namens een KLANT en boeken afspraken in diens agenda.
+-- Alles is strikt per klant gescheiden. Deze klant staat LOS van public.clients
+-- (portaalklanten): een belklant heeft geen login, contracten of diensten.
+-- Is het toevallig dezelfde partij, dan koppelt portal_client_id ze.
+
+CREATE EXTENSION IF NOT EXISTS btree_gist;   -- nodig voor de overlap-constraint
+
+-- ── Klant waarvoor wij bellen ────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.sales_clients (
+  id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name                 text NOT NULL,
+  contact_name         text,
+  contact_email        text,
+  phone                text,
+  status               text NOT NULL DEFAULT 'active',   -- active | paused | archived
+  timezone             text NOT NULL DEFAULT 'Europe/Brussels',
+  -- Boekingsregels (§8) — bewust platte kolommen, geen "meeting types".
+  buffer_before_min    integer NOT NULL DEFAULT 0,
+  buffer_after_min     integer NOT NULL DEFAULT 0,
+  min_notice_min       integer NOT NULL DEFAULT 60,   -- min. opzegtermijn
+  max_horizon_days     integer NOT NULL DEFAULT 60,   -- max. vooruit boeken
+  max_per_day          integer NOT NULL DEFAULT 8,
+  slot_interval_min    integer NOT NULL DEFAULT 30,   -- raster voor slepen
+  default_duration_min integer NOT NULL DEFAULT 30,
+  portal_client_id     uuid REFERENCES public.clients(id) ON DELETE SET NULL,
+  created_at           timestamptz NOT NULL DEFAULT now(),
+  updated_at           timestamptz NOT NULL DEFAULT now()
+);
+
+-- ── Bedrijven en contactpersonen ─────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.sales_companies (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  sales_client_id uuid NOT NULL REFERENCES public.sales_clients(id) ON DELETE CASCADE,
+  name            text NOT NULL,
+  website         text,
+  -- Ontdubbelsleutel: website-host, anders de genormaliseerde naam (§11).
+  dedupe_key      text NOT NULL,
+  sector          text,
+  employees       integer,
+  city            text,
+  region          text,
+  country         text,
+  phone           text,
+  linkedin        text,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  updated_at      timestamptz NOT NULL DEFAULT now()
+);
+-- Nooit twee bedrijven met dezelfde sleutel bij dezelfde klant.
+CREATE UNIQUE INDEX IF NOT EXISTS sales_companies_dedupe
+  ON public.sales_companies (sales_client_id, dedupe_key);
+
+CREATE TABLE IF NOT EXISTS public.sales_contacts (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id   uuid NOT NULL REFERENCES public.sales_companies(id) ON DELETE CASCADE,
+  name         text,
+  role         text,
+  email        text,
+  phone        text,
+  mobile       text,
+  linkedin     text,
+  -- Cijfer-genormaliseerd nummer, zodat +32470…, 0470… en 470… allemaal op
+  -- hetzelfde zoekresultaat uitkomen (§4).
+  phone_digits text,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  updated_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS sales_contacts_phone ON public.sales_contacts (phone_digits);
+
+-- ── Pipeline-fases (per klant dezelfde vaste set, zie §3) ────────────────────
+CREATE TABLE IF NOT EXISTS public.sales_stages (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  sales_client_id uuid NOT NULL REFERENCES public.sales_clients(id) ON DELETE CASCADE,
+  key             text NOT NULL,     -- stabiele sleutel, zie lib/sales/stages.ts
+  label           text NOT NULL,
+  position        integer NOT NULL,
+  is_won          boolean NOT NULL DEFAULT false,
+  is_lost         boolean NOT NULL DEFAULT false
+);
+CREATE UNIQUE INDEX IF NOT EXISTS sales_stages_key ON public.sales_stages (sales_client_id, key);
+
+-- ── Leads ────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.sales_leads (
+  id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  sales_client_id    uuid NOT NULL REFERENCES public.sales_clients(id) ON DELETE CASCADE,
+  company_id         uuid NOT NULL REFERENCES public.sales_companies(id) ON DELETE CASCADE,
+  contact_id         uuid REFERENCES public.sales_contacts(id) ON DELETE SET NULL,
+  stage_key          text NOT NULL DEFAULT 'to_contact',
+  source             text NOT NULL DEFAULT 'manual',
+  assigned_to        uuid,                       -- setter (auth user)
+  labels             text[] NOT NULL DEFAULT '{}',
+  callback_at        timestamptz,                -- terugbellen op
+  archived_at        timestamptz,                -- zacht verwijderen, nooit hard
+  lost_reason        text,
+  do_not_call        boolean NOT NULL DEFAULT false,
+  do_not_call_reason text,
+  email_brief        text,                       -- briefing voor de klant (§4)
+  created_at         timestamptz NOT NULL DEFAULT now(),
+  updated_at         timestamptz NOT NULL DEFAULT now()
+);
+-- Eén actieve lead per bedrijf per klant (§11). Gearchiveerde tellen niet mee.
+CREATE UNIQUE INDEX IF NOT EXISTS sales_leads_one_per_company
+  ON public.sales_leads (sales_client_id, company_id) WHERE archived_at IS NULL;
+CREATE INDEX IF NOT EXISTS sales_leads_stage    ON public.sales_leads (sales_client_id, stage_key);
+CREATE INDEX IF NOT EXISTS sales_leads_callback ON public.sales_leads (callback_at) WHERE callback_at IS NOT NULL;
+
+-- ── Historiek per lead: belpogingen, notities, fasewissels ───────────────────
+CREATE TABLE IF NOT EXISTS public.sales_lead_events (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  lead_id     uuid NOT NULL REFERENCES public.sales_leads(id) ON DELETE CASCADE,
+  kind        text NOT NULL,           -- call | note | stage | system
+  body        text,
+  from_stage  text,
+  to_stage    text,
+  actor_id    uuid,
+  actor_email text,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS sales_lead_events_lead ON public.sales_lead_events (lead_id, created_at DESC);
+
+-- ── Beschikbaarheid ──────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.sales_availability_rules (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  sales_client_id uuid NOT NULL REFERENCES public.sales_clients(id) ON DELETE CASCADE,
+  weekday         smallint NOT NULL,   -- 0 = maandag … 6 = zondag
+  start_time      time NOT NULL,
+  end_time        time NOT NULL,
+  CONSTRAINT sales_avail_range CHECK (end_time > start_time)
+);
+CREATE INDEX IF NOT EXISTS sales_avail_client ON public.sales_availability_rules (sales_client_id, weekday);
+
+CREATE TABLE IF NOT EXISTS public.sales_availability_exceptions (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  sales_client_id uuid NOT NULL REFERENCES public.sales_clients(id) ON DELETE CASCADE,
+  date            date NOT NULL,
+  closed          boolean NOT NULL DEFAULT true,   -- true = hele dag dicht
+  start_time      time,                            -- anders: afwijkende uren
+  end_time        time,
+  note            text
+);
+CREATE UNIQUE INDEX IF NOT EXISTS sales_avail_exc_day
+  ON public.sales_availability_exceptions (sales_client_id, date);
+
+-- ── Agendakoppeling (provider-agnostisch: google nu, clickup later) ──────────
+CREATE TABLE IF NOT EXISTS public.sales_calendar_connections (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  sales_client_id  uuid NOT NULL REFERENCES public.sales_clients(id) ON DELETE CASCADE,
+  provider         text NOT NULL DEFAULT 'google',
+  account_email    text,
+  calendar_id      text,                 -- agenda waarin we schrijven
+  access_token     text,                 -- VERSLEUTELD (lib/crypto.ts)
+  refresh_token    text,                 -- VERSLEUTELD
+  token_expires_at timestamptz,
+  status           text NOT NULL DEFAULT 'connected',
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  updated_at       timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS sales_calconn_client
+  ON public.sales_calendar_connections (sales_client_id, provider);
+
+-- ── Afspraken ────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.sales_appointments (
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  sales_client_id   uuid NOT NULL REFERENCES public.sales_clients(id) ON DELETE CASCADE,
+  lead_id           uuid REFERENCES public.sales_leads(id) ON DELETE SET NULL,
+  contact_id        uuid REFERENCES public.sales_contacts(id) ON DELETE SET NULL,
+  setter_id         uuid,
+  starts_at         timestamptz NOT NULL,
+  ends_at           timestamptz NOT NULL,
+  status            text NOT NULL DEFAULT 'scheduled',  -- scheduled|completed|no_show|cancelled
+  notes             text,
+  client_note       text,
+  attendee_email    text,
+  meet_url          text,
+  external_event_id text,                -- Google-event
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  updated_at        timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT sales_appt_range CHECK (ends_at > starts_at)
+);
+-- Dubbele boeking is ONMOGELIJK: twee niet-geannuleerde afspraken van dezelfde
+-- klant mogen elkaar nooit overlappen. Dit is de laatste verdedigingslinie,
+-- naast de hervalidatie in de code (§11).
+DO $sales$ BEGIN
+  ALTER TABLE public.sales_appointments
+    ADD CONSTRAINT sales_appt_no_overlap
+    EXCLUDE USING gist (
+      sales_client_id WITH =,
+      tstzrange(starts_at, ends_at, '[)') WITH &&
+    ) WHERE (status <> 'cancelled');
+EXCEPTION WHEN duplicate_object THEN NULL; WHEN duplicate_table THEN NULL; END $sales$;
+CREATE INDEX IF NOT EXISTS sales_appt_window
+  ON public.sales_appointments (sales_client_id, starts_at) WHERE status <> 'cancelled';
+
+-- ── RLS: admin-only; de app werkt server-side via de service-role ────────────
+ALTER TABLE public.sales_clients                 ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sales_companies               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sales_contacts                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sales_stages                  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sales_leads                   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sales_lead_events             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sales_availability_rules      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sales_availability_exceptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sales_calendar_connections    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sales_appointments            ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "sales_clients admin all"      ON public.sales_clients;
+CREATE POLICY "sales_clients admin all" ON public.sales_clients FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
+DROP POLICY IF EXISTS "sales_companies admin all"    ON public.sales_companies;
+CREATE POLICY "sales_companies admin all" ON public.sales_companies FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
+DROP POLICY IF EXISTS "sales_contacts admin all"     ON public.sales_contacts;
+CREATE POLICY "sales_contacts admin all" ON public.sales_contacts FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
+DROP POLICY IF EXISTS "sales_stages admin all"       ON public.sales_stages;
+CREATE POLICY "sales_stages admin all" ON public.sales_stages FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
+DROP POLICY IF EXISTS "sales_leads admin all"        ON public.sales_leads;
+CREATE POLICY "sales_leads admin all" ON public.sales_leads FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
+DROP POLICY IF EXISTS "sales_lead_events admin all"  ON public.sales_lead_events;
+CREATE POLICY "sales_lead_events admin all" ON public.sales_lead_events FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
+DROP POLICY IF EXISTS "sales_avail_rules admin all"  ON public.sales_availability_rules;
+CREATE POLICY "sales_avail_rules admin all" ON public.sales_availability_rules FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
+DROP POLICY IF EXISTS "sales_avail_exc admin all"    ON public.sales_availability_exceptions;
+CREATE POLICY "sales_avail_exc admin all" ON public.sales_availability_exceptions FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
+-- Tokens: GEEN policy — enkel de service-role (server) mag hierbij.
+DROP POLICY IF EXISTS "sales_calconn admin all"      ON public.sales_calendar_connections;
+
+DROP POLICY IF EXISTS "sales_appointments admin all" ON public.sales_appointments;
+CREATE POLICY "sales_appointments admin all" ON public.sales_appointments FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
+-- updated_at-triggers
+DO $sales$ BEGIN
+  CREATE TRIGGER trg_sales_clients_updated BEFORE UPDATE ON public.sales_clients
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+EXCEPTION WHEN duplicate_object THEN NULL; END $sales$;
+DO $sales$ BEGIN
+  CREATE TRIGGER trg_sales_companies_updated BEFORE UPDATE ON public.sales_companies
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+EXCEPTION WHEN duplicate_object THEN NULL; END $sales$;
+DO $sales$ BEGIN
+  CREATE TRIGGER trg_sales_contacts_updated BEFORE UPDATE ON public.sales_contacts
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+EXCEPTION WHEN duplicate_object THEN NULL; END $sales$;
+DO $sales$ BEGIN
+  CREATE TRIGGER trg_sales_leads_updated BEFORE UPDATE ON public.sales_leads
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+EXCEPTION WHEN duplicate_object THEN NULL; END $sales$;
+DO $sales$ BEGIN
+  CREATE TRIGGER trg_sales_calconn_updated BEFORE UPDATE ON public.sales_calendar_connections
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+EXCEPTION WHEN duplicate_object THEN NULL; END $sales$;
+DO $sales$ BEGIN
+  CREATE TRIGGER trg_sales_appointments_updated BEFORE UPDATE ON public.sales_appointments
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+EXCEPTION WHEN duplicate_object THEN NULL; END $sales$;

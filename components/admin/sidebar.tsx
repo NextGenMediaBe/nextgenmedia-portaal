@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, Users, FileText, UserSquare2, ArrowLeftRight, TrendingUp,
   LogOut, ChevronDown, Globe, Calendar, Briefcase, RefreshCcw, Menu, X,
-  Info, ClipboardList, CalendarDays, ShoppingCart, Mail, Receipt, Newspaper, Rocket, UserCog, CalendarClock, BarChart3,
+  Info, ClipboardList, CalendarDays, ShoppingCart, Mail, Receipt, Newspaper, Rocket, UserCog, CalendarClock, BarChart3, KanbanSquare,
 } from 'lucide-react'
 import { canSeeModule } from '@/lib/staff'
 import { DISABLED_MODULE_KEYS } from '@/lib/features'
@@ -69,6 +69,13 @@ const SECTIONS: NavSection[] = [
       { label: 'Partners',    href: '/admin/partners',    icon: UserSquare2, module: 'partners' },
       { label: 'Opdrachten',  href: '/admin/assignments', icon: Briefcase, module: 'assignments' },
       { label: 'Settlements', href: '/admin/settlements', icon: ArrowLeftRight, module: 'settlements' },
+    ],
+  },
+  {
+    title: 'Verkoop',
+    items: [
+      { label: 'Appointment setting', href: '/admin/sales/appointments', icon: CalendarClock, module: 'sales' },
+      { label: 'Pipeline',            href: '/admin/sales/pipeline',     icon: KanbanSquare, module: 'sales' },
     ],
   },
   {
