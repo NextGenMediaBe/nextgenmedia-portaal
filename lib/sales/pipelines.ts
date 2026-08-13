@@ -24,10 +24,34 @@ export type SalesPipeline = {
   reminder_reply_to: string | null
 }
 
-const SEED: { key: string; name: string; position: number; brochure_filename: string }[] = [
-  { key: 'nextgenmedia', name: 'NextGenMedia', position: 1, brochure_filename: 'Kennismaking_NextGenMedia.pdf' },
-  { key: 'nextgensolutions', name: 'NextGenSolutions', position: 2, brochure_filename: 'Kennismaking_NextGenSolutions.pdf' },
+type Seed = {
+  key: string; name: string; position: number; brochure_filename: string
+  /** Vast afzenderadres van dit merk. Leeg = de algemene afzender (EMAIL_FROM). */
+  from: string | null
+}
+
+const SEED: Seed[] = [
+  {
+    key: 'nextgenmedia', name: 'NextGenMedia', position: 1,
+    brochure_filename: 'Kennismaking_NextGenMedia.pdf',
+    // Leeg: dit merk volgt de algemene afzender uit de omgeving.
+    from: null,
+  },
+  {
+    key: 'nextgensolutions', name: 'NextGenSolutions', position: 2,
+    brochure_filename: 'Kennismaking_NextGenSolutions.pdf',
+    from: 'NextGenSolutions <info@nextgensolutions.be>',
+  },
 ]
+
+/**
+ * Het afzenderadres dat voor dit merk geldt als er niets anders ingesteld is.
+ * Hierdoor vertrekt alles van NextGenSolutions vanzelf van info@nextgensolutions.be,
+ * zonder dat iemand dat veld moet invullen.
+ */
+export function defaultFromFor(pipelineKey: string | null | undefined): string | null {
+  return SEED.find((s) => s.key === pipelineKey)?.from ?? null
+}
 
 /**
  * Beide pipelines ophalen; ontbreken ze, dan worden ze aangemaakt met de
@@ -48,6 +72,7 @@ export async function listPipelines(): Promise<SalesPipeline[]> {
         sales_client_id: org.id,
         key: s.key, name: s.name, position: s.position,
         brochure_filename: s.brochure_filename,
+        reminder_from: s.from,
         // Relatief pad: de brochure wordt bij verzenden pas tot een volledige
         // URL gemaakt, zodat een domeinwissel niets breekt.
         brochure_url: `/brochures/${s.brochure_filename}`,
@@ -71,6 +96,20 @@ export async function listPipelines(): Promise<SalesPipeline[]> {
     // herinneringsmail bestond, en zo vertrekt er met terugwerkende kracht
     // niets naar een prospect.
   }
+  // Een leeg afzenderveld eenmalig aanvullen met het vaste adres van dat merk.
+  // Staat BEWUST buiten het blok hierboven: bij een bestaande installatie
+  // ontbreekt er niets, en dan zou deze aanvulling nooit gebeuren. Wat iemand
+  // zelf ingevuld heeft blijft ongemoeid — enkel lege velden worden gevuld.
+  for (const seed of SEED) {
+    if (!seed.from) continue
+    const row = rows.find((r) => r.key === seed.key)
+    if (row && !row.reminder_from) {
+      await admin.from('sales_pipelines')
+        .update({ reminder_from: seed.from }).eq('id', row.id).is('reminder_from', null)
+      row.reminder_from = seed.from
+    }
+  }
+
   return rows
 }
 

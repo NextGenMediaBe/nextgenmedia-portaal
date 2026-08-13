@@ -427,6 +427,9 @@ function BookingPanel({ ownerId, ownerName, start, end, leads, pipelines, initia
       })
       const j = await res.json(); if (!res.ok) throw new Error(j.error)
       toast.success(leadId ? 'Geboekt. De lead staat nu op “Afspraak ingepland”.' : 'Afspraak geboekt.')
+      // De boeking is gelukt, maar de herinnering niet — dat mag niet stil
+      // blijven, want dan merk je het pas als de prospect niet komt opdagen.
+      if (j.reminderWarning) toast.warning(j.reminderWarning, { duration: 12000 })
       onBooked()
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Boeken mislukt') } finally { setSaving(false) }
   }

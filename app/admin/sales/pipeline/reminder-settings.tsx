@@ -13,6 +13,8 @@ type Pipeline = {
   reminder_reply_to: string | null
   /** Heeft dit merk een eigen Resend-sleutel in de omgeving staan? */
   ownKey?: boolean
+  /** Wat er vertrekt als het afzenderveld leeg blijft. */
+  fallbackFrom?: string
 }
 
 /**
@@ -122,10 +124,10 @@ export function ReminderSettings({ onClose }: { onClose: () => void }) {
               <label className="block text-xs font-medium text-gray-600 mb-1">Afzender</label>
               <input className="input-base" value={p.reminder_from ?? ''}
                 onChange={(e) => set({ reminder_from: e.target.value })}
-                placeholder={defaultFrom} />
+                placeholder={p.fallbackFrom ?? defaultFrom} />
               <p className="text-[11px] text-gray-500 mt-1">
-                Leeg = <b>{defaultFrom}</b>. Wil je vanaf een ander domein sturen, dan moet dat domein eerst
-                geverifieerd zijn bij Resend — anders weigert die de mail.
+                Leeg = <b>{p.fallbackFrom ?? defaultFrom}</b>. Wil je vanaf een ander domein sturen, dan moet
+                dat domein eerst geverifieerd zijn bij Resend — anders weigert die de mail.
               </p>
               {p.key === 'nextgensolutions' && (
                 <p className={`text-[11px] mt-1 rounded-lg px-2 py-1 border ${

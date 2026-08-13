@@ -175,9 +175,21 @@ export async function POST(req: NextRequest) {
     }
 
     // 5) Herinneringsmail inplannen bij Resend op het juiste moment. Mislukt
-    //    dat, dan blijft de afspraak gewoon staan — het dagelijkse vangnet
-    //    probeert het opnieuw. Een boeking mag hier nooit op stuklopen.
-    try { await scheduleReminderFor(appt.id as string) } catch { /* vangnet volgt */ }
+    //    dat, dan blijft de afspraak gewoon staan — een boeking mag hier nooit
+    //    op stuklopen. Maar we ZEGGEN het wel: een herinnering die er stil niet
+    //    komt, ontdek je anders pas als de prospect niet is opgedaagd.
+    let reminderWarning: string | null = null
+    try {
+      const r = await scheduleReminderFor(appt.id as string)
+      if (r.outcome === 'error') {
+        reminderWarning = `De herinneringsmail kon niet ingepland worden: ${r.error ?? 'onbekende fout'}`
+      } else if (r.outcome === 'skipped') {
+        reminderWarning = `Er gaat geen herinneringsmail uit: ${r.error ?? 'onbekende reden'}`
+      }
+      // 'too_far' is normaal: die wordt later automatisch ingepland.
+    } catch (e) {
+      reminderWarning = `De herinneringsmail kon niet ingepland worden: ${e instanceof Error ? e.message : 'onbekende fout'}`
+    }
 
     const meta = requestMeta(req)
     await logAudit({
@@ -187,7 +199,7 @@ export async function POST(req: NextRequest) {
       ip: meta.ip, userAgent: meta.userAgent,
     })
 
-    return NextResponse.json({ ok: true, id: appt.id, meetUrl })
+    return NextResponse.json({ ok: true, id: appt.id, meetUrl, reminderWarning })
   } catch (err) {
     return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }

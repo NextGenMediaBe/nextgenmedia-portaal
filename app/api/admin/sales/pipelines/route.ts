@@ -1,7 +1,7 @@
 import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
-import { listPipelines } from '@/lib/sales/pipelines'
+import { listPipelines, defaultFromFor } from '@/lib/sales/pipelines'
 import { reminderBody } from '@/lib/sales/reminders'
 import { sendEmail, baseUrl, EMAIL_FROM, resendKeyFor } from '@/lib/email'
 import { logAudit, requestMeta } from '@/lib/audit'
@@ -20,6 +20,8 @@ export async function GET() {
     const withKeyInfo = pipelines.map((p) => ({
       ...p,
       ownKey: p.key === 'nextgensolutions' ? !!process.env.RESEND_API_KEY_SOLUTIONS : false,
+      // Wat er vertrekt als het veld leeg blijft.
+      fallbackFrom: defaultFromFor(p.key) ?? EMAIL_FROM,
     }))
     return NextResponse.json({ pipelines: withKeyInfo, defaultFrom: EMAIL_FROM })
   } catch (err) {
@@ -97,7 +99,7 @@ export async function POST(req: NextRequest) {
       to,
       subject: `[TEST — ${p.name}] Tot morgen om 14:00`,
       text: lines.join('\n'),
-      from: p.reminder_from,
+      from: p.reminder_from || defaultFromFor(p.key),
       replyTo: p.reminder_reply_to,
       attachments,
       // Zelfde sleutel als de echte herinnering, zodat de test ook echt test.

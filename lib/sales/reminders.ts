@@ -4,7 +4,7 @@ import {
   sendEmail, cancelScheduledEmail, baseUrl, SCHEDULE_HORIZON_MS, RESTRICTED_KEY_HINT,
   resendKeyFor,
 } from '@/lib/email'
-import { listPipelines, type SalesPipeline } from '@/lib/sales/pipelines'
+import { listPipelines, defaultFromFor, type SalesPipeline } from '@/lib/sales/pipelines'
 import { matchSignature } from '@/lib/sales/signatures'
 
 // Herinneringsmail naar de prospect vóór een geboekte afspraak (§8).
@@ -195,7 +195,10 @@ async function buildReminder(
       subject: today ? `Tot straks om ${hour}` : `Tot morgen om ${hour}`,
       text: lines.join('\n'),
       html: reminderHtml(lines, sig),
-      from: pipeline.reminder_from,
+      // Niets ingesteld? Dan het vaste adres van dit merk — zo vertrekt alles
+      // van NextGenSolutions hoe dan ook vanaf info@nextgensolutions.be, ook
+      // als het veld in de database leeg gebleven is.
+      from: pipeline.reminder_from || defaultFromFor(pipeline.key),
       replyTo: pipeline.reminder_reply_to,
       attachments: attachmentFor(pipeline),
     },
@@ -256,6 +259,7 @@ async function saveReminderRow(
 }
 
 type ScheduleOutcome = 'scheduled' | 'skipped' | 'too_far' | 'error'
+export type ScheduleReport = { outcome: ScheduleOutcome; error?: string }
 
 /**
  * Plant de herinnering voor één afspraak in bij Resend.
@@ -265,7 +269,7 @@ type ScheduleOutcome = 'scheduled' | 'skipped' | 'too_far' | 'error'
  */
 export async function scheduleReminderFor(
   appointmentId: string, now = new Date(),
-): Promise<{ outcome: ScheduleOutcome; error?: string }> {
+): Promise<ScheduleReport> {
   const admin = createAdminSupabaseClient()
 
   const { data: existing } = await admin.from('sales_appointment_reminders')
@@ -273,7 +277,9 @@ export async function scheduleReminderFor(
   if (existing) return { outcome: 'skipped' }
 
   const b = await buildReminder(appointmentId)
-  if (!b.ok) return { outcome: 'skipped' }
+  // De reden meegeven: stil overslaan is precies waardoor je later niet meer
+  // weet waarom er geen mail klaarstaat.
+  if (!b.ok) return { outcome: 'skipped', error: b.reason }
   const { built } = b
   if (built.due - now.getTime() > SCHEDULE_HORIZON_MS) return { outcome: 'too_far' }
 
