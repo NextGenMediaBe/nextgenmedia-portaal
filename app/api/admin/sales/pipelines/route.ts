@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Vul een geldig e-mailadres in' }, { status: 400 })
     }
 
-    const lines = reminderBody({ hour: '14:00', today: false, signer: 'Bram' })
+    const lines = reminderBody({ hour: '14:00', today: false })
     const attachments = p.brochure_url
       ? [{
           filename: p.brochure_filename || 'Kennismaking.pdf',

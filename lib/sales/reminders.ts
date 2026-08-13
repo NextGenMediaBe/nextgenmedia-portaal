@@ -61,8 +61,12 @@ export function dueAt(startsAtMs: number, createdAtMs: number): number {
   return dayBefore <= createdAtMs ? createdAtMs + LAST_MINUTE_DELAY_MS : dayBefore
 }
 
-/** De mailtekst. Bewust exact zoals afgesproken, enkel uur en dag ingevuld. */
-export function reminderBody(opts: { hour: string; today: boolean; signer: string | null }): string[] {
+/**
+ * De mailtekst. Bewust exact zoals afgesproken, enkel uur en dag ingevuld.
+ * Onder "Met vriendelijke groeten" komt niets dan de handtekening-afbeelding —
+ * geen naam, geen telefoon, geen e-mailadres.
+ */
+export function reminderBody(opts: { hour: string; today: boolean }): string[] {
   return [
     'Hey!',
     '',
@@ -77,27 +81,20 @@ export function reminderBody(opts: { hour: string; today: boolean; signer: strin
     `Tot ${opts.today ? 'straks' : 'morgen'}!`,
     '',
     'Met vriendelijke groeten',
-    ...(opts.signer ? [opts.signer] : []),
   ]
 }
 
 export type SignatureInfo = { imageUrl: string | null; name: string | null; phone: string | null; email: string | null }
 
 /**
- * De mail als HTML, met de handtekening van de persoon in wiens agenda de
- * afspraak staat.
+ * De mail als HTML, met onder de groet enkel de handtekening-afbeelding van de
+ * persoon in wiens agenda de afspraak staat.
  *
- * De naam blijft bewust als TEKST staan, los van de afbeelding: veel
- * mailprogramma's blokkeren beelden standaard, en dan mag niet wegvallen van
- * wie de mail komt. Telefoon en e-mail staan om diezelfde reden ook als tekst.
+ * De `alt` van die afbeelding draagt de naam, zodat een mailprogramma dat
+ * beelden blokkeert nog altijd toont van wie de mail komt.
  */
 export function reminderHtml(lines: string[], sig: SignatureInfo): string {
   const body = lines.map((l) => (l === '' ? '<br>' : `<div>${escapeHtml(l)}</div>`)).join('')
-
-  const contact = [sig.phone, sig.email].filter((v): v is string => !!v)
-  const contactHtml = contact.length
-    ? `<div style="margin-top:2px;color:#555;font-size:13px">${contact.map(escapeHtml).join(' · ')}</div>`
-    : ''
 
   const imgHtml = sig.imageUrl
     ? `<div style="margin-top:14px"><img src="${escapeHtml(sig.imageUrl)}" width="400" alt="${
@@ -106,7 +103,7 @@ export function reminderHtml(lines: string[], sig: SignatureInfo): string {
     : ''
 
   return `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.6;color:#111">${
-    body}${contactHtml}${imgHtml}</div>`
+    body}${imgHtml}</div>`
 }
 
 /** Brochure als bijlage. Relatief pad wordt hier pas een volledige URL. */
@@ -182,7 +179,7 @@ async function buildReminder(
 
   const hour = hourText(a.starts_at, tz)
   const today = sameDay(new Date(a.starts_at), new Date(Math.max(due, Date.now())), tz)
-  const lines = reminderBody({ hour, today, signer: sig.name })
+  const lines = reminderBody({ hour, today })
 
   return {
     ok: true,
@@ -190,7 +187,7 @@ async function buildReminder(
       appt: a, startsMs, due,
       to: a.attendee_email,
       subject: today ? `Tot straks om ${hour}` : `Tot morgen om ${hour}`,
-      text: [...lines, ...[sig.phone, sig.email].filter(Boolean)].join('\n'),
+      text: lines.join('\n'),
       html: reminderHtml(lines, sig),
       from: pipeline.reminder_from,
       replyTo: pipeline.reminder_reply_to,
@@ -243,14 +240,31 @@ export async function scheduleReminderFor(
  * De rij verdwijnt ook, zodat een verplaatste afspraak opnieuw ingepland kan
  * worden. Voor een handmatige annulering is er cancelReminderManually().
  */
-export async function cancelReminderFor(appointmentId: string): Promise<void> {
+export async function cancelReminderFor(appointmentId: string): Promise<{ wasSent: boolean }> {
   const admin = createAdminSupabaseClient()
   const { data } = await admin.from('sales_appointment_reminders')
-    .select('id, resend_id').eq('appointment_id', appointmentId).maybeSingle()
-  const row = data as { id: string; resend_id: string | null } | null
-  if (!row) return
-  if (row.resend_id) await cancelScheduledEmail(row.resend_id)
+    .select('id, resend_id, cancelled_at').eq('appointment_id', appointmentId).maybeSingle()
+  const row = data as { id: string; resend_id: string | null; cancelled_at: string | null } | null
+  if (!row) return { wasSent: false }
+
+  // Handmatig tegengehouden blijft tegengehouden: die rij laten we staan.
+  if (row.cancelled_at) return { wasSent: false }
+
+  if (row.resend_id) {
+    const res = await cancelScheduledEmail(row.resend_id)
+    if (!res.ok) {
+      /**
+       * Intrekken lukte niet — vrijwel altijd omdat de mail al vertrokken is.
+       * De rij blijft dan staan, zodat er GEEN tweede herinnering ingepland
+       * wordt. Eén mail te vroeg is vervelend; twee mails met verschillende
+       * uren erin is erger, want dan weet de prospect niet meer wanneer de
+       * afspraak is.
+       */
+      return { wasSent: true }
+    }
+  }
   await admin.from('sales_appointment_reminders').delete().eq('id', row.id)
+  return { wasSent: false }
 }
 
 // ── Handmatig ingrijpen vanuit het overzicht ────────────────────────────────

@@ -207,24 +207,58 @@ export async function PATCH(req: NextRequest) {
 
     const admin = createAdminSupabaseClient()
     const { data: appt } = await admin.from('sales_appointments')
-      .select('id, sales_client_id, external_event_id, status, calendar_id').eq('id', id).maybeSingle()
+      .select('id, sales_client_id, external_event_id, status, calendar_id, lead_id, starts_at, ends_at')
+      .eq('id', id).maybeSingle()
     if (!appt) return NextResponse.json({ error: 'Afspraak niet gevonden' }, { status: 404 })
     if (appt.status === 'cancelled') return NextResponse.json({ error: 'Deze afspraak is geannuleerd' }, { status: 400 })
 
     const pipeline = await getOrCreateSalesOrg()
     await assertBookable(appt.sales_client_id as string, start, end, (appt.calendar_id as string | null), id)
 
-    const { error } = await admin.from('sales_appointments')
-      .update({ starts_at: new Date(start).toISOString(), ends_at: new Date(end).toISOString() }).eq('id', id)
+    // Lead wisselen mag mee in dezelfde bewerking. De afspraak erft dan ook het
+    // merk van die lead — anders zou de verkeerde brochure meegaan.
+    const patch: Record<string, unknown> = {
+      starts_at: new Date(start).toISOString(),
+      ends_at: new Date(end).toISOString(),
+    }
+    let newLeadId: string | null | undefined
+    if ('leadId' in b) {
+      newLeadId = b.leadId ? String(b.leadId) : null
+      if (newLeadId) {
+        const { data: lead } = await admin.from('sales_leads')
+          .select('id, contact_id, pipeline_id, sales_contacts ( email )')
+          .eq('id', newLeadId).eq('sales_client_id', appt.sales_client_id as string).maybeSingle()
+        if (!lead) return NextResponse.json({ error: 'Deze lead staat niet in de pipeline' }, { status: 400 })
+        patch.lead_id = newLeadId
+        patch.contact_id = (lead as { contact_id: string | null }).contact_id
+        patch.pipeline_id = (lead as { pipeline_id: string | null }).pipeline_id
+        const leadEmail = (lead as { sales_contacts?: { email?: string | null } | null }).sales_contacts?.email ?? null
+        if (leadEmail) patch.attendee_email = leadEmail
+      } else {
+        patch.lead_id = null
+      }
+    }
+    if (typeof b.attendeeEmail === 'string') {
+      patch.attendee_email = b.attendeeEmail.trim() || null
+    }
+
+    const { error } = await admin.from('sales_appointments').update(patch).eq('id', id)
     if (error) {
       const dup = /exclusion|overlap/i.test(error.message)
       return NextResponse.json({ error: dup ? 'Er staat al een afspraak op dit moment.' : 'Verplaatsen mislukt' }, { status: 409 })
     }
 
     // De herinnering hoort bij het OUDE uur: intrekken en opnieuw inplannen.
+    // Was hij al vertrokken, dan sturen we er BEWUST geen tweede achteraan —
+    // twee mails met verschillende uren erin is erger dan één verouderde.
+    let reminderNote: string | null = null
     try {
-      await cancelReminderFor(id)
-      await scheduleReminderFor(id)
+      const { wasSent } = await cancelReminderFor(id)
+      if (wasSent) {
+        reminderNote = 'De herinneringsmail was al vertrokken met het oude uur. Er gaat geen tweede uit — laat de prospect zelf even weten dat het verzet is.'
+      } else {
+        await scheduleReminderFor(id)
+      }
     } catch { /* vangnet volgt */ }
 
     if (appt.external_event_id) {
@@ -234,7 +268,16 @@ export async function PATCH(req: NextRequest) {
         return NextResponse.json({ error: `Verplaatst in de app, maar de agenda gaf een fout: ${e instanceof Error ? e.message : 'onbekend'}` }, { status: 502 })
       }
     }
-    return NextResponse.json({ ok: true })
+
+    const meta2 = requestMeta(req)
+    await logAudit({
+      action: 'sales.appointment.move', entityType: 'sales_appointment', entityId: id,
+      summary: `Verkoop: afspraak verzet naar ${new Date(start).toISOString()}`,
+      actorUserId: actor.id, actorEmail: actor.email ?? null, actorRole: 'admin',
+      ip: meta2.ip, userAgent: meta2.userAgent,
+    })
+
+    return NextResponse.json({ ok: true, reminderNote })
   } catch (err) {
     return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }

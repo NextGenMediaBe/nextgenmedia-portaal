@@ -105,14 +105,12 @@ export function AgendaDialog({ existing, onClose, onSaved }: {
             <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
               <div className="text-[11px] text-gray-500 mb-2">Zo komt het onderaan de mail:</div>
               <div className="text-sm text-gray-800">Met vriendelijke groeten</div>
-              <div className="text-sm text-gray-800">{name.trim() || sig.label}</div>
-              <div className="text-[11px] text-gray-500 mt-0.5">{sig.phone} · {sig.email}</div>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={sig.url} alt={sig.label} className="mt-2 w-full max-w-[320px] rounded border border-gray-200" />
             </div>
           ) : (
             <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-              Zonder handtekening eindigt de mail met “Met vriendelijke groeten” en de naam hierboven.
+              Zonder handtekening eindigt de mail op “Met vriendelijke groeten”, zonder afbeelding eronder.
             </p>
           )}
         </div>
