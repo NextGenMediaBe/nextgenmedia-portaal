@@ -1,14 +1,17 @@
 import type { Metadata } from 'next'
-import { Manrope } from 'next/font/google'
+import { Inter } from 'next/font/google'
 import './globals.css'
 
-// Manrope i.p.v. Inter: strak en modern, maar met eigen karakter — Inter (en
-// Geist/Roboto/Plus Jakarta) zijn dé herkenbare "AI-gegenereerd"-tells.
-// Via next/font wordt het lettertype zelf-gehost: geen render-blokkerende
-// Google-request en geen font-flikkering bij het laden.
-const manrope = Manrope({
+// Inter, zoals de app hem altijd had. Via next/font wordt het lettertype
+// zelf-gehost: geen render-blokkerende Google-request en geen font-flikkering.
+//
+// `adjustFontFallback` laat Next een fallback met dezelfde metrics genereren,
+// zodat de tekst niet verspringt terwijl het lettertype laadt. Zie ook de
+// font-stack in tailwind.config.ts: die is bewust zo geschreven dat er NOOIT
+// een serif kan verschijnen als deze variabele om wat voor reden ook wegvalt.
+const inter = Inter({
   subsets: ['latin'],
-  weight: ['400', '500', '600', '700', '800'],
+  weight: ['300', '400', '500', '600', '700', '800'],
   variable: '--font-sans',
   display: 'swap',
 })
@@ -20,7 +23,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="nl" className={manrope.variable}>
+    <html lang="nl" className={inter.variable}>
       <body>{children}</body>
     </html>
   )
