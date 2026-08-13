@@ -68,7 +68,7 @@ export async function GET() {
     }[]
     if (appts.length === 0) return NextResponse.json({ items: [] })
 
-    const [{ data: reminderRows }, { data: leadRows }, { data: ownerRows }] = await Promise.all([
+    const [{ data: reminderRows, error: remErr }, { data: leadRows }, { data: ownerRows }] = await Promise.all([
       admin.from('sales_appointment_reminders')
         .select('appointment_id, resend_id, scheduled_for, sent_at, cancelled_at')
         .in('appointment_id', appts.map((a) => a.id)),
@@ -96,8 +96,15 @@ export async function GET() {
       const info = a.lead_id ? leadInfo.get(a.lead_id) : undefined
       const pipeline = a.pipeline_id ? byPipeline.get(a.pipeline_id) : undefined
       const startsMs = new Date(a.starts_at).getTime()
-      const due = dueAt(startsMs, new Date(a.created_at).getTime())
       const rem = reminders.get(a.id)
+      /**
+       * Het moment dat ECHT geldt. Staat er een rij, dan is `scheduled_for`
+       * de waarheid — die kan handmatig verzet zijn naar "nu". Alleen zonder
+       * rij vallen we terug op de berekende regel.
+       */
+      const due = rem?.scheduled_for
+        ? new Date(rem.scheduled_for).getTime()
+        : dueAt(startsMs, new Date(a.created_at).getTime())
 
       // Dezelfde regels als bij het inplannen — zodat dit scherm niet iets
       // anders beweert dan wat er echt gebeurt.
@@ -116,7 +123,8 @@ export async function GET() {
       } else if (due >= startsMs) {
         state = 'blocked'; reason = 'Te kort op voorhand geboekt — de mail zou ná de afspraak vallen'
       } else if (due <= now) {
-        state = 'blocked'; reason = 'Verzendmoment is voorbij zonder dat de mail ingepland raakte'
+        state = 'blocked'
+        reason = 'Verzendmoment is voorbij zonder dat de mail ingepland raakte'
       }
 
       return {
@@ -127,7 +135,7 @@ export async function GET() {
         pipeline: pipeline?.name ?? null,
         owner: a.calendar_id ? ownerName.get(a.calendar_id) ?? null : null,
         startsAt: a.starts_at,
-        dueAt: new Date(rem?.scheduled_for ? new Date(rem.scheduled_for).getTime() : due).toISOString(),
+        dueAt: new Date(due).toISOString(),
         state,
         reason,
         resendEvent: null,
@@ -154,12 +162,22 @@ export async function GET() {
       else if (st.lastEvent && st.lastEvent !== 'scheduled') it.state = 'sent'
     }))
 
+    // Ontbreken de kolommen uit de laatste migratie, dan lezen we geen enkele
+    // herinnering en lijkt alles "nog in te plannen" terwijl er mails vertrekken.
+    // Dat moet op het scherm staan, niet stilletjes verkeerd getoond worden.
+    const missingCols = !!remErr && /PGRST204|schema cache|does not exist|could not find/i.test(remErr.message ?? '')
+
     // Wat nog moet gebeuren bovenaan, daarna de geschiedenis omgekeerd.
     const upcoming = items.filter((i) => i.state !== 'sent').sort((a, b) => a.dueAt.localeCompare(b.dueAt))
     // 'cancelled' hoort bij "gaat niet uit", niet bij de geschiedenis.
     const history = items.filter((i) => i.state === 'sent').sort((a, b) => b.dueAt.localeCompare(a.dueAt))
 
-    return NextResponse.json({ items: [...upcoming, ...history] })
+    return NextResponse.json({
+      items: [...upcoming, ...history],
+      hint: missingCols
+        ? 'De laatste migratie is nog niet gedraaid, dus we kunnen niet zien welke mails al ingepland zijn. Draai supabase/migrations/99999999_SYNC_ALL.sql — tot dan klopt dit overzicht niet.'
+        : null,
+    })
   } catch (err) {
     return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }

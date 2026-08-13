@@ -55,6 +55,7 @@ export function MailOverview() {
   const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [hint, setHint] = useState<string | null>(null)
 
   const load = useCallback(async (quiet = false) => {
     if (quiet) setRefreshing(true)
@@ -62,6 +63,7 @@ export function MailOverview() {
       const r = await fetch('/api/admin/sales/reminders', { cache: 'no-store' })
       const j = await r.json(); if (!r.ok) throw new Error(j.error)
       setItems(j.items ?? [])
+      setHint(j.hint ?? null)
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Laden mislukt') }
     finally { setLoading(false); setRefreshing(false) }
   }, [])
@@ -78,6 +80,12 @@ export function MailOverview() {
 
   return (
     <div className="space-y-4">
+      {hint && (
+        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          {hint}
+        </p>
+      )}
+
       <div className="flex items-center gap-2 flex-wrap">
         <Stat n={open.length} label="staan klaar" tone="text-blue-700" />
         <Stat n={sent.length - failed.length} label="verstuurd" tone="text-green-700" />
@@ -245,10 +253,20 @@ function StatusCell({ item }: { item: Item }) {
     return <span className="status-badge bg-blue-50 text-blue-700 flex items-center gap-1 w-fit"><CheckCircle2 className="h-3 w-3" />Staat klaar</span>
   }
   if (item.state === 'pending') {
+    // Ligt het verzendmoment nog ver weg, dan is wachten normaal. Ligt het
+    // dichtbij en staat er nog niets klaar, dan is er iets mis — dan mag daar
+    // geen geruststellende tekst bij staan.
+    const soon = new Date(item.dueAt).getTime() - Date.now() < 72 * 3600 * 1000
     return (
       <div className="max-w-[16rem]">
-        <span className="status-badge bg-gray-100 text-gray-700 w-fit">Wordt later ingepland</span>
-        <div className="text-[11px] text-gray-500 mt-0.5">Verder dan 3 dagen vooruit; gebeurt automatisch.</div>
+        <span className={`status-badge w-fit ${soon ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-700'}`}>
+          {soon ? 'Staat nog niet klaar' : 'Wordt later ingepland'}
+        </span>
+        <div className="text-[11px] text-gray-500 mt-0.5">
+          {soon
+            ? 'Zou intussen ingepland moeten zijn. Gebruik “Nu” of “Verzetten”.'
+            : 'Verder dan 3 dagen vooruit; gebeurt automatisch.'}
+        </div>
       </div>
     )
   }

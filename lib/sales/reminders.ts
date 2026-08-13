@@ -196,6 +196,45 @@ async function buildReminder(
   }
 }
 
+/**
+ * De rij in sales_appointment_reminders wegschrijven.
+ *
+ * DIT IS DE SLEUTEL TEGEN DUBBELE MAILS: het bestaan van de rij is wat
+ * verhindert dat het dagelijkse vangnet dezelfde herinnering nog eens
+ * inplant. Mislukt het wegschrijven — bijvoorbeeld omdat een kolom uit een
+ * latere migratie nog niet bestaat — dan laten we de extra kolommen vallen en
+ * proberen we opnieuw, tot desnoods enkel appointment_id overblijft. Liever een
+ * kale rij dan géén rij.
+ *
+ * Geeft false terug als er echt niets weggeschreven raakte; de aanroeper moet
+ * dan ingrijpen, want anders vertrekt deze mail nog eens.
+ */
+async function saveReminderRow(
+  payload: Record<string, unknown>, existingId?: string,
+): Promise<boolean> {
+  const admin = createAdminSupabaseClient()
+  const working = { ...payload }
+  const optional = ['cancelled_by', 'cancelled_at', 'scheduled_for', 'resend_id', 'kind', 'days_before']
+
+  for (let attempt = 0; attempt < optional.length + 1; attempt++) {
+    const { error } = existingId
+      ? await admin.from('sales_appointment_reminders').update(working).eq('id', existingId)
+      : await admin.from('sales_appointment_reminders').insert(working)
+    if (!error) return true
+
+    const msg = error.message ?? ''
+    // Kolom bestaat niet → laten vallen en opnieuw. Elke andere fout is echt.
+    const missing = optional.find((c) => c in working && msg.includes(c))
+    const schemaIssue = /PGRST204|schema cache|does not exist|could not find/i.test(msg)
+    if (!missing || !schemaIssue) {
+      console.error('[reminders] wegschrijven mislukt', error)
+      return false
+    }
+    delete working[missing]
+  }
+  return false
+}
+
 type ScheduleOutcome = 'scheduled' | 'skipped' | 'too_far' | 'error'
 
 /**
@@ -228,10 +267,16 @@ export async function scheduleReminderFor(
 
   // Pas ná een geslaagde inplanning vastleggen, zodat een mislukte poging
   // morgen opnieuw geprobeerd wordt.
-  await admin.from('sales_appointment_reminders').insert({
+  const saved = await saveReminderRow({
     appointment_id: appointmentId, days_before: 1, kind: 'day_before',
     resend_id: res.id ?? null, scheduled_for: new Date(built.due).toISOString(),
   })
+  if (!saved) {
+    // Kunnen we niet vastleggen dát hij klaarstaat, dan kunnen we ook niet
+    // garanderen dat hij maar één keer vertrekt. Dan liever intrekken.
+    if (res.id) await cancelScheduledEmail(res.id)
+    return { outcome: 'error', error: 'De herinnering kon niet vastgelegd worden en is daarom ingetrokken.' }
+  }
   return { outcome: 'scheduled' }
 }
 
@@ -294,10 +339,11 @@ export async function cancelReminderManually(appointmentId: string, actorId?: st
       .update({ cancelled_at: new Date().toISOString(), cancelled_by: actorId ?? null }).eq('id', row.id)
   } else {
     // Nog niet ingepland: een lege rij plaatsen houdt het vangnet tegen.
-    await admin.from('sales_appointment_reminders').insert({
+    const saved = await saveReminderRow({
       appointment_id: appointmentId, days_before: 1, kind: 'day_before',
       cancelled_at: new Date().toISOString(), cancelled_by: actorId ?? null,
     })
+    if (!saved) return { ok: false, error: 'Kon niet vastleggen dat deze mail tegengehouden is.' }
   }
   return { ok: true, message: 'De mail gaat niet uit.' }
 }
@@ -346,8 +392,11 @@ export async function rescheduleReminder(
     resend_id: res.id ?? null, scheduled_for: new Date(atMs).toISOString(),
     cancelled_at: null, cancelled_by: actorId ?? null,
   }
-  if (row) await admin.from('sales_appointment_reminders').update(payload).eq('id', row.id)
-  else await admin.from('sales_appointment_reminders').insert(payload)
+  const saved = await saveReminderRow(payload, row?.id)
+  if (!saved) {
+    if (res.id) await cancelScheduledEmail(res.id)
+    return { ok: false, error: 'De wijziging kon niet vastgelegd worden. De mail is ingetrokken; probeer het opnieuw.' }
+  }
 
   return {
     ok: true,
