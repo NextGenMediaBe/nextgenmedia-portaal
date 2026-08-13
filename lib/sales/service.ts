@@ -20,6 +20,44 @@ export async function getSalesClient(id: string): Promise<SalesClient | null> {
   return (data as SalesClient) ?? null
 }
 
+/**
+ * DE pipeline. We bellen niet voor andere bedrijven: er is één algemene
+ * pipeline van NextGenMedia zelf, waarin onze appointment setters werken.
+ *
+ * De onderliggende tabel heet nog `sales_clients` — dat blijft zo, want alle
+ * leads, agenda's, werkuren en afspraken hangen aan die rij. In de app is er
+ * geen klantbegrip meer: dit wordt nergens getoond of gekozen.
+ *
+ * Bestond er al een rij (uit de eerste opzet), dan gebruiken we die verder —
+ * zo blijft bestaande data zichtbaar. Bij meerdere rijen kiezen we die met een
+ * gekoppelde agenda, anders de oudste. Er wordt nooit iets verwijderd.
+ */
+export async function getOrCreatePipeline(): Promise<SalesClient> {
+  const admin = createAdminSupabaseClient()
+
+  const { data: rows } = await admin
+    .from('sales_clients').select('*').neq('status', 'archived')
+    .order('created_at', { ascending: true })
+  const list = (rows ?? []) as SalesClient[]
+
+  if (list.length === 1) return list[0]
+  if (list.length > 1) {
+    const { data: conns } = await admin
+      .from('sales_calendar_connections').select('sales_client_id')
+    const withCal = new Set((conns ?? []).map((c) => (c as { sales_client_id: string }).sales_client_id))
+    return list.find((c) => withCal.has(c.id)) ?? list[0]
+  }
+
+  const { data: created, error } = await admin.from('sales_clients')
+    .insert({ name: 'NextGenMedia', timezone: 'Europe/Brussels' })
+    .select('*').single()
+  if (error || !created) throw new Error(error?.message ?? 'Pipeline aanmaken mislukt')
+
+  await ensureStages(created.id as string)
+  await seedDefaultAvailability(created.id as string)
+  return created as SalesClient
+}
+
 /** Elke klant krijgt dezelfde vaste fase-set (§3). Idempotent. */
 export async function ensureStages(salesClientId: string): Promise<void> {
   const admin = createAdminSupabaseClient()

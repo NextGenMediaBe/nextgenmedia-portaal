@@ -1,11 +1,12 @@
 import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireStaff } from '@/lib/supabase/server'
-import { createLead } from '@/lib/sales/service'
+import { createLead, getOrCreatePipeline } from '@/lib/sales/service'
 import {
   parseCsv, guessMapping, sanitizeMapping, applyMapping, IMPORT_FIELDS,
-  type ColumnMapping,
+  type ColumnMapping, type ParsedTable,
 } from '@/lib/sales/import'
+import { parseXlsx } from '@/lib/sales/xlsx'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300
@@ -29,13 +30,17 @@ export async function POST(req: NextRequest) {
     if (file.size > MAX_BYTES) return NextResponse.json({ error: 'Bestand te groot (max 5 MB)' }, { status: 400 })
 
     const name = (file.name ?? '').toLowerCase()
-    if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
+    let table: ParsedTable
+    if (name.endsWith('.xlsx')) {
+      // Eigen lezer, zonder externe bibliotheek — zie lib/sales/xlsx.ts.
+      table = parseXlsx(Buffer.from(await file.arrayBuffer()))
+    } else if (name.endsWith('.xls')) {
       return NextResponse.json({
-        error: 'Excel-bestanden lezen we (nog) niet rechtstreeks. Open het in Excel en kies “Opslaan als” → CSV, en upload dat bestand.',
+        error: 'Dit is het oude Excel-formaat (.xls). Open het en kies “Opslaan als” → .xlsx of CSV.',
       }, { status: 400 })
+    } else {
+      table = parseCsv(await file.text())
     }
-
-    const table = parseCsv(await file.text())
     if (table.headers.length === 0) return NextResponse.json({ error: 'Geen kolommen gevonden in dit bestand.' }, { status: 400 })
     if (table.rows.length === 0) return NextResponse.json({ error: 'Het bestand bevat geen rijen.' }, { status: 400 })
     if (table.rows.length > MAX_ROWS) {
@@ -73,18 +78,13 @@ export async function POST(req: NextRequest) {
       preview,
       fields: IMPORT_FIELDS,
       aiUsed,
-      // Het bestand gaat als tekst terug mee, zodat stap 2 niets opnieuw hoeft
-      // te uploaden. Blijft binnen dezelfde afgeschermde admin-sessie.
-      csv: await fileTextAgain(file),
+      // De ingelezen tabel gaat terug mee, zodat stap 2 niets opnieuw hoeft te
+      // uploaden en CSV en Excel daarna identiek behandeld worden.
+      table,
     })
   } catch (err) {
     return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
-}
-
-// File.text() kan maar één keer; opnieuw uitlezen via de blob.
-async function fileTextAgain(file: File): Promise<string> {
-  return Buffer.from(await file.arrayBuffer()).toString('utf8')
 }
 
 /** Claude de kolomkoppen laten duiden. Antwoord is strikt JSON. */
@@ -133,13 +133,10 @@ export async function PUT(req: NextRequest) {
   try {
     if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const b = await req.json()
-    const salesClientId = String(b.salesClientId ?? '')
-    const csv = String(b.csv ?? '')
+    const salesClientId = (await getOrCreatePipeline()).id
     const mapping = (b.mapping ?? {}) as ColumnMapping
-    if (!salesClientId) return NextResponse.json({ error: 'Kies eerst een klant' }, { status: 400 })
-    if (!csv) return NextResponse.json({ error: 'Geen gegevens ontvangen' }, { status: 400 })
-
-    const table = parseCsv(csv)
+    const table = (b.table ?? null) as ParsedTable | null
+    if (!table?.headers?.length) return NextResponse.json({ error: 'Geen gegevens ontvangen' }, { status: 400 })
     const clean = sanitizeMapping(mapping, table.headers)
     if (!Object.values(clean).includes('company.name')) {
       return NextResponse.json({ error: 'Wijs minstens één kolom toe aan “Bedrijfsnaam”.' }, { status: 400 })

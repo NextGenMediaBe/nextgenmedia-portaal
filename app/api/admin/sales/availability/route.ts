@@ -1,15 +1,15 @@
 import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
+import { getOrCreatePipeline } from '@/lib/sales/service'
 
 export const dynamic = 'force-dynamic'
 
-// GET ?client=<id> — werkuren, uitzonderingen en boekingsregels (§8).
+// GET — werkuren, uitzonderingen en boekingsregels van de pipeline (§8).
 export async function GET(req: NextRequest) {
   try {
     if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
-    const client = req.nextUrl.searchParams.get('client') ?? ''
-    if (!client) return NextResponse.json({ error: 'client vereist' }, { status: 400 })
+    const client = (await getOrCreatePipeline()).id
     const admin = createAdminSupabaseClient()
     const [{ data: rules }, { data: exceptions }, { data: c }, { data: conn }] = await Promise.all([
       admin.from('sales_availability_rules').select('*').eq('sales_client_id', client).order('weekday'),
@@ -29,8 +29,7 @@ export async function POST(req: NextRequest) {
   try {
     if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const b = await req.json()
-    const client = String(b.salesClientId ?? '')
-    if (!client) return NextResponse.json({ error: 'client vereist' }, { status: 400 })
+    const client = (await getOrCreatePipeline()).id
     const admin = createAdminSupabaseClient()
 
     // Voor wie gelden deze uren? Leeg = voor de hele klant (elke agenda zonder

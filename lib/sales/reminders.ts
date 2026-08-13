@@ -4,12 +4,12 @@ import { sendEmail } from '@/lib/email'
 
 // Herinneringsmails naar prospects (§8).
 //
-// OPT-IN: alleen klanten met reminder_days_before ingevuld krijgen dit. Staat
-// die lijst leeg (de standaard), dan gaat er nooit een mail uit.
+// OPT-IN: dit staat standaard uit (lege reminder_days_before). Staat die lijst
+// leeg, dan gaat er nooit een mail uit — een prospect krijgt niets automatisch.
 //
-// ONGEBRAND: de prospect kent NextGenMedia niet — wij bellen namens de klant.
-// De mail is daarom bewust kaal en ondertekend met de naam en het bedrijf van
-// de klant, met reply-to naar de klant zodat antwoorden bij hém terechtkomen.
+// De mail is bewust kaal en zakelijk: enkel datum, uur en de Meet-link,
+// ondertekend met de ingestelde naam. Reply-to gaat naar het opgegeven adres,
+// zodat een antwoord bij de juiste persoon terechtkomt.
 
 export type ReminderResult = { checked: number; sent: number; skipped: number; errors: string[] }
 
@@ -43,7 +43,7 @@ export async function runSalesReminders(now = new Date()): Promise<ReminderResul
   const admin = createAdminSupabaseClient()
   const out: ReminderResult = { checked: 0, sent: 0, skipped: 0, errors: [] }
 
-  // Enkel klanten die dit aan hebben staan.
+  // Enkel wanneer dit expliciet aan staat.
   const { data: clientRows, error: cErr } = await admin
     .from('sales_clients').select('*').neq('status', 'archived')
   if (cErr) { out.errors.push(cErr.message); return out }
@@ -106,8 +106,11 @@ export async function runSalesReminders(now = new Date()): Promise<ReminderResul
         '',
         'Met vriendelijke groeten,',
         signer,
-        client.name,
+        // Bedrijfsnaam alleen als die iets toevoegt (anders staat er twee keer
+        // hetzelfde onder de mail).
+        signer === client.name ? '' : client.name,
       ].filter((l) => l !== null)
+      while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
 
       const text = lines.join('\n')
       // Bewust kale opmaak: geen logo, geen huisstijl, niets dat naar ons wijst.

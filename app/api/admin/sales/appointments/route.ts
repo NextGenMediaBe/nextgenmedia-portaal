@@ -1,7 +1,7 @@
 import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
-import { loadCalendar, logLeadEvent, getSalesClient } from '@/lib/sales/service'
+import { loadCalendar, logLeadEvent, getOrCreatePipeline } from '@/lib/sales/service'
 import { isBookable } from '@/lib/sales/availability'
 import { APPOINTMENT_STAGE } from '@/lib/sales/stages'
 import { createEvent, moveEvent, deleteEvent } from '@/lib/sales/google-calendar'
@@ -17,7 +17,7 @@ async function assertBookable(
 ): Promise<void> {
   const pad = 86400000
   const data = await loadCalendar(salesClientId, start - pad, end + pad, ownerId)
-  if (!data) throw new Error('Klant niet gevonden')
+  if (!data) throw new Error('Pipeline niet gevonden')
 
   // Bij verplaatsen telt de afspraak zelf niet als blokkade: die gaat immers weg
   // van zijn oude plek. We voegen zijn eigen tijd daarom terug toe aan het wit.
@@ -51,7 +51,7 @@ async function assertBookable(
       return t >= dayStart.getTime() && t < dayStart.getTime() + 86400000
     })
     if (sameDay.length >= client.max_per_day) {
-      throw new Error(`Deze klant staat maximaal ${client.max_per_day} afspraken per dag toe.`)
+      throw new Error(`Er staan maximaal ${client.max_per_day} afspraken per dag ingesteld.`)
     }
   }
 }
@@ -64,20 +64,20 @@ export async function POST(req: NextRequest) {
     if (!actor) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const b = await req.json()
 
-    const salesClientId = String(b.salesClientId ?? '')
     const start = Number(b.startsAt), end = Number(b.endsAt)
-    if (!salesClientId || !Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
       return NextResponse.json({ error: 'Ongeldig tijdvak' }, { status: 400 })
     }
 
-    const client = await getSalesClient(salesClientId)
-    if (!client) return NextResponse.json({ error: 'Klant niet gevonden' }, { status: 404 })
+    // Eén pipeline: het id komt van de server, nooit uit het verzoek.
+    const client = await getOrCreatePipeline()
+    const salesClientId = client.id
 
     // Welke agenda (persoon)? Zonder keuze pakt loadCalendar de eerste.
     const requestedOwner = b.ownerId ? String(b.ownerId) : null
     const cal = await loadCalendar(salesClientId, start - 864e5, end + 864e5, requestedOwner)
     const ownerId = cal?.ownerId ?? null
-    if (!ownerId) return NextResponse.json({ error: 'Koppel eerst een agenda voor deze klant.' }, { status: 400 })
+    if (!ownerId) return NextResponse.json({ error: 'Koppel eerst een agenda (Bram of Marco) via Appointment setting.' }, { status: 400 })
 
     // 1) Hervalideren tegen dezelfde berekening als de kalender tekent.
     await assertBookable(salesClientId, start, end, ownerId)
@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
         .from('sales_leads')
         .select('id, contact_id, stage_key, sales_contacts ( id, email )')
         .eq('id', leadId).eq('sales_client_id', salesClientId).maybeSingle()
-      if (!lead) return NextResponse.json({ error: 'Lead hoort niet bij deze klant' }, { status: 400 })
+      if (!lead) return NextResponse.json({ error: 'Deze lead staat niet in de pipeline' }, { status: 400 })
       contactId = (lead as { contact_id: string | null }).contact_id
       leadStage = (lead as { stage_key: string }).stage_key
       const leadEmail = (lead as { sales_contacts?: { email?: string | null } | null }).sales_contacts?.email ?? null
@@ -189,9 +189,7 @@ export async function PATCH(req: NextRequest) {
     if (!appt) return NextResponse.json({ error: 'Afspraak niet gevonden' }, { status: 404 })
     if (appt.status === 'cancelled') return NextResponse.json({ error: 'Deze afspraak is geannuleerd' }, { status: 400 })
 
-    const client = await getSalesClient(appt.sales_client_id as string)
-    if (!client) return NextResponse.json({ error: 'Klant niet gevonden' }, { status: 404 })
-
+    const pipeline = await getOrCreatePipeline()
     await assertBookable(appt.sales_client_id as string, start, end, (appt.calendar_id as string | null), id)
 
     const { error } = await admin.from('sales_appointments')
@@ -203,7 +201,7 @@ export async function PATCH(req: NextRequest) {
 
     if (appt.external_event_id) {
       try {
-        await moveEvent(appt.calendar_id as string, appt.external_event_id as string, start, end, client.timezone)
+        await moveEvent(appt.calendar_id as string, appt.external_event_id as string, start, end, pipeline.timezone)
       } catch (e) {
         return NextResponse.json({ error: `Verplaatst in de app, maar de agenda gaf een fout: ${e instanceof Error ? e.message : 'onbekend'}` }, { status: 502 })
       }

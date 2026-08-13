@@ -1,7 +1,7 @@
 import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
-import { createLead } from '@/lib/sales/service'
+import { createLead, getOrCreatePipeline } from '@/lib/sales/service'
 import { normalizePhone, looksLikePhone } from '@/lib/sales/dedupe'
 
 export const dynamic = 'force-dynamic'
@@ -14,15 +14,15 @@ type LeadRow = {
   sales_contacts: { id: string; name: string | null; email: string | null; phone: string | null; mobile: string | null; phone_digits: string | null; role: string | null } | null
 }
 
-// GET — leads van één klant, met zoeken en filters (§4).
+// GET — alle leads uit de algemene pipeline, met zoeken en filters (§4).
 // Zoeken matcht op bedrijf, contactpersoon, e-mail én telefoon (cijfer-
 // genormaliseerd, zodat +32470…, 0470… en 470… allemaal hetzelfde vinden).
 export async function GET(req: NextRequest) {
   try {
     if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const sp = req.nextUrl.searchParams
-    const salesClientId = sp.get('client') ?? ''
-    if (!salesClientId) return NextResponse.json({ leads: [] })
+    // Er is één pipeline en die bepalen we hier, niet in de browser.
+    const salesClientId = (await getOrCreatePipeline()).id
 
     const admin = createAdminSupabaseClient()
     let q = admin
@@ -82,13 +82,12 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST — nieuwe lead (manueel). Ontdubbelt op bedrijf binnen dezelfde klant.
+// POST — nieuwe lead (manueel). Ontdubbelt op bedrijf binnen de pipeline.
 export async function POST(req: NextRequest) {
   try {
     if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const b = await req.json()
-    const salesClientId = String(b.salesClientId ?? '')
-    if (!salesClientId) return NextResponse.json({ error: 'Kies eerst een klant' }, { status: 400 })
+    const salesClientId = (await getOrCreatePipeline()).id
 
     const res = await createLead({
       salesClientId,

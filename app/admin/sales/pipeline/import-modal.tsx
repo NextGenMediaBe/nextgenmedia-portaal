@@ -12,7 +12,7 @@ type Analysis = {
   mapping: Record<string, string>
   fields: Field[]
   aiUsed: boolean
-  csv: string
+  table: { headers: string[]; rows: string[][] }
 }
 
 /**
@@ -20,8 +20,8 @@ type Analysis = {
  * controleert en bevestigt → pas dán worden er leads aangemaakt.
  * Er wordt niets opgeslagen vóór de bevestiging.
  */
-export function ImportModal({ clientId, onClose, onDone }: {
-  clientId: string; onClose: () => void; onDone: () => void
+export function ImportModal({ onClose, onDone }: {
+  onClose: () => void; onDone: () => void
 }) {
   const [busy, setBusy] = useState(false)
   const [a, setA] = useState<Analysis | null>(null)
@@ -47,7 +47,7 @@ export function ImportModal({ clientId, onClose, onDone }: {
     try {
       const res = await fetch('/api/admin/sales/import', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ salesClientId: clientId, csv: a.csv, mapping }),
+        body: JSON.stringify({ table: a.table, mapping }),
       })
       const j = await res.json(); if (!res.ok) throw new Error(j.error)
       setResult(j)
@@ -96,14 +96,16 @@ export function ImportModal({ clientId, onClose, onDone }: {
             <div className="space-y-3">
               <label className="block border-2 border-dashed border-gray-200 rounded-xl p-8 text-center cursor-pointer hover:border-gray-300 hover:bg-gray-50 transition-colors">
                 <Upload className="h-6 w-6 text-gray-400 mx-auto mb-2" />
-                <div className="text-sm font-medium text-gray-800">Kies een CSV-bestand</div>
-                <div className="text-xs text-gray-500 mt-1">Max. 5 MB en 2000 rijen</div>
-                <input type="file" accept=".csv,text/csv" className="hidden"
+                <div className="text-sm font-medium text-gray-800">Kies een Excel- of CSV-bestand</div>
+                <div className="text-xs text-gray-500 mt-1">.xlsx of .csv — max. 5 MB en 2000 rijen</div>
+                <input type="file"
+                  accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  className="hidden"
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) analyse(f) }} />
               </label>
               <p className="text-[11px] text-gray-500">
-                Heb je een Excel-bestand? Open het en kies <b>Opslaan als → CSV</b>. De kolomvolgorde maakt niet uit:
-                we herkennen de koppen zelf.
+                Sleep je Excel er gerust rechtstreeks in — omzetten naar CSV hoeft niet. De kolomvolgorde maakt
+                niet uit: we herkennen de koppen zelf. Alleen het eerste tabblad wordt gelezen.
               </p>
               {busy && <div className="text-center text-gray-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></div>}
             </div>

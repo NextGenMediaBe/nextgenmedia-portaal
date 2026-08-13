@@ -10,7 +10,6 @@ import { MANUAL_STAGES, stageLabel, STAGES } from '@/lib/sales/stages'
 import { FocusMode } from './focus-mode'
 import { ImportModal } from './import-modal'
 
-type Client = { id: string; name: string }
 type Lead = {
   id: string; stage_key: string; labels: string[]; callback_at: string | null
   do_not_call: boolean; updated_at: string; lost_reason: string | null; email_brief: string | null
@@ -30,8 +29,9 @@ const STAGE_STYLE: Record<string, string> = {
   lost: 'bg-red-100 text-red-700',
 }
 
-export function PipelineClient({ clients, initialClientId }: { clients: Client[]; initialClientId: string }) {
-  const [clientId, setClientId] = useState(initialClientId)
+/** Eén algemene pipeline: `pipelineId` ligt vast, er valt niets te kiezen. */
+export function PipelineClient({ pipelineId }: { pipelineId: string }) {
+  const clientId = pipelineId
   const [leads, setLeads] = useState<Lead[]>([])
   // Voorraad om de filter-keuzelijsten mee te vullen (zonder actieve filters).
   const [pool, setPool] = useState<Lead[]>([])
@@ -47,7 +47,6 @@ export function PipelineClient({ clients, initialClientId }: { clients: Client[]
   const [label, setLabel] = useState('')
   const [selected, setSelected] = useState<Lead | null>(null)
   const [newLead, setNewLead] = useState(false)
-  const [newClient, setNewClient] = useState(false)
   const [focus, setFocus] = useState(false)
   const [importing, setImporting] = useState(false)
   // Selectie voor bulk-acties (§4).
@@ -55,10 +54,9 @@ export function PipelineClient({ clients, initialClientId }: { clients: Client[]
   const [bulkBusy, setBulkBusy] = useState(false)
 
   const load = useCallback(async () => {
-    if (!clientId) { setLeads([]); setLoading(false); return }
     setLoading(true)
     try {
-      const p = new URLSearchParams({ client: clientId })
+      const p = new URLSearchParams()
       if (q.trim()) p.set('q', q.trim())
       if (stage) p.set('stage', stage)
       if (archived) p.set('archived', '1')
@@ -75,7 +73,7 @@ export function PipelineClient({ clients, initialClientId }: { clients: Client[]
       // andere opties zodra je één filter kiest en kom je er niet meer uit.
       if (!sector && !region && !city && !label) setPool(j.leads ?? [])
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Laden mislukt') } finally { setLoading(false) }
-  }, [clientId, q, stage, archived, hideDnc, callbackToday, sector, region, city, label])
+  }, [q, stage, archived, hideDnc, callbackToday, sector, region, city, label])
 
   // Kleine vertraging bij typen, zodat we niet bij elke toetsaanslag zoeken.
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t) }, [load])
@@ -131,24 +129,11 @@ export function PipelineClient({ clients, initialClientId }: { clients: Client[]
     } finally { setBulkBusy(false) }
   }
 
-  if (clients.length === 0) {
-    return (
-      <div className="card-base space-y-3">
-        <p className="text-sm text-gray-600">Nog geen klanten in de Verkoop-module.</p>
-        <button onClick={() => setNewClient(true)} className="btn-primary text-sm"><Plus className="h-4 w-4" />Nieuwe klant</button>
-        {newClient && <NewClientModal onClose={() => setNewClient(false)} />}
-      </div>
-    )
-  }
-
   return (
     <div className="space-y-4">
-      {/* Kop: klant, zoeken, knoppen */}
+      {/* Kop: zoeken, knoppen */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
-          <select className="input-base w-auto" value={clientId} onChange={(e) => setClientId(e.target.value)}>
-            {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
           <div className="relative">
             <Search className="h-4 w-4 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input className="input-base pl-8 w-64" value={q} onChange={(e) => setQ(e.target.value)}
@@ -163,7 +148,6 @@ export function PipelineClient({ clients, initialClientId }: { clients: Client[]
             <Upload className="h-4 w-4" />Importeren
           </button>
           <button onClick={() => setNewLead(true)} className="btn-primary text-sm"><Plus className="h-4 w-4" />Nieuwe lead</button>
-          <button onClick={() => setNewClient(true)} className="btn-secondary text-sm"><Plus className="h-4 w-4" />Nieuwe klant</button>
         </div>
       </div>
 
@@ -314,7 +298,7 @@ export function PipelineClient({ clients, initialClientId }: { clients: Client[]
         {/* Detailpaneel */}
         <div>
           {selected
-            ? <LeadDetail key={selected.id} lead={selected} clientId={clientId} onChanged={() => { load(); setSelected(null) }} onClose={() => setSelected(null)} />
+            ? <LeadDetail key={selected.id} lead={selected} onChanged={() => { load(); setSelected(null) }} onClose={() => setSelected(null)} />
             : <div className="card-base text-sm text-gray-500">Kies een lead om de details te zien.</div>}
         </div>
       </div>
@@ -322,23 +306,21 @@ export function PipelineClient({ clients, initialClientId }: { clients: Client[]
       {focus && (
         <FocusMode
           leads={leads}
-          clientId={clientId}
           onClose={() => { setFocus(false); load() }}
           onChanged={() => { /* lijst wordt bij sluiten ververst */ }}
         />
       )}
 
-      {importing && <ImportModal clientId={clientId} onClose={() => setImporting(false)} onDone={load} />}
+      {importing && <ImportModal onClose={() => setImporting(false)} onDone={load} />}
 
-      {newLead && <NewLeadModal clientId={clientId} onClose={() => setNewLead(false)} onCreated={() => { setNewLead(false); load() }} />}
-      {newClient && <NewClientModal onClose={() => setNewClient(false)} />}
+      {newLead && <NewLeadModal onClose={() => setNewLead(false)} onCreated={() => { setNewLead(false); load() }} />}
     </div>
   )
 }
 
 // ── Detailpaneel ─────────────────────────────────────────────────────────────
-function LeadDetail({ lead, clientId, onChanged, onClose }: {
-  lead: Lead; clientId: string; onChanged: () => void; onClose: () => void
+function LeadDetail({ lead, onChanged, onClose }: {
+  lead: Lead; onChanged: () => void; onClose: () => void
 }) {
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('')
@@ -373,7 +355,7 @@ function LeadDetail({ lead, clientId, onChanged, onClose }: {
         {phone && <a href={`tel:${phone}`} className="btn-secondary text-sm"><Phone className="h-4 w-4" />Bellen</a>}
         {lead.sales_contacts?.email && <a href={`mailto:${lead.sales_contacts.email}`} className="btn-secondary text-sm"><Mail className="h-4 w-4" />Mailen</a>}
         {/* De harde koppeling met de kalender (§6): lead vooringevuld meesturen. */}
-        <Link href={`/admin/sales/appointments?client=${clientId}&lead=${lead.id}`} className="btn-primary text-sm">
+        <Link href={`/admin/sales/appointments?lead=${lead.id}`} className="btn-primary text-sm">
           <CalendarClock className="h-4 w-4" />Afspraak
         </Link>
       </div>
@@ -448,7 +430,7 @@ function LeadDetail({ lead, clientId, onChanged, onClose }: {
 }
 
 // ── Nieuwe lead ──────────────────────────────────────────────────────────────
-function NewLeadModal({ clientId, onClose, onCreated }: { clientId: string; onClose: () => void; onCreated: () => void }) {
+function NewLeadModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [f, setF] = useState({ company: '', website: '', sector: '', city: '', companyPhone: '', contact: '', role: '', email: '', phone: '' })
   const [saving, setSaving] = useState(false)
   const set = (k: keyof typeof f, v: string) => setF((p) => ({ ...p, [k]: v }))
@@ -460,7 +442,6 @@ function NewLeadModal({ clientId, onClose, onCreated }: { clientId: string; onCl
       const res = await fetch('/api/admin/sales/leads', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          salesClientId: clientId,
           company: { name: f.company, website: f.website, sector: f.sector, city: f.city, phone: f.companyPhone },
           contact: { name: f.contact, role: f.role, email: f.email, phone: f.phone },
         }),
@@ -489,36 +470,6 @@ function NewLeadModal({ clientId, onClose, onCreated }: { clientId: string; onCl
       </div>
       <Field label="E-mail" value={f.email} onChange={(v) => set('email', v)} type="email" />
       <p className="text-[11px] text-gray-500">Bestaat dit bedrijf al in deze pipeline, dan melden we dat — er komt nooit een dubbele lead bij.</p>
-    </Modal>
-  )
-}
-
-// ── Nieuwe klant ─────────────────────────────────────────────────────────────
-function NewClientModal({ onClose }: { onClose: () => void }) {
-  const [f, setF] = useState({ name: '', contact_name: '', contact_email: '', phone: '' })
-  const [saving, setSaving] = useState(false)
-  const set = (k: keyof typeof f, v: string) => setF((p) => ({ ...p, [k]: v }))
-
-  const save = async () => {
-    if (!f.name.trim()) { toast.error('Naam is verplicht'); return }
-    setSaving(true)
-    try {
-      const res = await fetch('/api/admin/sales/clients', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f),
-      })
-      const j = await res.json(); if (!res.ok) throw new Error(j.error)
-      toast.success('Klant aangemaakt met standaard werkuren (ma–vr 09:00–17:00).')
-      window.location.href = `/admin/sales/pipeline?client=${j.id}`
-    } catch (e) { toast.error(e instanceof Error ? e.message : 'Aanmaken mislukt') } finally { setSaving(false) }
-  }
-
-  return (
-    <Modal title="Nieuwe klant" onClose={onClose} onSave={save} saving={saving}>
-      <Field label="Bedrijfsnaam *" value={f.name} onChange={(v) => set('name', v)} />
-      <Field label="Contactpersoon" value={f.contact_name} onChange={(v) => set('contact_name', v)} />
-      <Field label="E-mail" value={f.contact_email} onChange={(v) => set('contact_email', v)} type="email" />
-      <Field label="Telefoon" value={f.phone} onChange={(v) => set('phone', v)} />
-      <p className="text-[11px] text-gray-500">Koppel daarna de Google Agenda via Appointment setting.</p>
     </Modal>
   )
 }

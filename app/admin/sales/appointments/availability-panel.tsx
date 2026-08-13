@@ -19,12 +19,12 @@ const DAYS = ['Maandag', 'Dinsdag', 'Woensdag', 'Donderdag', 'Vrijdag', 'Zaterda
 const hm = (t: string) => (t ?? '').slice(0, 5)   // '09:00:00' → '09:00'
 
 /**
- * Beschikbaarheid van één klant (§8): werkuren, buffers, uitzonderingen en
+ * Beschikbaarheid (§8): werkuren, buffers, uitzonderingen en
  * boekingsregels. Bewust geen "meeting types" — dit zijn de knoppen die het
  * grijs/wit in de kalender bepalen, en niets meer.
  */
-export function AvailabilityPanel({ clientId, clientName, initialOwnerId, onClose, onSaved }: {
-  clientId: string; clientName: string; initialOwnerId?: string
+export function AvailabilityPanel({ initialOwnerId, onClose, onSaved }: {
+  initialOwnerId?: string
   onClose: () => void; onSaved: () => void
 }) {
   const [loading, setLoading] = useState(true)
@@ -45,7 +45,7 @@ export function AvailabilityPanel({ clientId, clientName, initialOwnerId, onClos
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/admin/sales/availability?client=${clientId}`)
+      const res = await fetch('/api/admin/sales/availability')
       const j = await res.json(); if (!res.ok) throw new Error(j.error)
       setOwners(j.owners ?? [])
       // Alleen de regels van het gekozen bereik tonen — anders lijkt het alsof
@@ -60,7 +60,7 @@ export function AvailabilityPanel({ clientId, clientName, initialOwnerId, onClos
       })))
       if (j.client) setS((p) => ({ ...p, ...j.client, reminder_days_before: j.client.reminder_days_before ?? [] }))
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Laden mislukt') } finally { setLoading(false) }
-  }, [clientId, scope])
+  }, [scope])
   useEffect(() => { load() }, [load])
 
   const save = async () => {
@@ -71,7 +71,7 @@ export function AvailabilityPanel({ clientId, clientName, initialOwnerId, onClos
     try {
       const res = await fetch('/api/admin/sales/availability', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ salesClientId: clientId, calendarId: scope || null, rules: clean, exceptions, ...s }),
+        body: JSON.stringify({ calendarId: scope || null, rules: clean, exceptions, ...s }),
       })
       const j = await res.json(); if (!res.ok) throw new Error(j.error)
       toast.success('Beschikbaarheid opgeslagen.')
@@ -98,7 +98,7 @@ export function AvailabilityPanel({ clientId, clientName, initialOwnerId, onClos
         <div className="flex items-center justify-between p-5 border-b border-gray-100">
           <div>
             <h3 className="font-semibold text-gray-900 flex items-center gap-2"><Settings2 className="h-4 w-4 text-gray-400" />Beschikbaarheid</h3>
-            <p className="text-sm text-gray-600 mt-0.5">{clientName} — dit bepaalt wat wit (boekbaar) is in de agenda.</p>
+            <p className="text-sm text-gray-600 mt-0.5">Dit bepaalt wat wit (boekbaar) is in de agenda.</p>
           </div>
           <button onClick={onClose} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-gray-100"><X className="h-4 w-4" /></button>
         </div>
@@ -180,8 +180,8 @@ export function AvailabilityPanel({ clientId, clientName, initialOwnerId, onClos
                 <BellRing className="h-3.5 w-3.5 text-gray-400" />Herinneringsmails naar de prospect
               </h4>
               <p className="text-[11px] text-gray-500 mb-2">
-                Standaard uit. Vink aan wanneer de prospect een herinnering mag krijgen — een kale mail
-                zonder onze naam, ondertekend namens deze klant. Antwoorden gaan naar het e-mailadres van de klant.
+                Standaard uit. Vink aan wanneer de prospect een herinnering mag krijgen — een kale, zakelijke
+                mail met enkel datum, uur en de Meet-link. Antwoorden komen op het ingestelde afzenderadres binnen.
               </p>
               <div className="flex gap-1.5 flex-wrap">
                 {[0, 1, 2, 3, 7].map((d) => {
@@ -205,7 +205,7 @@ export function AvailabilityPanel({ clientId, clientName, initialOwnerId, onClos
                   <label className="block text-xs font-medium text-gray-600 mb-1">Ondertekend door</label>
                   <input className="input-base" value={s.reminder_sender_name ?? ''}
                     onChange={(e) => setS((p) => ({ ...p, reminder_sender_name: e.target.value }))}
-                    placeholder={`Naam contactpersoon — anders ${clientName}`} />
+                    placeholder="Bv. Bram Rekken" />
                 </div>
               )}
             </div>

@@ -17,8 +17,8 @@ type Lead = {
  * Elke keuze zet de fase, logt de belpoging en springt naar de volgende lead.
  * Leads met "niet bellen" worden overgeslagen.
  */
-export function FocusMode({ leads, clientId, onClose, onChanged }: {
-  leads: Lead[]; clientId: string; onClose: () => void; onChanged: () => void
+export function FocusMode({ leads, onClose, onChanged }: {
+  leads: Lead[]; onClose: () => void; onChanged: () => void
 }) {
   const router = useRouter()
   // Filter meteen bij het openen: niet-bellen komt hier nooit voorbij.
@@ -43,7 +43,7 @@ export function FocusMode({ leads, clientId, onClose, onChanged }: {
     // "Afspraak boeken" wisselt geen fase: de kalender doet dat na een échte
     // boeking (§3). We springen er gewoon heen met de lead vooringevuld.
     if (action.opensBooking) {
-      router.push(`/admin/sales/appointments?client=${clientId}&lead=${lead.id}`)
+      router.push(`/admin/sales/appointments?lead=${lead.id}`)
       return
     }
 
@@ -58,7 +58,7 @@ export function FocusMode({ leads, clientId, onClose, onChanged }: {
       onChanged()
       next()
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Opslaan mislukt') } finally { setBusy(false) }
-  }, [lead, busy, note, clientId, router, onChanged, next])
+  }, [lead, busy, note, router, onChanged, next])
 
   // Sneltoetsen. Niet actief terwijl je in het notitieveld typt, anders zou een
   // "3" in je notitie de lead op Interesse zetten.
