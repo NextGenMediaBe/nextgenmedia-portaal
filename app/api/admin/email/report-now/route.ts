@@ -3,6 +3,9 @@ import { NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/supabase/server'
 import { runAndSendAdminReport } from '@/lib/admin-report'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 // Admin vraagt manueel een rapportmail op. Verstuurt ALTIJD (ook zonder wijzigingen).
 export async function POST() {
   try {

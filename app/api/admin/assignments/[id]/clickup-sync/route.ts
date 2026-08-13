@@ -6,6 +6,9 @@ import { matchPartnerToMember } from '@/lib/clickup-match'
 import { logAudit, requestMeta } from '@/lib/audit'
 import { revalidatePath } from 'next/cache'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 export const maxDuration = 60
 
 async function requireAdminUser() {

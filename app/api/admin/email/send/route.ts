@@ -4,6 +4,9 @@ import { createClient, createAdminSupabaseClient , isActiveStaff } from '@/lib/s
 import { sendEmail } from '@/lib/email'
 import { buildEmailHtml, buildEmailText } from '@/lib/email-html'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 async function requireAdminUser() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

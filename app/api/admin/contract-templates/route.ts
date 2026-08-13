@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient, insertResilient , isActiveStaff } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 async function requireAdminUser() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

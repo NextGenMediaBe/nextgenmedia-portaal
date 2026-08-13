@@ -4,6 +4,9 @@ import { createAdminSupabaseClient, requireStaff, insertResilient } from '@/lib/
 import { commissionForSale } from '@/lib/utils'
 import { revalidatePath } from 'next/cache'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 // A commission deal = a REFERRAL: partner brought us this client on `start_date`
 // (the first-referral date). Each later SALE to that client earns commission at
 // the rate of the referral year it falls in (10% / 8% / 5%).

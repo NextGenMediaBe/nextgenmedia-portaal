@@ -4,9 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import {
-  Loader2, Plus, Search, Phone, Mail, X, CalendarClock, Archive, PhoneOff, Tag, Clock,
+  Loader2, Plus, Search, Phone, Mail, X, CalendarClock, Archive, PhoneOff, Tag, Clock, Headphones,
 } from 'lucide-react'
 import { MANUAL_STAGES, stageLabel, STAGES } from '@/lib/sales/stages'
+import { FocusMode } from './focus-mode'
 
 type Client = { id: string; name: string }
 type Lead = {
@@ -40,6 +41,10 @@ export function PipelineClient({ clients, initialClientId }: { clients: Client[]
   const [selected, setSelected] = useState<Lead | null>(null)
   const [newLead, setNewLead] = useState(false)
   const [newClient, setNewClient] = useState(false)
+  const [focus, setFocus] = useState(false)
+  // Selectie voor bulk-acties (§4).
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
 
   const load = useCallback(async () => {
     if (!clientId) { setLeads([]); setLoading(false); return }
@@ -68,6 +73,31 @@ export function PipelineClient({ clients, initialClientId }: { clients: Client[]
 
   const phoneOf = (l: Lead) => l.sales_contacts?.phone || l.sales_contacts?.mobile || l.sales_companies?.phone || ''
 
+  const toggle = (id: string) => setPicked((p) => {
+    const n = new Set(p)
+    if (n.has(id)) n.delete(id); else n.add(id)
+    return n
+  })
+
+  /** Bulk-actie op de selectie. Eén verzoek per lead, maar met één melding. */
+  const bulk = async (body: Record<string, unknown>, label: string) => {
+    if (picked.size === 0) return
+    setBulkBusy(true)
+    let failed = 0
+    try {
+      await Promise.all([...picked].map(async (id) => {
+        const res = await fetch(`/api/admin/sales/leads/${id}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        })
+        if (!res.ok) failed++
+      }))
+      if (failed) toast.warning(`${label}: ${picked.size - failed} gelukt, ${failed} mislukt.`)
+      else toast.success(`${label} (${picked.size}).`)
+      setPicked(new Set())
+      load()
+    } finally { setBulkBusy(false) }
+  }
+
   if (clients.length === 0) {
     return (
       <div className="card-base space-y-3">
@@ -93,6 +123,9 @@ export function PipelineClient({ clients, initialClientId }: { clients: Client[]
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={() => setFocus(true)} disabled={leads.length === 0} className="btn-secondary text-sm" title="Belmodus: één lead per keer, sneltoetsen 1–6">
+            <Headphones className="h-4 w-4" />Focus Mode
+          </button>
           <button onClick={() => setNewLead(true)} className="btn-primary text-sm"><Plus className="h-4 w-4" />Nieuwe lead</button>
           <button onClick={() => setNewClient(true)} className="btn-secondary text-sm"><Plus className="h-4 w-4" />Nieuwe klant</button>
         </div>
@@ -121,6 +154,30 @@ export function PipelineClient({ clients, initialClientId }: { clients: Client[]
         </label>
       </div>
 
+      {/* Bulk-balk: verschijnt alleen wanneer er iets geselecteerd is. */}
+      {picked.size > 0 && (
+        <div className="flex items-center gap-2 flex-wrap rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+          <span className="text-sm font-medium">{picked.size} geselecteerd</span>
+          <select className="input-base w-auto text-sm" defaultValue="" disabled={bulkBusy}
+            onChange={(e) => { if (e.target.value) { bulk({ stage: e.target.value }, 'Status gewijzigd'); e.target.value = '' } }}>
+            <option value="">Status wijzigen…</option>
+            {MANUAL_STAGES.map((s) => <option key={s} value={s}>{stageLabel(s)}</option>)}
+          </select>
+          <button disabled={bulkBusy} className="btn-secondary text-sm"
+            onClick={() => { const l = prompt('Label toevoegen aan de selectie:'); if (l?.trim()) bulk({ labels: [l.trim()] }, 'Label toegevoegd') }}>
+            <Tag className="h-3.5 w-3.5" />Label
+          </button>
+          <button disabled={bulkBusy} className="btn-secondary text-sm" onClick={() => bulk({ archived: true }, 'Gearchiveerd')}>
+            <Archive className="h-3.5 w-3.5" />Archiveer
+          </button>
+          <button disabled={bulkBusy} className="btn-secondary text-sm" onClick={() => bulk({ do_not_call: true }, 'Op niet-bellen gezet')}>
+            <PhoneOff className="h-3.5 w-3.5" />Niet bellen
+          </button>
+          <button onClick={() => setPicked(new Set())} className="text-xs text-gray-500 hover:text-black ml-auto">Selectie wissen</button>
+          {bulkBusy && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}
+        </div>
+      )}
+
       <div className="grid lg:grid-cols-3 gap-4">
         {/* Tabel */}
         <div className="lg:col-span-2 card-base p-0 overflow-hidden">
@@ -133,6 +190,11 @@ export function PipelineClient({ clients, initialClientId }: { clients: Client[]
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100">
+                    <th className="table-th w-8">
+                      <input type="checkbox" aria-label="Alles selecteren"
+                        checked={picked.size > 0 && picked.size === leads.length}
+                        onChange={(e) => setPicked(e.target.checked ? new Set(leads.map((l) => l.id)) : new Set())} />
+                    </th>
                     <th className="table-th">Bedrijf</th>
                     <th className="table-th">Contact</th>
                     <th className="table-th">Telefoon</th>
@@ -143,6 +205,10 @@ export function PipelineClient({ clients, initialClientId }: { clients: Client[]
                   {leads.map((l) => (
                     <tr key={l.id} onClick={() => setSelected(l)}
                       className={`hover:bg-gray-50 cursor-pointer ${selected?.id === l.id ? 'bg-[#fff848]/10' : ''}`}>
+                      <td className="table-td" onClick={(e) => e.stopPropagation()}>
+                        <input type="checkbox" aria-label="Selecteer lead"
+                          checked={picked.has(l.id)} onChange={() => toggle(l.id)} />
+                      </td>
                       <td className="table-td">
                         <div className="font-medium truncate">{l.sales_companies?.name ?? '—'}</div>
                         <div className="text-[11px] text-gray-500 truncate">
@@ -183,6 +249,15 @@ export function PipelineClient({ clients, initialClientId }: { clients: Client[]
             : <div className="card-base text-sm text-gray-500">Kies een lead om de details te zien.</div>}
         </div>
       </div>
+
+      {focus && (
+        <FocusMode
+          leads={leads}
+          clientId={clientId}
+          onClose={() => { setFocus(false); load() }}
+          onChanged={() => { /* lijst wordt bij sluiten ververst */ }}
+        />
+      )}
 
       {newLead && <NewLeadModal clientId={clientId} onClose={() => setNewLead(false)} onCreated={() => { setNewLead(false); load() }} />}
       {newClient && <NewClientModal onClose={() => setNewClient(false)} />}

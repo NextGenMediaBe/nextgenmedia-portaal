@@ -5,6 +5,9 @@ import { logAudit, requestMeta } from '@/lib/audit'
 import { sanitizeModules } from '@/lib/staff'
 import { revalidatePath } from 'next/cache'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 // GET — alle werknemers (admin-only).
 export async function GET() {
   try {

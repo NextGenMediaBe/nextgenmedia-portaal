@@ -5,6 +5,9 @@ import { logAudit, requestMeta } from '@/lib/audit'
 import { FOUNDER_EMAILS } from '@/lib/founders'
 import { randomUUID } from 'crypto'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 const THRESHOLD = 1000          // € incl. btw — boven deze drempel is goedkeuring nodig
 const BUCKET = 'contracts'
 

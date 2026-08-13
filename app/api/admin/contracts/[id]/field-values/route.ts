@@ -4,6 +4,9 @@ import { createClient, createAdminSupabaseClient , isActiveStaff } from '@/lib/s
 import { CONTRACT_FIELD_TYPES, type ContractField } from '@/lib/contract-ai'
 import { logContractEvent } from '@/lib/contract-audit'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 const VALID = new Set<string>(CONTRACT_FIELD_TYPES)
 
 // PATCH /api/admin/contracts/[id]/field-values — admin bewaart de (gecontroleerde)

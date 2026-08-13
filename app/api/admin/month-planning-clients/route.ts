@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { MONTH_CLIENT_TYPE_KEYS } from '@/lib/month-phases'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 // Klanten per maand: één rij per klant per maand. `planning_type` = 'new' of
 // 'existing'. (De kolom `phase` bestaat nog in de tabel maar wordt vast op
 // 'maand' gezet — er is geen koppeling per activiteit meer.)

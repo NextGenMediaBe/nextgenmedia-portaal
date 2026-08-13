@@ -4,6 +4,9 @@ import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { requirePortalPermission } from '@/lib/portal-auth'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 // POST — klant plaatst feedback op een shoot-briefing van zijn eigen klant.
 export async function POST(req: NextRequest) {
   try {

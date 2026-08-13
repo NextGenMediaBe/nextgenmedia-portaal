@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient , isActiveStaff } from '@/lib/supabase/server'
 import { logContractEvent } from '@/lib/contract-audit'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 // GET ?type=original|signed — logt de download en redirect naar een signed URL.
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {

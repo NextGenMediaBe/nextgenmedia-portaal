@@ -8,6 +8,9 @@ import {
 } from '@/lib/invoices'
 import { createInvoiceTask, completeInvoiceTask, clickupConfigured, INVOICE_ASSIGNEE_NAME } from '@/lib/clickup'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 export const maxDuration = 60
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -4,6 +4,9 @@ import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { getActor, actorCanSee } from '@/lib/actor-modules'
 import { FEATURES } from '@/lib/features'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 // Globale zoekfunctie over de belangrijkste entiteiten. Admin-only.
 // Geeft direct klikbare resultaten met deep-links terug.
 

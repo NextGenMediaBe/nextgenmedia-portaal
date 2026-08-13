@@ -6,6 +6,9 @@ import { encryptSecret, isEncrypted } from '@/lib/crypto'
 import { firstGenerationDate } from '@/lib/blog-dates'
 import { validateFramerConfig } from '@/lib/framer'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 // GET ?client_id= — bloginstellingen (API key NOOIT teruggeven, enkel of die bestaat)
 export async function GET(req: NextRequest) {
   try {

@@ -4,6 +4,9 @@ import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
 import { logAudit, requestMeta } from '@/lib/audit'
 import { revalidatePath } from 'next/cache'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 // PATCH — admin updates a client's login email and/or password
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {

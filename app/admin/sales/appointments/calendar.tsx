@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, ChevronLeft, ChevronRight, Link2, CalendarClock, X, Trash2, Video } from 'lucide-react'
-import { complement, snapToSlot, type Interval } from '@/lib/sales/availability'
+import { Loader2, ChevronLeft, ChevronRight, Link2, CalendarClock, X, Trash2, Video, Settings2, Move } from 'lucide-react'
+import { complement, snapToSlot, isBookable, type Interval } from '@/lib/sales/availability'
+import { AvailabilityPanel } from './availability-panel'
 
 type SalesClient = {
   id: string; name: string; timezone: string
@@ -48,6 +49,11 @@ export function SalesCalendar({ clients, initialClientId, initialLeadId }: {
   const [drag, setDrag] = useState<{ segIdx: number; start: number; end: number } | null>(null)
   const dragRef = useRef<{ seg: Interval; anchor: number } | null>(null)
   const [booking, setBooking] = useState<{ start: number; end: number } | null>(null)
+  const [showAvailability, setShowAvailability] = useState(false)
+
+  // Bestaande afspraak verslepen naar een ander wit moment (§5).
+  const [moving, setMoving] = useState<{ id: string; start: number; end: number; valid: boolean } | null>(null)
+  const moveRef = useRef<{ id: string; duration: number; grabOffset: number } | null>(null)
 
   const client = clients.find((c) => c.id === clientId) ?? clients[0]
   const from = weekStart.getTime()
@@ -142,6 +148,74 @@ export function SalesCalendar({ clients, initialClientId, initialLeadId }: {
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
   }, [drag, client])
 
+  // ── Verslepen van een bestaande afspraak ───────────────────────────────────
+  // De afspraak volgt de muis, maar landt alleen als het nieuwe tijdvak binnen
+  // wit valt. Zolang dat niet zo is, kleurt het blokje rood en doen we niets.
+  const onApptDown = (e: React.MouseEvent, a: Appt, day: Date) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const s = new Date(a.starts_at).getTime(), en = new Date(a.ends_at).getTime()
+    const col = (e.currentTarget as HTMLElement).parentElement
+    if (!col) return
+    const rect = col.getBoundingClientRect()
+    const msAtCursor = dayTop(day) + ((e.clientY - rect.top) / PX_PER_MIN) * 60000
+    moveRef.current = { id: a.id, duration: en - s, grabOffset: msAtCursor - s }
+    setMoving({ id: a.id, start: s, end: en, valid: true })
+  }
+
+  useEffect(() => {
+    if (!moving) return
+    const slot = client?.slot_interval_min ?? 30
+    const cols = Array.from(document.querySelectorAll<HTMLElement>('[data-daycol]'))
+
+    const onMove = (ev: MouseEvent) => {
+      const m = moveRef.current
+      if (!m) return
+      // Onder welke dagkolom hangt de muis?
+      const col = cols.find((c) => {
+        const r = c.getBoundingClientRect()
+        return ev.clientX >= r.left && ev.clientX <= r.right
+      })
+      if (!col) return
+      const dayMs = Number(col.dataset.daycol)
+      const r = col.getBoundingClientRect()
+      const raw = new Date(dayMs).setHours(DAY_START_H, 0, 0, 0) + ((ev.clientY - r.top) / PX_PER_MIN) * 60000
+      const start = snapToSlot(raw - m.grabOffset, slot)
+      const end = start + m.duration
+      // Zelfde controle als de server doet — de eigen plek telt niet als blokkade.
+      const own = appointments.find((a) => a.id === m.id)
+      const segs = own
+        ? [...segments, { start: new Date(own.starts_at).getTime(), end: new Date(own.ends_at).getTime() }]
+        : segments
+      setMoving({ id: m.id, start, end, valid: isBookable(segs, start, end) })
+    }
+
+    const onUp = () => {
+      const m = moveRef.current
+      moveRef.current = null
+      setMoving((cur) => {
+        if (cur && m && cur.valid) void commitMove(cur.id, cur.start, cur.end)
+        return null
+      })
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moving, client, segments, appointments])
+
+  const commitMove = async (id: string, start: number, end: number) => {
+    try {
+      const res = await fetch('/api/admin/sales/appointments', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, startsAt: start, endsAt: end }),
+      })
+      const j = await res.json(); if (!res.ok) throw new Error(j.error)
+      toast.success('Afspraak verplaatst.')
+      load()
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Verplaatsen mislukt'); load() }
+  }
+
   if (!client) {
     return <div className="card-base text-sm text-gray-600">Maak eerst een klant aan bij Pipeline → Nieuwe klant.</div>
   }
@@ -163,13 +237,18 @@ export function SalesCalendar({ clients, initialClientId, initialLeadId }: {
             {days[0].toLocaleDateString('nl-BE', { day: 'numeric', month: 'short' })} – {days[6].toLocaleDateString('nl-BE', { day: 'numeric', month: 'short', year: 'numeric' })}
           </span>
         </div>
-        {connected ? (
-          <span className="status-badge bg-green-100 text-green-700 flex items-center gap-1"><Link2 className="h-3 w-3" />Agenda gekoppeld</span>
-        ) : (
-          <a href={`/api/admin/sales/calendar/connect?client=${clientId}`} className="btn-primary text-sm">
-            <Link2 className="h-4 w-4" />Google Agenda koppelen
-          </a>
-        )}
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowAvailability(true)} className="btn-secondary text-sm" title="Werkuren, buffers en boekingsregels">
+            <Settings2 className="h-4 w-4" />Beschikbaarheid
+          </button>
+          {connected ? (
+            <span className="status-badge bg-green-100 text-green-700 flex items-center gap-1"><Link2 className="h-3 w-3" />Agenda gekoppeld</span>
+          ) : (
+            <a href={`/api/admin/sales/calendar/connect?client=${clientId}`} className="btn-primary text-sm">
+              <Link2 className="h-4 w-4" />Google Agenda koppelen
+            </a>
+          )}
+        </div>
       </div>
 
       {!connected && (
@@ -202,7 +281,7 @@ export function SalesCalendar({ clients, initialClientId, initialLeadId }: {
             </div>
 
             {days.map((day, di) => (
-              <div key={di} className="relative border-l border-gray-100 bg-gray-100">
+              <div key={di} data-daycol={day.getTime()} className="relative border-l border-gray-100 bg-gray-100">
                 {/* Grijs: alles wat niet boekbaar is, als één samensmeltend geheel */}
                 {greyByDay[di].map((g, gi) => {
                   const top = Math.max(0, yOf(g.start, day))
@@ -244,14 +323,25 @@ export function SalesCalendar({ clients, initialClientId, initialLeadId }: {
                   const s = new Date(a.starts_at).getTime()
                   return s >= day.getTime() && s < day.getTime() + 86400000
                 }).map((a) => {
-                  const s = new Date(a.starts_at).getTime(), e = new Date(a.ends_at).getTime()
+                  const dragging = moving?.id === a.id
+                  // Tijdens het slepen volgt het blokje de muis; anders staat het
+                  // op zijn echte tijd.
+                  const s = dragging ? moving!.start : new Date(a.starts_at).getTime()
+                  const e = dragging ? moving!.end : new Date(a.ends_at).getTime()
+                  if (dragging && (s < day.getTime() || s >= day.getTime() + 86400000)) return null
+                  const tone = dragging
+                    ? (moving!.valid ? 'bg-amber-300 border-amber-600' : 'bg-red-200 border-red-500')
+                    : 'bg-[#fff848] border-yellow-500'
                   return (
                     <div key={a.id}
-                      className="absolute inset-x-0.5 rounded bg-[#fff848] border border-yellow-500 px-1 py-0.5 overflow-hidden"
-                      style={{ top: yOf(s, day), height: Math.max(16, yOf(e, day) - yOf(s, day)) }}
-                      title={`${a.company ?? 'Afspraak'} — ${hhmm(s)}–${hhmm(e)}`}>
-                      <div className="text-[10px] font-semibold text-black truncate">{a.company ?? 'Afspraak'}</div>
-                      <div className="text-[9px] text-black/70 truncate">{hhmm(s)}</div>
+                      onMouseDown={(ev) => onApptDown(ev, a, day)}
+                      className={`absolute inset-x-0.5 rounded border px-1 py-0.5 overflow-hidden cursor-grab active:cursor-grabbing ${tone}`}
+                      style={{ top: yOf(s, day), height: Math.max(16, yOf(e, day) - yOf(s, day)), zIndex: dragging ? 20 : 10 }}
+                      title={`${a.company ?? 'Afspraak'} — ${hhmm(s)}–${hhmm(e)} · sleep om te verplaatsen`}>
+                      <div className="text-[10px] font-semibold text-black truncate flex items-center gap-0.5">
+                        <Move className="h-2.5 w-2.5 shrink-0 opacity-50" />{a.company ?? 'Afspraak'}
+                      </div>
+                      <div className="text-[9px] text-black/70 truncate">{hhmm(s)}–{hhmm(e)}</div>
                     </div>
                   )
                 })}
@@ -281,6 +371,15 @@ export function SalesCalendar({ clients, initialClientId, initialLeadId }: {
           initialLeadId={initialLeadId}
           onClose={() => setBooking(null)}
           onBooked={() => { setBooking(null); load() }}
+        />
+      )}
+
+      {showAvailability && (
+        <AvailabilityPanel
+          clientId={clientId}
+          clientName={client.name}
+          onClose={() => setShowAvailability(false)}
+          onSaved={() => { setShowAvailability(false); load() }}
         />
       )}
 

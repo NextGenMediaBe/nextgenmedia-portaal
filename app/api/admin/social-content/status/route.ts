@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient , isActiveStaff } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 export async function POST(req: NextRequest) {
   try {
     const supabase = await createClient()

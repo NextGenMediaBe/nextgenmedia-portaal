@@ -1,6 +1,9 @@
 import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
+
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
 import {
   validateFramerConfig, listFramerCollections, listFramerFields, suggestFieldMap,
   analyzeFramerProject, testPublish, friendlyMissing, testFramerConnection, logFramerAction, type FramerClientConfig,

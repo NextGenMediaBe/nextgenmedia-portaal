@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient } from '@/lib/supabase/server'
 import { randomUUID } from 'crypto'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 const BUCKET = 'contracts'
 
 // POST (multipart) — partner registreert een betaling. Start als 'pending';

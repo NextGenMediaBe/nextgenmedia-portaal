@@ -4,6 +4,9 @@ import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
 import { logAudit, requestMeta } from '@/lib/audit'
 import { FOUNDERS } from '@/lib/founders'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 // GET — status: bestaan de drie zaakvoerder-accounts al?
 export async function GET() {
   try {

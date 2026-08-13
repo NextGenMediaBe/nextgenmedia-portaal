@@ -2,6 +2,9 @@ import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient, insertResilient , isActiveStaff } from '@/lib/supabase/server'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 function randomPassword(): string {
   const bytes = new Uint8Array(18)
   crypto.getRandomValues(bytes)

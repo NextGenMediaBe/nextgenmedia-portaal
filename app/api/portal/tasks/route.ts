@@ -4,6 +4,9 @@ import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { requirePortalPermission, sessionCan, logPortalAction } from '@/lib/portal-auth'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 // PATCH { id, action: 'complete' | 'note', note? } — klant werkt eigen taak bij.
 // Klant kan taken NIET verwijderen; enkel voltooien of een opmerking toevoegen.
 export async function PATCH(req: NextRequest) {

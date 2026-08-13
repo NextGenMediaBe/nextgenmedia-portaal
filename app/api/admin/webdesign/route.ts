@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 const ALLOWED_STATUSES = ['new', 'in_progress', 'rejected', 'done', 'archived']
 const STORAGE_BUCKET = 'contracts'
 

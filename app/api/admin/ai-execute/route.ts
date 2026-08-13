@@ -4,6 +4,9 @@ import { createClient } from '@/lib/supabase/server'
 import { findTool } from '@/lib/ai-tools'
 import { logAudit, requestMeta } from '@/lib/audit'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 export const maxDuration = 60
 
 // Voert een door de admin BEVESTIGDE reeks AI-tool-calls uit. Elke tool roept de

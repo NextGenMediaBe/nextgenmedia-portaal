@@ -4,6 +4,9 @@ import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { logAudit, requestMeta } from '@/lib/audit'
 import { revalidatePath } from 'next/cache'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 const ALLOWED_PATCH_FIELDS = new Set([
   'name', 'company', 'phone', 'vat_number', 'iban', 'region',
   'roles', 'hourly_rate', 'notes', 'active',

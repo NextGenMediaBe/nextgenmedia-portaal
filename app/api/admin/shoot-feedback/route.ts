@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 // GET ?shoot_id= — feedback van een shoot
 export async function GET(req: NextRequest) {
   try {

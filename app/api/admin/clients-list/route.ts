@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient , isActiveStaff } from '@/lib/supabase/server'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 // Returns the full clients list for admin dropdowns / pickers.
 // SECURITY: admin-only. Returns empty list (not 403) when called by non-admin
 // to keep the UX clean when the same client component runs in a portal context.

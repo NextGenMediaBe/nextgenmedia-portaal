@@ -4,6 +4,9 @@ import { createClient, createAdminSupabaseClient, insertResilient , isActiveStaf
 import { inferAssignmentOrigin } from '@/lib/utils'
 import { revalidatePath } from 'next/cache'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 async function assertAdmin() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

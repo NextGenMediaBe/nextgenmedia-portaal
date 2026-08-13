@@ -6,6 +6,9 @@ import { buildEmailHtml, buildEmailText } from '@/lib/email-html'
 import { logContractEvent } from '@/lib/contract-audit'
 import { revalidatePath } from 'next/cache'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 // POST — admin verstuurt bewust de contractmail (nooit automatisch).
 // Werkt voor gekoppelde én losse contracten. Zet status op 'sent' (verzonden),
 // logt audit-event 'sent' en bewaart de mail in het E-mail Center.

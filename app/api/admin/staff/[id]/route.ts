@@ -5,6 +5,9 @@ import { logAudit, requestMeta } from '@/lib/audit'
 import { sanitizeModules } from '@/lib/staff'
 import { revalidatePath } from 'next/cache'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 // PATCH — werknemer bijwerken: naam / actief / permissions / wachtwoord.
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {

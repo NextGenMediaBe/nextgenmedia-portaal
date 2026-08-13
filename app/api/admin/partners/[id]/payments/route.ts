@@ -4,6 +4,9 @@ import { createClient, createAdminSupabaseClient , isActiveStaff } from '@/lib/s
 import { logAudit, requestMeta } from '@/lib/audit'
 import { randomUUID } from 'crypto'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 const BUCKET = 'contracts'
 
 async function requireAdmin() {

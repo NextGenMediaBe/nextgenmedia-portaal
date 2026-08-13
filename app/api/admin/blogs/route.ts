@@ -8,6 +8,9 @@ import { findStockImage, stockImageConfigured } from '@/lib/blog-image'
 import { publishApprovedBlog, type AccountFramer, type BlogRow } from '@/lib/blog-publish'
 import { snapshotBlogVersion, describeChanges } from '@/lib/blog-versions'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 // AI-generatie + website-analyse + Framer-publicatie kunnen tientallen seconden
 // duren; verhoog de serverless-tijdslimiet zodat de aanvraag niet afkapt
 // ("Failed to fetch"). 60s is het maximum op het Vercel Hobby-plan.

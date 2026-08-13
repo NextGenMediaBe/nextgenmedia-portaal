@@ -5,6 +5,9 @@ import { logAudit, requestMeta } from '@/lib/audit'
 import { sanitizePermissions, presetPermissions, type PresetKey } from '@/lib/portal-permissions'
 import { revalidatePath } from 'next/cache'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 // GET — lijst van subaccounts voor deze klant.
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {

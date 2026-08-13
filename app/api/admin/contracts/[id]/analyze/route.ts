@@ -4,6 +4,9 @@ import { createClient, createAdminSupabaseClient , isActiveStaff } from '@/lib/s
 import { analyzeContractPdf } from '@/lib/contract-ai'
 import { logContractEvent } from '@/lib/contract-audit'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 export const maxDuration = 60
 
 // POST /api/admin/contracts/[id]/analyze — AI detecteert invulvelden + handtekeningzone.

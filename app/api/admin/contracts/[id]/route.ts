@@ -5,6 +5,9 @@ import { revalidatePath } from 'next/cache'
 import { randomUUID } from 'crypto'
 import { logContractEvent } from '@/lib/contract-audit'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 async function requireAdmin() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

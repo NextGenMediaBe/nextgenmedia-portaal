@@ -4,6 +4,9 @@ import { createClient } from '@/lib/supabase/server'
 import { buildAiSnapshot } from '@/lib/ai-context'
 import { toolsForPrompt, AI_TOOLS } from '@/lib/ai-tools'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 export const maxDuration = 60
 
 const MODEL = () => process.env.BLOG_AI_MODEL || 'claude-sonnet-4-6'

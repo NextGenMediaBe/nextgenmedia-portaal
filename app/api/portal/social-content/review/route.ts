@@ -5,6 +5,9 @@ import { revalidatePath } from 'next/cache'
 import { notifyClientScriptActivity } from '@/lib/admin-alerts'
 import { requirePortalPermission, sessionCan, logPortalAction } from '@/lib/portal-auth'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 export async function POST(req: NextRequest) {
   try {
     const g = await requirePortalPermission('social_media', 'view')

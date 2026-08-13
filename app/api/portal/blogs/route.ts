@@ -7,6 +7,9 @@ import { publishBlogToFramer, markFramerSync, type FramerClientConfig } from '@/
 import { snapshotBlogVersion, describeChanges } from '@/lib/blog-versions'
 import { requirePortalPermission, logPortalAction } from '@/lib/portal-auth'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 // Opslaan pusht (bij gepubliceerde blogs) naar Framer — externe call, kan duren.
 export const maxDuration = 60
 

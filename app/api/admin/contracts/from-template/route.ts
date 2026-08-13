@@ -5,6 +5,9 @@ import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { logContractEvent } from '@/lib/contract-audit'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 export const maxDuration = 60
 
 // POST — maak een nieuw contract op basis van een template.

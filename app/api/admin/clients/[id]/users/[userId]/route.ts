@@ -5,6 +5,9 @@ import { logAudit, requestMeta } from '@/lib/audit'
 import { sanitizePermissions, presetPermissions, type PresetKey } from '@/lib/portal-permissions'
 import { revalidatePath } from 'next/cache'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 // PATCH — subaccount bijwerken: naam/rol/actief/permissions/wachtwoord/preset.
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string; userId: string }> }) {
   try {

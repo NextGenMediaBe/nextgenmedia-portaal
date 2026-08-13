@@ -5,6 +5,9 @@ import { randomUUID } from 'crypto'
 import { revalidatePath } from 'next/cache'
 import { logContractEvent } from '@/lib/contract-audit'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 export async function POST(req: NextRequest) {
   try {
     const supabase = await createClient()

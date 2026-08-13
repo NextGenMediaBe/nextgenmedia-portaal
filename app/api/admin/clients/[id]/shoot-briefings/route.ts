@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 const FIELDS = ['shoot_date', 'start_time', 'end_time', 'location', 'briefing'] as const
 
 function cleanPayload(body: Record<string, unknown>) {

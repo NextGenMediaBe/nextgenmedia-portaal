@@ -4,6 +4,9 @@ import { createClient, createAdminSupabaseClient, insertResilient } from '@/lib/
 import { inferAssignmentOrigin } from '@/lib/utils'
 import { revalidatePath } from 'next/cache'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 // POST — partner creates a new inbound assignment proposal for NextGenMedia
 export async function POST(req: NextRequest) {
   try {

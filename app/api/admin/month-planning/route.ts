@@ -2,6 +2,9 @@ import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 // Handmatige uitzonderingen op de automatische maandplanning. Per datum een
 // lijst categorie-keys; lege lijst = dag bewust leeg; geen rij = standaard.
 

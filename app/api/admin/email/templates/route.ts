@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { DEFAULT_TEMPLATES } from '@/lib/email-templates-defaults'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   try {
     if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })

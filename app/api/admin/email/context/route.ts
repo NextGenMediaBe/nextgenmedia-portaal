@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireStaff } from '@/lib/supabase/server'
 import { buildClientMailContext } from '@/lib/email-context'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 // GET ?client_id=&kind=&contract_id=&shoot_id= → ontvanger + placeholder-waarden
 export async function GET(req: NextRequest) {
   try {

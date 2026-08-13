@@ -7,6 +7,9 @@ import { revalidatePath } from 'next/cache'
 import { notifyMaintenanceRequest } from '@/lib/admin-alerts'
 import { requirePortalPermission, logPortalAction, type PortalSession } from '@/lib/portal-auth'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 // Store images in the 'contracts' bucket (always exists, admin service role bypasses RLS)
 // under a webdesign/ prefix so they stay separate from contract PDFs.
 const STORAGE_BUCKET = 'contracts'

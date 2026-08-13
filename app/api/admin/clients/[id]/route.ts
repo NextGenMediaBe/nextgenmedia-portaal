@@ -6,6 +6,9 @@ import { revalidatePath } from 'next/cache'
 import { validateBtw } from '@/lib/btw'
 import { clickupConfigured, deleteList } from '@/lib/clickup'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 // Klant-verwijdering ruimt ook storage, auth en (best-effort) ClickUp op.
 export const maxDuration = 60
 

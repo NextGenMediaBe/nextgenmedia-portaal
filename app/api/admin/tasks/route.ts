@@ -4,6 +4,9 @@ import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { randomUUID } from 'crypto'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 const BUCKET = 'contracts'
 const PRIORITIES = ['laag', 'normaal', 'hoog']
 const STATUSES = ['open', 'in_progress', 'done', 'cancelled']

@@ -4,6 +4,9 @@ import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { analysisToPromptText, type WebsiteAnalysis } from '@/lib/website-analyze'
 import { suggestContentGaps } from '@/lib/blog-ai'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 // GET ?id=<account_id>[&gaps=1] — SEO-dashboard per blogaccount.
 export async function GET(req: NextRequest) {
   try {

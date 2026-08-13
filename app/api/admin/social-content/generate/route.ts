@@ -4,6 +4,9 @@ import { createClient, createAdminSupabaseClient , isActiveStaff } from '@/lib/s
 import { generatePlan } from '@/lib/content-planner'
 import { revalidatePath } from 'next/cache'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 // GET — fetch the social-media config for a client (pre-fills the dialog)
 export async function GET(req: NextRequest) {
   try {

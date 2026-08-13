@@ -4,6 +4,9 @@ import { createClient, createAdminSupabaseClient , isActiveStaff } from '@/lib/s
 import { revalidatePath } from 'next/cache'
 import { clickupConfigured, deleteTask } from '@/lib/clickup'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 // Bulk-verwijderen kan meerdere (gethrottelde) ClickUp-calls vergen.
 export const maxDuration = 60
 

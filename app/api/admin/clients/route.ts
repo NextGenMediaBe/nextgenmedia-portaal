@@ -5,6 +5,9 @@ import { revalidatePath } from 'next/cache'
 import { validateBtw } from '@/lib/btw'
 import { encryptSecret } from '@/lib/crypto'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 const ServiceCfgSchema = z.object({
   start_month: z.string(),                          // YYYY-MM
   contract_months: z.number().int().min(1).max(60),

@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient , isActiveStaff } from '@/lib/supabase/server'
 import { CONTRACT_FIELD_TYPES, type ContractField } from '@/lib/contract-ai'
 
+// Gebruikt cookies/sessie: nooit statisch renderen.
+export const dynamic = 'force-dynamic'
+
 const VALID = new Set<string>(CONTRACT_FIELD_TYPES)
 
 // PATCH — admin bewaart de (gecontroleerde) velddefinities van een template.
