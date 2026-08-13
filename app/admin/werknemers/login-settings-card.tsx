@@ -24,12 +24,16 @@ export function LoginSettingsCard() {
   const [rows, setRows] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
+  // Staat de tabel er nog niet, dan zeggen we dat meteen — anders lijkt het
+  // alsof alles goed staat tot je op de knop drukt.
+  const [hint, setHint] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
       const r = await fetch('/api/admin/login-settings', { cache: 'no-store' })
       const j = await r.json(); if (!r.ok) throw new Error(j.error)
       setRows(j.accounts ?? [])
+      setHint(j.hint ?? null)
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Laden mislukt') } finally { setLoading(false) }
   }, [])
   useEffect(() => { load() }, [load])
@@ -74,6 +78,12 @@ export function LoginSettingsCard() {
         )}
       </div>
 
+      {hint && (
+        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+          {hint}
+        </p>
+      )}
+
       {loading ? (
         <div className="py-8 text-center text-gray-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></div>
       ) : rows.length === 0 ? (
@@ -95,7 +105,7 @@ export function LoginSettingsCard() {
 
               <button
                 onClick={() => toggle(a)}
-                disabled={busy === a.authUserId}
+                disabled={busy === a.authUserId || !!hint}
                 title={a.twoFactorRequired ? 'Code uitzetten voor dit account' : 'Code weer verplicht maken'}
                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
                   a.twoFactorRequired

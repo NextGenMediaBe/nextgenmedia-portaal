@@ -13,6 +13,16 @@ export const dynamic = 'force-dynamic'
  * daarom ook in het audit-log.
  */
 
+/** Bestaat de tabel nog niet, dan zegt PostgREST dat op deze manieren. */
+function missingTable(msg: string): boolean {
+  return /login_settings/i.test(msg) &&
+    /does not exist|schema cache|could not find|relation/i.test(msg)
+}
+
+const MIGRATION_HINT =
+  'De tabel login_settings bestaat nog niet in de database. Draai eerst de migratie ' +
+  '(supabase/migrations/99999999_SYNC_ALL.sql) — tot dan blijft de inlogcode voor iedereen verplicht.'
+
 type Account = {
   authUserId: string
   email: string | null
@@ -28,11 +38,15 @@ export async function GET() {
     if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const admin = createAdminSupabaseClient()
 
-    const [{ data: roles }, { data: staff }, { data: settings }] = await Promise.all([
+    const [{ data: roles }, { data: staff }, { data: settings, error: settingsErr }] = await Promise.all([
       admin.from('user_roles').select('user_id, role').eq('role', 'admin'),
       admin.from('staff_members').select('auth_user_id, name, email, active'),
       admin.from('login_settings').select('auth_user_id, two_factor_required'),
     ])
+
+    // Ontbreekt de tabel, dan tonen we dat meteen in het scherm i.p.v. de
+    // gebruiker te laten ontdekken dat opslaan niet werkt.
+    const ready = !(settingsErr && missingTable(settingsErr.message ?? ''))
 
     const required = new Map(
       ((settings ?? []) as { auth_user_id: string; two_factor_required: boolean }[])
@@ -70,7 +84,7 @@ export async function GET() {
     }
 
     out.sort((a, b) => (a.role === b.role ? (a.email ?? '').localeCompare(b.email ?? '') : a.role === 'admin' ? -1 : 1))
-    return NextResponse.json({ accounts: out })
+    return NextResponse.json({ accounts: out, ready, hint: ready ? null : MIGRATION_HINT })
   } catch (err) {
     return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
@@ -103,7 +117,13 @@ export async function PATCH(req: NextRequest) {
       updated_by: actor.id,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'auth_user_id' })
-    if (error) throw new Error(error.message)
+    if (error) {
+      // Deze route is admin-only, dus hier mag de échte oorzaak wél op het
+      // scherm — een algemene "er ging iets mis" helpt niemand verder.
+      if (missingTable(error.message)) return NextResponse.json({ error: MIGRATION_HINT }, { status: 503 })
+      console.error('[login-settings]', error)
+      return NextResponse.json({ error: `Opslaan mislukt: ${error.message}` }, { status: 400 })
+    }
 
     const meta = requestMeta(req)
     await logAudit({
