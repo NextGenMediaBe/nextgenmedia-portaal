@@ -2,6 +2,7 @@ import 'server-only'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import {
   sendEmail, cancelScheduledEmail, baseUrl, SCHEDULE_HORIZON_MS, RESTRICTED_KEY_HINT,
+  resendKeyFor,
 } from '@/lib/email'
 import { listPipelines, type SalesPipeline } from '@/lib/sales/pipelines'
 import { matchSignature } from '@/lib/sales/signatures'
@@ -119,6 +120,8 @@ type Built = {
   appt: ApptRow
   startsMs: number
   due: number
+  /** Sleutel van het merk; intrekken moet met dezelfde sleutel gebeuren. */
+  apiKey: string | undefined
   to: string
   subject: string
   text: string
@@ -187,6 +190,7 @@ async function buildReminder(
     ok: true,
     built: {
       appt: a, startsMs, due,
+      apiKey: resendKeyFor(pipeline.key),
       to: a.attendee_email,
       subject: today ? `Tot straks om ${hour}` : `Tot morgen om ${hour}`,
       text: lines.join('\n'),
@@ -196,6 +200,20 @@ async function buildReminder(
       attachments: attachmentFor(pipeline),
     },
   }
+}
+
+/**
+ * De sleutel van het merk waar deze afspraak bij hoort. Nodig om een al
+ * ingeplande mail te kunnen intrekken: dat moet met dezelfde sleutel als
+ * waarmee hij verstuurd is.
+ */
+async function apiKeyForAppointment(appointmentId: string): Promise<string | undefined> {
+  const admin = createAdminSupabaseClient()
+  const { data } = await admin.from('sales_appointments')
+    .select('pipeline_id').eq('id', appointmentId).maybeSingle()
+  const pipelineId = (data as { pipeline_id?: string | null } | null)?.pipeline_id ?? null
+  const pipelines = await listPipelines()
+  return resendKeyFor(pipelines.find((p) => p.id === pipelineId)?.key)
 }
 
 /**
@@ -262,6 +280,7 @@ export async function scheduleReminderFor(
   const res = await sendEmail({
     to: built.to, subject: built.subject, text: built.text, html: built.html,
     from: built.from, replyTo: built.replyTo, attachments: built.attachments,
+    apiKey: built.apiKey,
     // In het verleden inplannen mag niet; dan meteen versturen.
     scheduledAt: built.due > now.getTime() ? new Date(built.due).toISOString() : null,
   })
@@ -276,7 +295,7 @@ export async function scheduleReminderFor(
   if (!saved) {
     // Kunnen we niet vastleggen dát hij klaarstaat, dan kunnen we ook niet
     // garanderen dat hij maar één keer vertrekt. Dan liever intrekken.
-    if (res.id) await cancelScheduledEmail(res.id)
+    if (res.id) await cancelScheduledEmail(res.id, built.apiKey)
     return { outcome: 'error', error: 'De herinnering kon niet vastgelegd worden en is daarom ingetrokken.' }
   }
   return { outcome: 'scheduled' }
@@ -298,7 +317,7 @@ export async function cancelReminderFor(appointmentId: string): Promise<{ wasSen
   if (row.cancelled_at) return { wasSent: false }
 
   if (row.resend_id) {
-    const res = await cancelScheduledEmail(row.resend_id)
+    const res = await cancelScheduledEmail(row.resend_id, await apiKeyForAppointment(appointmentId))
     if (!res.ok) {
       /**
        * Intrekken lukte niet — vrijwel altijd omdat de mail al vertrokken is.
@@ -331,7 +350,7 @@ export async function cancelReminderManually(appointmentId: string, actorId?: st
   if (row?.cancelled_at) return { ok: true, message: 'Deze mail stond al geannuleerd.' }
 
   if (row?.resend_id) {
-    const res = await cancelScheduledEmail(row.resend_id)
+    const res = await cancelScheduledEmail(row.resend_id, await apiKeyForAppointment(appointmentId))
     // Al vertrokken? Dan valt er niets meer tegen te houden; dat moet je weten.
     // We doen bewust NIET alsof het gelukt is: de mail staat bij Resend klaar en
     // vertrekt hoe dan ook, wat onze eigen administratie ook beweert.
@@ -381,7 +400,7 @@ export async function rescheduleReminder(
 
   // Stond er al iets klaar, dan eerst weg — anders vertrekken er twee.
   if (row?.resend_id && !row.cancelled_at) {
-    const cancelled = await cancelScheduledEmail(row.resend_id)
+    const cancelled = await cancelScheduledEmail(row.resend_id, built.apiKey)
     if (!cancelled.ok) {
       const why = cancelled.error ?? 'onbekend'
       return {
@@ -396,6 +415,7 @@ export async function rescheduleReminder(
   const res = await sendEmail({
     to: built.to, subject: built.subject, text: built.text, html: built.html,
     from: built.from, replyTo: built.replyTo, attachments: built.attachments,
+    apiKey: built.apiKey,
     scheduledAt: atMs > now ? new Date(atMs).toISOString() : null,
   })
   if (!res.ok) return { ok: false, error: res.error ?? 'Versturen mislukt' }
@@ -407,7 +427,7 @@ export async function rescheduleReminder(
   }
   const saved = await saveReminderRow(payload, row?.id)
   if (!saved) {
-    if (res.id) await cancelScheduledEmail(res.id)
+    if (res.id) await cancelScheduledEmail(res.id, built.apiKey)
     return { ok: false, error: 'De wijziging kon niet vastgelegd worden. De mail is ingetrokken; probeer het opnieuw.' }
   }
 

@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { listPipelines } from '@/lib/sales/pipelines'
 import { reminderBody } from '@/lib/sales/reminders'
-import { sendEmail, baseUrl, EMAIL_FROM } from '@/lib/email'
+import { sendEmail, baseUrl, EMAIL_FROM, resendKeyFor } from '@/lib/email'
 import { logAudit, requestMeta } from '@/lib/audit'
 
 export const dynamic = 'force-dynamic'
@@ -16,7 +16,12 @@ export async function GET() {
   try {
     if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const pipelines = await listPipelines()
-    return NextResponse.json({ pipelines, defaultFrom: EMAIL_FROM })
+    // Enkel of er een eigen sleutel ingesteld is — nooit de sleutel zelf.
+    const withKeyInfo = pipelines.map((p) => ({
+      ...p,
+      ownKey: p.key === 'nextgensolutions' ? !!process.env.RESEND_API_KEY_SOLUTIONS : false,
+    }))
+    return NextResponse.json({ pipelines: withKeyInfo, defaultFrom: EMAIL_FROM })
   } catch (err) {
     return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
@@ -95,6 +100,8 @@ export async function POST(req: NextRequest) {
       from: p.reminder_from,
       replyTo: p.reminder_reply_to,
       attachments,
+      // Zelfde sleutel als de echte herinnering, zodat de test ook echt test.
+      apiKey: resendKeyFor(p.key),
     })
     if (!res.ok) return NextResponse.json({ error: res.error ?? 'Versturen mislukt' }, { status: 502 })
     return NextResponse.json({ ok: true, attached: attachments.length > 0 })

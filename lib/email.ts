@@ -34,8 +34,10 @@ export async function sendEmail(opts: {
    *  — maximaal 72 uur vooruit. Zo halen we een verzendmoment op de minuut
    *  zonder dat er elk kwartier een cron moet draaien. */
   scheduledAt?: string | null
+  /** Sleutel van een ander merk; leeg = de standaardsleutel. */
+  apiKey?: string | null
 }): Promise<SendResult> {
-  const apiKey = process.env.RESEND_API_KEY
+  const apiKey = opts.apiKey || process.env.RESEND_API_KEY
   if (!apiKey) return { ok: false, error: 'Geen mailprovider geconfigureerd (RESEND_API_KEY ontbreekt).' }
 
   const html = opts.html ?? `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;line-height:1.6;color:#111;white-space:pre-wrap">${escapeHtml(opts.text)}</div>`
@@ -77,6 +79,25 @@ export const RESTRICTED_KEY_HINT =
   '"Full access" aan en zet die als RESEND_API_KEY — anders kunnen we ingeplande ' +
   'mails niet intrekken en de bezorgstatus niet opvragen.'
 
+/**
+ * Welke Resend-sleutel hoort bij welk merk?
+ *
+ * NextGenSolutions mailt vanaf een eigen domein en heeft daarvoor een eigen
+ * sleutel (RESEND_API_KEY_SOLUTIONS). Ontbreekt die, dan valt alles terug op de
+ * gewone sleutel — dan vertrekt de mail nog steeds, alleen vanaf het andere
+ * domein.
+ *
+ * BELANGRIJK: een mail intrekken of zijn status opvragen moet met DEZELFDE
+ * sleutel gebeuren als waarmee hij verstuurd is. Vandaar dat deze keuze op één
+ * plek staat en overal opnieuw uit het merk afgeleid wordt.
+ */
+export function resendKeyFor(pipelineKey: string | null | undefined): string | undefined {
+  if (pipelineKey === 'nextgensolutions' && process.env.RESEND_API_KEY_SOLUTIONS) {
+    return process.env.RESEND_API_KEY_SOLUTIONS
+  }
+  return process.env.RESEND_API_KEY
+}
+
 export function isRestrictedKeyError(msg: string | null | undefined): boolean {
   return /restricted to only send|only send emails|not authorized|insufficient/i.test(msg ?? '')
 }
@@ -86,8 +107,8 @@ export function isRestrictedKeyError(msg: string | null | undefined): boolean {
  * geannuleerd of verplaatst wordt. Faalt dit, dan melden we dat: een
  * herinnering voor een afgezegde afspraak is erger dan geen herinnering.
  */
-export async function cancelScheduledEmail(id: string): Promise<SendResult> {
-  const apiKey = process.env.RESEND_API_KEY
+export async function cancelScheduledEmail(id: string, key?: string | null): Promise<SendResult> {
+  const apiKey = key || process.env.RESEND_API_KEY
   if (!apiKey) return { ok: false, error: 'Geen mailprovider geconfigureerd.' }
   if (!id) return { ok: false, error: 'Geen mail-id' }
   try {
@@ -149,8 +170,8 @@ export type EmailStatusResult =
   | { ok: true; status: EmailStatus }
   | { ok: false; restricted: boolean }
 
-export async function getEmailStatus(id: string): Promise<EmailStatusResult> {
-  const apiKey = process.env.RESEND_API_KEY
+export async function getEmailStatus(id: string, key?: string | null): Promise<EmailStatusResult> {
+  const apiKey = key || process.env.RESEND_API_KEY
   if (!apiKey || !id) return { ok: false, restricted: false }
   try {
     const res = await fetch(`https://api.resend.com/emails/${encodeURIComponent(id)}`, {

@@ -11,6 +11,8 @@ type Pipeline = {
   brochure_filename: string | null
   reminder_from: string | null
   reminder_reply_to: string | null
+  /** Heeft dit merk een eigen Resend-sleutel in de omgeving staan? */
+  ownKey?: boolean
 }
 
 /**
@@ -125,6 +127,16 @@ export function ReminderSettings({ onClose }: { onClose: () => void }) {
                 Leeg = <b>{defaultFrom}</b>. Wil je vanaf een ander domein sturen, dan moet dat domein eerst
                 geverifieerd zijn bij Resend — anders weigert die de mail.
               </p>
+              {p.key === 'nextgensolutions' && (
+                <p className={`text-[11px] mt-1 rounded-lg px-2 py-1 border ${
+                  p.ownKey
+                    ? 'text-green-800 bg-green-50 border-green-200'
+                    : 'text-amber-800 bg-amber-50 border-amber-200'}`}>
+                  {p.ownKey
+                    ? 'Eigen Resend-sleutel gevonden (RESEND_API_KEY_SOLUTIONS) — deze mails vertrekken daarmee.'
+                    : 'Geen RESEND_API_KEY_SOLUTIONS gevonden. Deze mails vertrekken met de gewone sleutel, dus vanaf het NextGenMedia-domein.'}
+                </p>
+              )}
             </div>
 
             <div>

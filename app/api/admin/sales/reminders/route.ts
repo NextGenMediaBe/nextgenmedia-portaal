@@ -1,7 +1,7 @@
 import { safeMessage } from '@/lib/api-error'
 import { NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
-import { getEmailStatus, RESTRICTED_KEY_HINT } from '@/lib/email'
+import { getEmailStatus, RESTRICTED_KEY_HINT, resendKeyFor } from '@/lib/email'
 import { listPipelines } from '@/lib/sales/pipelines'
 import { getOrCreateSalesOrg } from '@/lib/sales/service'
 import { dueAt } from '@/lib/sales/reminders'
@@ -143,15 +143,22 @@ export async function GET() {
     })
 
     // Echte status ophalen, nieuwste eerst — daar wil je als eerste naar kijken.
+    // De sleutel per merk onthouden: een status opvragen moet met dezelfde
+    // sleutel als waarmee de mail verstuurd is.
+    const keyByPipelineName = new Map(pipelines.map((p) => [p.name, resendKeyFor(p.key)]))
     const withId = items
-      .map((it, i) => ({ it, i, id: reminders.get(it.appointmentId)?.resend_id ?? null }))
-      .filter((x): x is { it: Item; i: number; id: string } => !!x.id)
+      .map((it, i) => ({
+        it, i,
+        id: reminders.get(it.appointmentId)?.resend_id ?? null,
+        key: keyByPipelineName.get(it.pipeline ?? '') ?? undefined,
+      }))
+      .filter((x): x is { it: Item; i: number; id: string; key: string | undefined } => !!x.id)
       .sort((a, b) => new Date(b.it.dueAt).getTime() - new Date(a.it.dueAt).getTime())
       .slice(0, MAX_STATUS_LOOKUPS)
 
     let restrictedKey = false
-    await Promise.all(withId.map(async ({ it, id }) => {
-      const res = await getEmailStatus(id)
+    await Promise.all(withId.map(async ({ it, id, key }) => {
+      const res = await getEmailStatus(id, key)
       if (!res.ok) {
         if (res.restricted) restrictedKey = true
         return
