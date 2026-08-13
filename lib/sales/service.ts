@@ -140,14 +140,32 @@ export async function logLeadEvent(leadId: string, e: {
   })
 }
 
+export type CalendarOwner = {
+  id: string; name: string; account_email: string | null; status: string; active: boolean
+}
+
 export type CalendarData = {
   client: SalesClient
+  owners: CalendarOwner[]              // de agenda's (personen) van deze klant
+  ownerId: string | null               // welke agenda is getoond
   segments: Interval[]                 // WIT = boekbaar
   appointments: {
     id: string; starts_at: string; ends_at: string; status: string
     lead_id: string | null; company: string | null; contact: string | null
+    calendar_id: string | null
   }[]
   connected: boolean
+}
+
+/** Alle gekoppelde agenda's (personen) van een klant. */
+export async function listOwners(salesClientId: string): Promise<CalendarOwner[]> {
+  const admin = createAdminSupabaseClient()
+  const { data } = await admin
+    .from('sales_calendar_connections')
+    .select('id, name, account_email, status, active')
+    .eq('sales_client_id', salesClientId)
+    .order('name')
+  return ((data ?? []) as CalendarOwner[]).filter((o) => o.active !== false)
 }
 
 /**
@@ -155,30 +173,56 @@ export type CalendarData = {
  * hier op de SERVER berekend en zo doorgegeven aan de UI, zodat tekenen en
  * hervalideren gegarandeerd dezelfde bron gebruiken.
  */
-export async function loadCalendar(salesClientId: string, from: number, to: number): Promise<CalendarData | null> {
+export async function loadCalendar(
+  salesClientId: string, from: number, to: number, ownerId?: string | null,
+): Promise<CalendarData | null> {
   const admin = createAdminSupabaseClient()
   const client = await getSalesClient(salesClientId)
   if (!client) return null
 
-  const [{ data: rules }, { data: exceptions }, { data: appts }, { data: conn }] = await Promise.all([
-    admin.from('sales_availability_rules').select('weekday, start_time, end_time').eq('sales_client_id', salesClientId),
-    admin.from('sales_availability_exceptions').select('date, closed, start_time, end_time').eq('sales_client_id', salesClientId),
+  const owners = await listOwners(salesClientId)
+  // Geen agenda gekozen → de eerste. Zo werkt het scherm meteen bij één agenda.
+  const active = owners.find((o) => o.id === ownerId) ?? owners[0] ?? null
+
+  const [{ data: rules }, { data: exceptions }, { data: appts }] = await Promise.all([
+    admin.from('sales_availability_rules').select('weekday, start_time, end_time, calendar_id').eq('sales_client_id', salesClientId),
+    admin.from('sales_availability_exceptions').select('date, closed, start_time, end_time, calendar_id').eq('sales_client_id', salesClientId),
     admin.from('sales_appointments')
-      .select('id, starts_at, ends_at, status, lead_id, contact_id')
+      .select('id, starts_at, ends_at, status, lead_id, contact_id, calendar_id')
       .eq('sales_client_id', salesClientId).neq('status', 'cancelled')
       // Ruime marge: een afspraak die vóór het venster start kan erin doorlopen.
       .gte('starts_at', new Date(from - 86400000).toISOString())
       .lte('starts_at', new Date(to + 86400000).toISOString()),
-    admin.from('sales_calendar_connections').select('status').eq('sales_client_id', salesClientId).eq('provider', 'google').maybeSingle(),
   ])
 
-  const appointments = (appts ?? []) as { id: string; starts_at: string; ends_at: string; status: string; lead_id: string | null; contact_id: string | null }[]
-  const busy = await fetchBusy(salesClientId, from, to)
+  type Row = { calendar_id?: string | null }
+  /**
+   * Regels voor déze agenda. Heeft de persoon eigen werkuren, dan gelden die;
+   * anders vallen we terug op de regels van de klant (calendar_id NULL). Zo
+   * hoef je niet voor elke persoon alles opnieuw in te vullen.
+   */
+  const forOwner = <T extends Row>(list: T[] | null): T[] => {
+    const all = list ?? []
+    const own = active ? all.filter((r) => r.calendar_id === active.id) : []
+    return own.length > 0 ? own : all.filter((r) => !r.calendar_id)
+  }
+
+  const allAppts = (appts ?? []) as {
+    id: string; starts_at: string; ends_at: string; status: string
+    lead_id: string | null; contact_id: string | null; calendar_id: string | null
+  }[]
+  // Alleen de afspraken van déze persoon blokkeren zijn agenda; een afspraak
+  // van Marco mag Bram niet in de weg zitten.
+  const appointments = active
+    ? allAppts.filter((a) => a.calendar_id === active.id || a.calendar_id === null)
+    : allAppts
+
+  const busy = active ? await fetchBusy(active.id, from, to) : []
 
   const segments = bookableSegments({
     from, to, tz: client.timezone,
-    rules: (rules ?? []) as WorkRule[],
-    exceptions: (exceptions ?? []) as WorkException[],
+    rules: forOwner(rules as (WorkRule & Row)[] | null) as WorkRule[],
+    exceptions: forOwner(exceptions as (WorkException & Row)[] | null) as WorkException[],
     busy,
     appointments: appointments.map((a) => ({ start: new Date(a.starts_at).getTime(), end: new Date(a.ends_at).getTime() })),
     booking: {
@@ -205,10 +249,13 @@ export async function loadCalendar(salesClientId: string, from: number, to: numb
 
   return {
     client,
+    owners,
+    ownerId: active?.id ?? null,
     segments,
-    connected: (conn as { status?: string } | null)?.status === 'connected',
+    connected: active?.status === 'connected',
     appointments: appointments.map((a) => ({
       id: a.id, starts_at: a.starts_at, ends_at: a.ends_at, status: a.status, lead_id: a.lead_id,
+      calendar_id: a.calendar_id,
       company: a.lead_id ? nameByLead.get(a.lead_id)?.company ?? null : null,
       contact: a.lead_id ? nameByLead.get(a.lead_id)?.contact ?? null : null,
     })),

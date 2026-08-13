@@ -15,7 +15,9 @@ export async function GET(req: NextRequest) {
     }
     const client = req.nextUrl.searchParams.get('client') ?? ''
     if (!client) return NextResponse.json({ error: 'client vereist' }, { status: 400 })
-    return NextResponse.redirect(authUrl(client, randomUUID()))
+    // Naam van de persoon wiens agenda we koppelen (Bram, Marco, ...).
+    const name = (req.nextUrl.searchParams.get('name') ?? '').trim()
+    return NextResponse.redirect(authUrl(client, randomUUID(), name))
   } catch (err) {
     return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }

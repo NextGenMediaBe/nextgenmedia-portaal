@@ -15,9 +15,9 @@ export async function GET(req: NextRequest) {
       admin.from('sales_availability_rules').select('*').eq('sales_client_id', client).order('weekday'),
       admin.from('sales_availability_exceptions').select('*').eq('sales_client_id', client).order('date'),
       admin.from('sales_clients').select('*').eq('id', client).maybeSingle(),
-      admin.from('sales_calendar_connections').select('provider, account_email, status').eq('sales_client_id', client).maybeSingle(),
+      admin.from('sales_calendar_connections').select('id, name, provider, account_email, status, active').eq('sales_client_id', client).order('name'),
     ])
-    return NextResponse.json({ rules: rules ?? [], exceptions: exceptions ?? [], client: c, connection: conn ?? null })
+    return NextResponse.json({ rules: rules ?? [], exceptions: exceptions ?? [], client: c, owners: conn ?? [] })
   } catch (err) {
     return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }
@@ -33,22 +33,31 @@ export async function POST(req: NextRequest) {
     if (!client) return NextResponse.json({ error: 'client vereist' }, { status: 400 })
     const admin = createAdminSupabaseClient()
 
+    // Voor wie gelden deze uren? Leeg = voor de hele klant (elke agenda zonder
+    // eigen uren); een agenda-id = alleen voor die persoon.
+    const scope: string | null = b.calendarId ? String(b.calendarId) : null
+    const scoped = <T extends { eq: (c: string, v: unknown) => T; is: (c: string, v: null) => T }>(q: T): T =>
+      scope ? q.eq('calendar_id', scope) : q.is('calendar_id', null)
+
     if (Array.isArray(b.rules)) {
       const rows = b.rules
         .filter((r: { start_time?: string; end_time?: string }) => r.start_time && r.end_time && r.end_time > r.start_time)
         .map((r: { weekday: number; start_time: string; end_time: string }) => ({
-          sales_client_id: client, weekday: Number(r.weekday), start_time: r.start_time, end_time: r.end_time,
+          sales_client_id: client, calendar_id: scope,
+          weekday: Number(r.weekday), start_time: r.start_time, end_time: r.end_time,
         }))
-      await admin.from('sales_availability_rules').delete().eq('sales_client_id', client)
+      // Alleen de regels van dít bereik vervangen; die van andere personen
+      // blijven staan.
+      await scoped(admin.from('sales_availability_rules').delete().eq('sales_client_id', client))
       if (rows.length) await admin.from('sales_availability_rules').insert(rows)
     }
 
     if (Array.isArray(b.exceptions)) {
-      await admin.from('sales_availability_exceptions').delete().eq('sales_client_id', client)
+      await scoped(admin.from('sales_availability_exceptions').delete().eq('sales_client_id', client))
       const rows = b.exceptions
         .filter((e: { date?: string }) => !!e.date)
         .map((e: { date: string; closed?: boolean; start_time?: string; end_time?: string; note?: string }) => ({
-          sales_client_id: client, date: e.date, closed: e.closed !== false,
+          sales_client_id: client, calendar_id: scope, date: e.date, closed: e.closed !== false,
           start_time: e.closed === false ? e.start_time || null : null,
           end_time: e.closed === false ? e.end_time || null : null,
           note: e.note || null,

@@ -1755,3 +1755,61 @@ DROP POLICY IF EXISTS "sales_appt_reminders admin all" ON public.sales_appointme
 CREATE POLICY "sales_appt_reminders admin all" ON public.sales_appointment_reminders FOR ALL TO authenticated
   USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
   WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
+-- ── Meerdere agenda's per klant (Bram, Marco, …) ────────────────────────────
+-- Tot nu had een klant één agenda. Nu kan één klant meerdere agenda's hebben,
+-- elk van een persoon, met eigen werkuren. Een setter kiest bij het boeken
+-- eerst de persoon en sleept dan in diens agenda.
+--
+-- Volledig terugwaarts compatibel: bestaande rijen hebben calendar_id NULL en
+-- blijven werken als "geldt voor de hele klant".
+
+ALTER TABLE public.sales_calendar_connections
+  ADD COLUMN IF NOT EXISTS name   text,               -- 'Bram', 'Marco'
+  ADD COLUMN IF NOT EXISTS active boolean NOT NULL DEFAULT true,
+  ADD COLUMN IF NOT EXISTS color  text;               -- kleur van de blokjes
+
+-- De oude regel liet maar één agenda per klant toe.
+DROP INDEX IF EXISTS public.sales_calconn_client;
+-- Wel: nooit twee keer dezelfde Google-agenda binnen dezelfde klant.
+CREATE UNIQUE INDEX IF NOT EXISTS sales_calconn_unique_cal
+  ON public.sales_calendar_connections (sales_client_id, provider, calendar_id);
+
+-- Werkuren en uitzonderingen mogen nu per agenda gelden.
+-- NULL = geldt voor de hele klant (en dus voor elke agenda zonder eigen uren).
+ALTER TABLE public.sales_availability_rules
+  ADD COLUMN IF NOT EXISTS calendar_id uuid REFERENCES public.sales_calendar_connections(id) ON DELETE CASCADE;
+ALTER TABLE public.sales_availability_exceptions
+  ADD COLUMN IF NOT EXISTS calendar_id uuid REFERENCES public.sales_calendar_connections(id) ON DELETE CASCADE;
+
+-- De uitzondering-per-dag was uniek per klant; dat moet nu per agenda kunnen.
+DROP INDEX IF EXISTS public.sales_avail_exc_day;
+CREATE UNIQUE INDEX IF NOT EXISTS sales_avail_exc_day_cal
+  ON public.sales_availability_exceptions (sales_client_id, COALESCE(calendar_id, '00000000-0000-0000-0000-000000000000'::uuid), date);
+
+-- In welke agenda staat de afspraak?
+ALTER TABLE public.sales_appointments
+  ADD COLUMN IF NOT EXISTS calendar_id uuid REFERENCES public.sales_calendar_connections(id) ON DELETE SET NULL;
+
+-- Dubbele boeking moet PER AGENDA gelden: Bram en Marco mogen tegelijk een
+-- afspraak hebben, dezelfde persoon niet twee keer. COALESCE zorgt dat oude
+-- rijen zonder agenda elkaar nog steeds blokkeren (NULL = NULL geldt niet in
+-- een exclusion-constraint, een vaste sentinel wél).
+ALTER TABLE public.sales_appointments DROP CONSTRAINT IF EXISTS sales_appt_no_overlap;
+DO $sales$ BEGIN
+  ALTER TABLE public.sales_appointments
+    ADD CONSTRAINT sales_appt_no_overlap
+    EXCLUDE USING gist (
+      sales_client_id WITH =,
+      (COALESCE(calendar_id, '00000000-0000-0000-0000-000000000000'::uuid)) WITH =,
+      tstzrange(starts_at, ends_at, '[)') WITH &&
+    ) WHERE (status <> 'cancelled');
+EXCEPTION WHEN duplicate_object THEN NULL; WHEN duplicate_table THEN NULL; END $sales$;
+
+CREATE INDEX IF NOT EXISTS sales_appt_calendar
+  ON public.sales_appointments (calendar_id, starts_at) WHERE status <> 'cancelled';
+
+-- Bestaande koppelingen een naam geven zodat ze herkenbaar blijven in de UI.
+UPDATE public.sales_calendar_connections
+   SET name = COALESCE(name, account_email, 'Agenda')
+ WHERE name IS NULL;

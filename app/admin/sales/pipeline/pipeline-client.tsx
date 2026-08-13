@@ -4,10 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import {
-  Loader2, Plus, Search, Phone, Mail, X, CalendarClock, Archive, PhoneOff, Tag, Clock, Headphones,
+  Loader2, Plus, Search, Phone, Mail, X, CalendarClock, Archive, PhoneOff, Tag, Clock, Headphones, Upload,
 } from 'lucide-react'
 import { MANUAL_STAGES, stageLabel, STAGES } from '@/lib/sales/stages'
 import { FocusMode } from './focus-mode'
+import { ImportModal } from './import-modal'
 
 type Client = { id: string; name: string }
 type Lead = {
@@ -48,6 +49,7 @@ export function PipelineClient({ clients, initialClientId }: { clients: Client[]
   const [newLead, setNewLead] = useState(false)
   const [newClient, setNewClient] = useState(false)
   const [focus, setFocus] = useState(false)
+  const [importing, setImporting] = useState(false)
   // Selectie voor bulk-acties (§4).
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [bulkBusy, setBulkBusy] = useState(false)
@@ -156,6 +158,9 @@ export function PipelineClient({ clients, initialClientId }: { clients: Client[]
         <div className="flex items-center gap-2">
           <button onClick={() => setFocus(true)} disabled={leads.length === 0} className="btn-secondary text-sm" title="Belmodus: één lead per keer, sneltoetsen 1–6">
             <Headphones className="h-4 w-4" />Focus Mode
+          </button>
+          <button onClick={() => setImporting(true)} className="btn-secondary text-sm" title="Lijst met prospects in bulk toevoegen">
+            <Upload className="h-4 w-4" />Importeren
           </button>
           <button onClick={() => setNewLead(true)} className="btn-primary text-sm"><Plus className="h-4 w-4" />Nieuwe lead</button>
           <button onClick={() => setNewClient(true)} className="btn-secondary text-sm"><Plus className="h-4 w-4" />Nieuwe klant</button>
@@ -322,6 +327,8 @@ export function PipelineClient({ clients, initialClientId }: { clients: Client[]
           onChanged={() => { /* lijst wordt bij sluiten ververst */ }}
         />
       )}
+
+      {importing && <ImportModal clientId={clientId} onClose={() => setImporting(false)} onDone={load} />}
 
       {newLead && <NewLeadModal clientId={clientId} onClose={() => setNewLead(false)} onCreated={() => { setNewLead(false); load() }} />}
       {newClient && <NewClientModal onClose={() => setNewClient(false)} />}

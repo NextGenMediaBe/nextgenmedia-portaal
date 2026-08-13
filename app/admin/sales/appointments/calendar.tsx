@@ -44,6 +44,9 @@ export function SalesCalendar({ clients, initialClientId, initialLeadId }: {
   const [appointments, setAppointments] = useState<Appt[]>([])
   const [connected, setConnected] = useState(false)
   const [leads, setLeads] = useState<LeadOption[]>([])
+  // Agenda's (personen) van deze klant — Bram, Marco, …
+  const [owners, setOwners] = useState<{ id: string; name: string; account_email: string | null; status: string }[]>([])
+  const [ownerId, setOwnerId] = useState<string>('')
 
   // Sleep-selectie
   const [drag, setDrag] = useState<{ segIdx: number; start: number; end: number } | null>(null)
@@ -63,14 +66,19 @@ export function SalesCalendar({ clients, initialClientId, initialLeadId }: {
     if (!clientId) return
     setLoading(true)
     try {
-      const res = await fetch(`/api/admin/sales/calendar?client=${clientId}&from=${from}&to=${to}`)
+      const p = new URLSearchParams({ client: clientId, from: String(from), to: String(to) })
+      if (ownerId) p.set('owner', ownerId)
+      const res = await fetch(`/api/admin/sales/calendar?${p}`)
       const j = await res.json()
       if (!res.ok) throw new Error(j.error)
       setSegments(j.segments ?? [])
       setAppointments(j.appointments ?? [])
       setConnected(!!j.connected)
+      setOwners(j.owners ?? [])
+      // De server bepaalt welke agenda getoond wordt als er nog geen keuze is.
+      if (j.ownerId && j.ownerId !== ownerId) setOwnerId(j.ownerId)
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Agenda laden mislukt') } finally { setLoading(false) }
-  }, [clientId, from, to])
+  }, [clientId, from, to, ownerId])
   useEffect(() => { load() }, [load])
 
   // Leads voor de koppeling in het boekingspaneel.
@@ -225,9 +233,17 @@ export function SalesCalendar({ clients, initialClientId, initialLeadId }: {
       {/* Kop: klant, week, koppeling */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
-          <select className="input-base w-auto" value={clientId} onChange={(e) => setClientId(e.target.value)}>
+          <select className="input-base w-auto" value={clientId}
+            onChange={(e) => { setClientId(e.target.value); setOwnerId('') }}>
             {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
+          {/* Wiens agenda? Bij één agenda is deze keuze overbodig. */}
+          {owners.length > 1 && (
+            <select className="input-base w-auto" value={ownerId} onChange={(e) => setOwnerId(e.target.value)}
+              title="Voor wie boek je?">
+              {owners.map((o) => <option key={o.id} value={o.id}>{o.name || o.account_email || 'Agenda'}</option>)}
+            </select>
+          )}
           <div className="flex items-center gap-1">
             <button onClick={() => setWeekStart(new Date(from - 7 * 86400000))} className="btn-secondary px-2" aria-label="Vorige week"><ChevronLeft className="h-4 w-4" /></button>
             <button onClick={() => setWeekStart(startOfWeek(new Date()))} className="btn-secondary text-sm">Deze week</button>
@@ -241,19 +257,26 @@ export function SalesCalendar({ clients, initialClientId, initialLeadId }: {
           <button onClick={() => setShowAvailability(true)} className="btn-secondary text-sm" title="Werkuren, buffers en boekingsregels">
             <Settings2 className="h-4 w-4" />Beschikbaarheid
           </button>
-          {connected ? (
-            <span className="status-badge bg-green-100 text-green-700 flex items-center gap-1"><Link2 className="h-3 w-3" />Agenda gekoppeld</span>
-          ) : (
-            <a href={`/api/admin/sales/calendar/connect?client=${clientId}`} className="btn-primary text-sm">
-              <Link2 className="h-4 w-4" />Google Agenda koppelen
-            </a>
+          {connected && (
+            <span className="status-badge bg-green-100 text-green-700 flex items-center gap-1"><Link2 className="h-3 w-3" />Gekoppeld</span>
           )}
+          {/* Meerdere agenda's: elke persoon koppelt zijn eigen Google-account. */}
+          <button
+            onClick={() => {
+              const naam = prompt('Van wie is deze agenda? (bv. Bram of Marco)')
+              if (naam === null) return
+              window.location.href = `/api/admin/sales/calendar/connect?client=${clientId}&name=${encodeURIComponent(naam.trim())}`
+            }}
+            className={owners.length === 0 ? 'btn-primary text-sm' : 'btn-secondary text-sm'}>
+            <Link2 className="h-4 w-4" />{owners.length === 0 ? 'Google Agenda koppelen' : 'Agenda toevoegen'}
+          </button>
         </div>
       </div>
 
-      {!connected && (
+      {owners.length === 0 && (
         <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          Zonder gekoppelde agenda zien we de bezette momenten van deze klant niet en kan er niet geboekt worden.
+          Nog geen agenda gekoppeld. Zonder agenda zien we geen bezette momenten en kan er niet geboekt worden.
+          Koppel per persoon (Bram, Marco, ...) een eigen Google-agenda.
         </p>
       )}
 
@@ -369,6 +392,8 @@ export function SalesCalendar({ clients, initialClientId, initialLeadId }: {
           end={booking.end}
           leads={leads}
           initialLeadId={initialLeadId}
+          ownerId={ownerId}
+          ownerName={owners.find((o) => o.id === ownerId)?.name ?? null}
           onClose={() => setBooking(null)}
           onBooked={() => { setBooking(null); load() }}
         />
@@ -378,6 +403,7 @@ export function SalesCalendar({ clients, initialClientId, initialLeadId }: {
         <AvailabilityPanel
           clientId={clientId}
           clientName={client.name}
+          initialOwnerId={ownerId}
           onClose={() => setShowAvailability(false)}
           onSaved={() => { setShowAvailability(false); load() }}
         />
@@ -391,8 +417,9 @@ export function SalesCalendar({ clients, initialClientId, initialLeadId }: {
 }
 
 // ── Boekingspaneel ───────────────────────────────────────────────────────────
-function BookingPanel({ clientId, start, end, leads, initialLeadId, onClose, onBooked }: {
-  clientId: string; start: number; end: number
+function BookingPanel({ clientId, ownerId, ownerName, start, end, leads, initialLeadId, onClose, onBooked }: {
+  clientId: string; ownerId: string; ownerName: string | null
+  start: number; end: number
   leads: LeadOption[]; initialLeadId?: string
   onClose: () => void; onBooked: () => void
 }) {
@@ -411,7 +438,7 @@ function BookingPanel({ clientId, start, end, leads, initialLeadId, onClose, onB
       const res = await fetch('/api/admin/sales/appointments', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          salesClientId: clientId, startsAt: start, endsAt: end,
+          salesClientId: clientId, ownerId: ownerId || null, startsAt: start, endsAt: end,
           leadId: leadId || null, attendeeEmail: email.trim() || null,
           notes, clientNote, withMeet,
         }),

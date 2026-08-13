@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     // Ruim begrensd zodat één verzoek nooit een half jaar aan agenda ophaalt.
     if (to - from > 40 * 86400000) return NextResponse.json({ error: 'Venster te groot' }, { status: 400 })
 
-    const data = await loadCalendar(client, from, to)
+    const data = await loadCalendar(client, from, to, sp.get('owner'))
     if (!data) return NextResponse.json({ error: 'Klant niet gevonden' }, { status: 404 })
     return NextResponse.json(data)
   } catch (err) {

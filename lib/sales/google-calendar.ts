@@ -27,7 +27,7 @@ export function redirectUri(): string {
 }
 
 /** Stap 1 van OAuth: waar sturen we de gebruiker heen. */
-export function authUrl(salesClientId: string, state: string): string {
+export function authUrl(salesClientId: string, state: string, name: string): string {
   const p = new URLSearchParams({
     client_id: process.env.GOOGLE_CLIENT_ID ?? '',
     redirect_uri: redirectUri(),
@@ -35,7 +35,8 @@ export function authUrl(salesClientId: string, state: string): string {
     scope: SCOPES.join(' '),
     access_type: 'offline',       // nodig voor een refresh token
     prompt: 'consent',            // dwingt een refresh token af, ook bij herkoppelen
-    state: `${salesClientId}:${state}`,
+    // De naam van de agenda reist mee, zodat de callback weet van wie hij is.
+    state: `${salesClientId}:${state}:${encodeURIComponent(name)}`,
   })
   return `${AUTH_URL}?${p.toString()}`
 }
@@ -54,7 +55,7 @@ async function tokenRequest(body: Record<string, string>): Promise<TokenResponse
 }
 
 /** Stap 2: code omruilen voor tokens en de koppeling opslaan. */
-export async function exchangeCode(salesClientId: string, code: string): Promise<void> {
+export async function exchangeCode(salesClientId: string, code: string, name: string): Promise<void> {
   const tok = await tokenRequest({
     code,
     client_id: process.env.GOOGLE_CLIENT_ID ?? '',
@@ -75,16 +76,22 @@ export async function exchangeCode(salesClientId: string, code: string): Promise
   } catch { /* niet kritiek */ }
 
   const admin = createAdminSupabaseClient()
+  // Eén agenda per Google-account binnen dezelfde klant. Koppel je hetzelfde
+  // account opnieuw, dan verversen we de tokens i.p.v. een tweede rij te maken.
+  // Zonder e-mailadres valt 'primary' terug op één rij per klant.
+  const calendarId = email ?? 'primary'
   await admin.from('sales_calendar_connections').upsert({
     sales_client_id: salesClientId,
     provider: 'google',
+    name: name || email || 'Agenda',
     account_email: email,
-    calendar_id: 'primary',
+    calendar_id: calendarId,
+    active: true,
     access_token: encryptSecret(tok.access_token),
     refresh_token: tok.refresh_token ? encryptSecret(tok.refresh_token) : null,
     token_expires_at: new Date(Date.now() + (tok.expires_in ?? 3600) * 1000).toISOString(),
     status: 'connected',
-  }, { onConflict: 'sales_client_id,provider' })
+  }, { onConflict: 'sales_client_id,provider,calendar_id' })
 }
 
 type Connection = {
@@ -92,14 +99,18 @@ type Connection = {
   access_token: string | null; refresh_token: string | null; token_expires_at: string | null
 }
 
-/** Geldig toegangstoken ophalen; vernieuwt automatisch als het verlopen is. */
-async function accessToken(salesClientId: string): Promise<{ token: string; calendarId: string } | null> {
+/**
+ * Geldig toegangstoken ophalen; vernieuwt automatisch als het verlopen is.
+ * `connectionId` = de agenda (persoon). Alle aanroepen werken nu per agenda,
+ * zodat Bram en Marco elk hun eigen tokens en agenda houden.
+ */
+async function accessToken(connectionId: string): Promise<{ token: string; calendarId: string } | null> {
   const admin = createAdminSupabaseClient()
   const { data } = await admin
     .from('sales_calendar_connections')
-    .select('id, calendar_id, access_token, refresh_token, token_expires_at')
-    .eq('sales_client_id', salesClientId).eq('provider', 'google').maybeSingle()
-  const conn = data as Connection | null
+    .select('id, calendar_id, account_email, access_token, refresh_token, token_expires_at')
+    .eq('id', connectionId).maybeSingle()
+  const conn = data as (Connection & { account_email?: string | null }) | null
   if (!conn?.access_token) return null
 
   const calendarId = conn.calendar_id || 'primary'
@@ -130,8 +141,8 @@ async function accessToken(salesClientId: string): Promise<{ token: string; cale
 }
 
 /** Bezette momenten uit de agenda van de klant — voedt het grijs (§7). */
-export async function fetchBusy(salesClientId: string, from: number, to: number): Promise<Interval[]> {
-  const auth = await accessToken(salesClientId)
+export async function fetchBusy(connectionId: string, from: number, to: number): Promise<Interval[]> {
+  const auth = await accessToken(connectionId)
   if (!auth) return []
   try {
     const res = await fetch(`${API}/freeBusy`, {
@@ -157,7 +168,7 @@ export async function fetchBusy(salesClientId: string, from: number, to: number)
 export type CreatedEvent = { eventId: string; meetUrl: string | null }
 
 /** Event aanmaken in de agenda van de klant, optioneel met Google Meet (§7). */
-export async function createEvent(salesClientId: string, opts: {
+export async function createEvent(connectionId: string, opts: {
   summary: string
   description?: string
   startsAt: number
@@ -166,8 +177,8 @@ export async function createEvent(salesClientId: string, opts: {
   attendeeEmail?: string | null
   withMeet?: boolean
 }): Promise<CreatedEvent> {
-  const auth = await accessToken(salesClientId)
-  if (!auth) throw new Error('Geen (geldige) agendakoppeling voor deze klant')
+  const auth = await accessToken(connectionId)
+  if (!auth) throw new Error('Deze agenda is niet (meer) gekoppeld')
 
   const body: Record<string, unknown> = {
     summary: opts.summary,
@@ -192,9 +203,9 @@ export async function createEvent(salesClientId: string, opts: {
 }
 
 /** Verplaatsen — houdt het Google-event gelijk aan onze afspraak. */
-export async function moveEvent(salesClientId: string, eventId: string, startsAt: number, endsAt: number, timezone: string): Promise<void> {
-  const auth = await accessToken(salesClientId)
-  if (!auth) throw new Error('Geen (geldige) agendakoppeling voor deze klant')
+export async function moveEvent(connectionId: string, eventId: string, startsAt: number, endsAt: number, timezone: string): Promise<void> {
+  const auth = await accessToken(connectionId)
+  if (!auth) throw new Error('Deze agenda is niet (meer) gekoppeld')
   const res = await fetch(`${API}/calendars/${encodeURIComponent(auth.calendarId)}/events/${encodeURIComponent(eventId)}`, {
     method: 'PATCH',
     headers: { Authorization: `Bearer ${auth.token}`, 'Content-Type': 'application/json' },
@@ -210,8 +221,8 @@ export async function moveEvent(salesClientId: string, eventId: string, startsAt
 }
 
 /** Annuleren — geen wees-events laten staan (§7). */
-export async function deleteEvent(salesClientId: string, eventId: string): Promise<void> {
-  const auth = await accessToken(salesClientId)
+export async function deleteEvent(connectionId: string, eventId: string): Promise<void> {
+  const auth = await accessToken(connectionId)
   if (!auth) return
   // 404/410 = al weg; dat is geen fout voor ons.
   await fetch(`${API}/calendars/${encodeURIComponent(auth.calendarId)}/events/${encodeURIComponent(eventId)}?sendUpdates=all`, {

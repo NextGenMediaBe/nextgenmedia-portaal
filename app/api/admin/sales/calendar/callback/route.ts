@@ -15,12 +15,13 @@ export async function GET(req: NextRequest) {
     if (!(await requireStaff())) return NextResponse.redirect(`${baseUrl()}/login`)
     const sp = req.nextUrl.searchParams
     const state = sp.get('state') ?? ''
-    const salesClientId = state.split(':')[0] ?? ''
+    const [salesClientId = '', , rawName = ''] = state.split(':')
+    const name = decodeURIComponent(rawName || '')
     if (sp.get('error')) return back('geweigerd', salesClientId)
     const code = sp.get('code') ?? ''
     if (!code || !salesClientId) return back('mislukt', salesClientId)
 
-    await exchangeCode(salesClientId, code)
+    await exchangeCode(salesClientId, code, name)
     return back('gekoppeld', salesClientId)
   } catch {
     return back('mislukt')

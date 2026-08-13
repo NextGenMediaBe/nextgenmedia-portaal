@@ -23,10 +23,15 @@ const hm = (t: string) => (t ?? '').slice(0, 5)   // '09:00:00' → '09:00'
  * boekingsregels. Bewust geen "meeting types" — dit zijn de knoppen die het
  * grijs/wit in de kalender bepalen, en niets meer.
  */
-export function AvailabilityPanel({ clientId, clientName, onClose, onSaved }: {
-  clientId: string; clientName: string; onClose: () => void; onSaved: () => void
+export function AvailabilityPanel({ clientId, clientName, initialOwnerId, onClose, onSaved }: {
+  clientId: string; clientName: string; initialOwnerId?: string
+  onClose: () => void; onSaved: () => void
 }) {
   const [loading, setLoading] = useState(true)
+  const [owners, setOwners] = useState<{ id: string; name: string | null; account_email: string | null }[]>([])
+  // Voor wie gelden deze uren? '' = voor de hele klant (elke agenda zonder
+  // eigen uren). Anders alleen voor die persoon.
+  const [scope, setScope] = useState<string>(initialOwnerId ?? '')
   const [saving, setSaving] = useState(false)
   const [rules, setRules] = useState<Rule[]>([])
   const [exceptions, setExceptions] = useState<Exception[]>([])
@@ -42,14 +47,20 @@ export function AvailabilityPanel({ clientId, clientName, onClose, onSaved }: {
     try {
       const res = await fetch(`/api/admin/sales/availability?client=${clientId}`)
       const j = await res.json(); if (!res.ok) throw new Error(j.error)
-      setRules((j.rules ?? []).map((r: Rule) => ({ weekday: r.weekday, start_time: hm(r.start_time), end_time: hm(r.end_time) })))
-      setExceptions((j.exceptions ?? []).map((e: Exception) => ({
+      setOwners(j.owners ?? [])
+      // Alleen de regels van het gekozen bereik tonen — anders lijkt het alsof
+      // iemand uren heeft die eigenlijk van een ander zijn.
+      const inScope = (r: { calendar_id?: string | null }) => (scope ? r.calendar_id === scope : !r.calendar_id)
+      const rawRules = (j.rules ?? []) as (Rule & { calendar_id?: string | null })[]
+      const rawExc = (j.exceptions ?? []) as (Exception & { calendar_id?: string | null })[]
+      setRules(rawRules.filter(inScope).map((r) => ({ weekday: r.weekday, start_time: hm(r.start_time), end_time: hm(r.end_time) })))
+      setExceptions(rawExc.filter(inScope).map((e) => ({
         date: e.date.slice(0, 10), closed: e.closed,
         start_time: hm(e.start_time ?? ''), end_time: hm(e.end_time ?? ''), note: e.note ?? '',
       })))
       if (j.client) setS((p) => ({ ...p, ...j.client, reminder_days_before: j.client.reminder_days_before ?? [] }))
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Laden mislukt') } finally { setLoading(false) }
-  }, [clientId])
+  }, [clientId, scope])
   useEffect(() => { load() }, [load])
 
   const save = async () => {
@@ -60,7 +71,7 @@ export function AvailabilityPanel({ clientId, clientName, onClose, onSaved }: {
     try {
       const res = await fetch('/api/admin/sales/availability', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ salesClientId: clientId, rules: clean, exceptions, ...s }),
+        body: JSON.stringify({ salesClientId: clientId, calendarId: scope || null, rules: clean, exceptions, ...s }),
       })
       const j = await res.json(); if (!res.ok) throw new Error(j.error)
       toast.success('Beschikbaarheid opgeslagen.')
@@ -96,6 +107,20 @@ export function AvailabilityPanel({ clientId, clientName, onClose, onSaved }: {
           <div className="py-16 text-center text-gray-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></div>
         ) : (
           <div className="p-5 space-y-5 overflow-y-auto">
+            {/* Voor wie gelden deze uren? */}
+            {owners.length > 0 && (
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Werkuren gelden voor</label>
+                <select className="input-base" value={scope} onChange={(e) => setScope(e.target.value)}>
+                  <option value="">Alle agenda's (standaard)</option>
+                  {owners.map((o) => <option key={o.id} value={o.id}>Alleen {o.name || o.account_email}</option>)}
+                </select>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  Kies een persoon om die eigen uren te geven. Heeft iemand geen eigen uren, dan gelden automatisch de uren van "Alle agenda's".
+                </p>
+              </div>
+            )}
+
             {/* Werkuren */}
             <div>
               <h4 className="text-sm font-semibold text-gray-900 mb-2">Werkuren</h4>

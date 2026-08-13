@@ -12,9 +12,11 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
 /** Hervalidatie: valt dit tijdvak écht binnen een boekbaar (wit) segment? */
-async function assertBookable(salesClientId: string, start: number, end: number, ignoreApptId?: string): Promise<void> {
+async function assertBookable(
+  salesClientId: string, start: number, end: number, ownerId: string | null, ignoreApptId?: string,
+): Promise<void> {
   const pad = 86400000
-  const data = await loadCalendar(salesClientId, start - pad, end + pad)
+  const data = await loadCalendar(salesClientId, start - pad, end + pad, ownerId)
   if (!data) throw new Error('Klant niet gevonden')
 
   // Bij verplaatsen telt de afspraak zelf niet als blokkade: die gaat immers weg
@@ -71,8 +73,14 @@ export async function POST(req: NextRequest) {
     const client = await getSalesClient(salesClientId)
     if (!client) return NextResponse.json({ error: 'Klant niet gevonden' }, { status: 404 })
 
+    // Welke agenda (persoon)? Zonder keuze pakt loadCalendar de eerste.
+    const requestedOwner = b.ownerId ? String(b.ownerId) : null
+    const cal = await loadCalendar(salesClientId, start - 864e5, end + 864e5, requestedOwner)
+    const ownerId = cal?.ownerId ?? null
+    if (!ownerId) return NextResponse.json({ error: 'Koppel eerst een agenda voor deze klant.' }, { status: 400 })
+
     // 1) Hervalideren tegen dezelfde berekening als de kalender tekent.
-    await assertBookable(salesClientId, start, end)
+    await assertBookable(salesClientId, start, end, ownerId)
 
     const admin = createAdminSupabaseClient()
     const leadId = b.leadId ? String(b.leadId) : null
@@ -104,6 +112,7 @@ export async function POST(req: NextRequest) {
       lead_id: leadId,
       contact_id: contactId,
       setter_id: actor.id,
+      calendar_id: ownerId,
       starts_at: new Date(start).toISOString(),
       ends_at: new Date(end).toISOString(),
       status: 'scheduled',
@@ -123,7 +132,7 @@ export async function POST(req: NextRequest) {
         ? await admin.from('sales_leads').select('sales_companies ( name )').eq('id', leadId).maybeSingle()
         : { data: null }
       const company = (nameRow as { sales_companies?: { name?: string } } | null)?.sales_companies?.name ?? 'Prospect'
-      const ev = await createEvent(salesClientId, {
+      const ev = await createEvent(ownerId, {
         summary: `Afspraak — ${company}`,
         description: [b.notes, b.clientNote].filter(Boolean).join('\n\n'),
         startsAt: start, endsAt: end, timezone: client.timezone,
@@ -176,14 +185,14 @@ export async function PATCH(req: NextRequest) {
 
     const admin = createAdminSupabaseClient()
     const { data: appt } = await admin.from('sales_appointments')
-      .select('id, sales_client_id, external_event_id, status').eq('id', id).maybeSingle()
+      .select('id, sales_client_id, external_event_id, status, calendar_id').eq('id', id).maybeSingle()
     if (!appt) return NextResponse.json({ error: 'Afspraak niet gevonden' }, { status: 404 })
     if (appt.status === 'cancelled') return NextResponse.json({ error: 'Deze afspraak is geannuleerd' }, { status: 400 })
 
     const client = await getSalesClient(appt.sales_client_id as string)
     if (!client) return NextResponse.json({ error: 'Klant niet gevonden' }, { status: 404 })
 
-    await assertBookable(appt.sales_client_id as string, start, end, id)
+    await assertBookable(appt.sales_client_id as string, start, end, (appt.calendar_id as string | null), id)
 
     const { error } = await admin.from('sales_appointments')
       .update({ starts_at: new Date(start).toISOString(), ends_at: new Date(end).toISOString() }).eq('id', id)
@@ -194,7 +203,7 @@ export async function PATCH(req: NextRequest) {
 
     if (appt.external_event_id) {
       try {
-        await moveEvent(appt.sales_client_id as string, appt.external_event_id as string, start, end, client.timezone)
+        await moveEvent(appt.calendar_id as string, appt.external_event_id as string, start, end, client.timezone)
       } catch (e) {
         return NextResponse.json({ error: `Verplaatst in de app, maar de agenda gaf een fout: ${e instanceof Error ? e.message : 'onbekend'}` }, { status: 502 })
       }
@@ -216,12 +225,12 @@ export async function DELETE(req: NextRequest) {
 
     const admin = createAdminSupabaseClient()
     const { data: appt } = await admin.from('sales_appointments')
-      .select('id, sales_client_id, external_event_id').eq('id', id).maybeSingle()
+      .select('id, sales_client_id, external_event_id, calendar_id').eq('id', id).maybeSingle()
     if (!appt) return NextResponse.json({ error: 'Afspraak niet gevonden' }, { status: 404 })
 
     await admin.from('sales_appointments').update({ status: 'cancelled' }).eq('id', id)
     if (appt.external_event_id) {
-      await deleteEvent(appt.sales_client_id as string, appt.external_event_id as string)
+      await deleteEvent(appt.calendar_id as string, appt.external_event_id as string)
     }
     return NextResponse.json({ ok: true })
   } catch (err) {

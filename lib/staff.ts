@@ -123,4 +123,7 @@ export const STAFF_PRESETS: StaffPreset[] = [
   { key: 'operations', label: 'Operations', modules: ['clients', 'content', 'blogs', 'assignments', 'partners', 'info'] },
   { key: 'no_finance', label: 'Alles behalve financieel', modules: ['clients', 'contracts', 'content', 'blogs', 'partners', 'assignments', 'email', 'info'] },
   { key: 'readonly', label: 'Beperkt (klanten + content)', modules: ['clients', 'content'] },
+  // Appointment setter: werkt uitsluitend in de Verkoop-module (pipeline +
+  // agenda) en ziet verder niets van het platform.
+  { key: 'setter', label: 'Appointment setter (enkel Verkoop)', modules: ['sales'] },
 ]
