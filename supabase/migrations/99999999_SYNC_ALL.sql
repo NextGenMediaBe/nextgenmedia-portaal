@@ -1882,7 +1882,7 @@ CREATE POLICY "sales_pipelines admin all" ON public.sales_pipelines FOR ALL TO a
 
 DO $sales$ BEGIN
   CREATE TRIGGER trg_sales_pipelines_updated BEFORE UPDATE ON public.sales_pipelines
-    FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 EXCEPTION WHEN duplicate_object THEN NULL; END $sales$;
 
 -- De herinnering kent nu soorten ('day_before'), niet enkel een aantal dagen.
