@@ -60,6 +60,18 @@ export async function POST(req: NextRequest) {
     const nums = ['buffer_before_min','buffer_after_min','min_notice_min','max_horizon_days','max_per_day','slot_interval_min','default_duration_min'] as const
     for (const k of nums) if (b[k] !== undefined) settings[k] = Math.max(0, Number(b[k]) || 0)
     if (b.timezone) settings.timezone = String(b.timezone)
+
+    // Herinneringsmails: lege lijst = uit. Ontdubbeld en gesorteerd, zodat
+    // dezelfde dag niet twee keer in de lijst kan staan.
+    if (Array.isArray(b.reminder_days_before)) {
+      const days = [...new Set(
+        b.reminder_days_before.map((d: unknown) => Math.round(Number(d))).filter((d: number) => Number.isFinite(d) && d >= 0 && d <= 60),
+      )].sort((x, y) => (y as number) - (x as number))
+      settings.reminder_days_before = days
+    }
+    if (b.reminder_sender_name !== undefined) {
+      settings.reminder_sender_name = String(b.reminder_sender_name ?? '').trim() || null
+    }
     if (Object.keys(settings).length) await admin.from('sales_clients').update(settings).eq('id', client)
 
     return NextResponse.json({ ok: true })

@@ -32,12 +32,18 @@ const STAGE_STYLE: Record<string, string> = {
 export function PipelineClient({ clients, initialClientId }: { clients: Client[]; initialClientId: string }) {
   const [clientId, setClientId] = useState(initialClientId)
   const [leads, setLeads] = useState<Lead[]>([])
+  // Voorraad om de filter-keuzelijsten mee te vullen (zonder actieve filters).
+  const [pool, setPool] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
   const [q, setQ] = useState('')
   const [stage, setStage] = useState('')
   const [archived, setArchived] = useState(false)
   const [hideDnc, setHideDnc] = useState(true)
   const [callbackToday, setCallbackToday] = useState(false)
+  const [sector, setSector] = useState('')
+  const [region, setRegion] = useState('')
+  const [city, setCity] = useState('')
+  const [label, setLabel] = useState('')
   const [selected, setSelected] = useState<Lead | null>(null)
   const [newLead, setNewLead] = useState(false)
   const [newClient, setNewClient] = useState(false)
@@ -56,11 +62,18 @@ export function PipelineClient({ clients, initialClientId }: { clients: Client[]
       if (archived) p.set('archived', '1')
       if (hideDnc) p.set('hideDnc', '1')
       if (callbackToday) p.set('callbackToday', '1')
+      if (sector) p.set('sector', sector)
+      if (region) p.set('region', region)
+      if (city) p.set('city', city)
+      if (label) p.set('label', label)
       const res = await fetch(`/api/admin/sales/leads?${p}`)
       const j = await res.json(); if (!res.ok) throw new Error(j.error)
       setLeads(j.leads ?? [])
+      // Keuzelijsten vullen we uit de ONGEFILTERDE lijst, anders verdwijnen de
+      // andere opties zodra je één filter kiest en kom je er niet meer uit.
+      if (!sector && !region && !city && !label) setPool(j.leads ?? [])
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Laden mislukt') } finally { setLoading(false) }
-  }, [clientId, q, stage, archived, hideDnc, callbackToday])
+  }, [clientId, q, stage, archived, hideDnc, callbackToday, sector, region, city, label])
 
   // Kleine vertraging bij typen, zodat we niet bij elke toetsaanslag zoeken.
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t) }, [load])
@@ -70,6 +83,24 @@ export function PipelineClient({ clients, initialClientId }: { clients: Client[]
     for (const l of leads) m.set(l.stage_key, (m.get(l.stage_key) ?? 0) + 1)
     return m
   }, [leads])
+
+  // Alleen waarden aanbieden die echt voorkomen — lege dropdowns helpen niemand.
+  const options = useMemo(() => {
+    const uniq = (vals: (string | null | undefined)[]) =>
+      [...new Set(vals.filter((v): v is string => !!v && v.trim() !== ''))].sort()
+    return {
+      sectors: uniq(pool.map((l) => l.sales_companies?.sector)),
+      regions: uniq(pool.map((l) => l.sales_companies?.region)),
+      cities: uniq(pool.map((l) => l.sales_companies?.city)),
+      labels: uniq(pool.flatMap((l) => l.labels ?? [])),
+    }
+  }, [pool])
+
+  const anyFilter = !!(sector || region || city || label || stage || callbackToday || archived || q.trim())
+  const clearFilters = () => {
+    setSector(''); setRegion(''); setCity(''); setLabel('')
+    setStage(''); setCallbackToday(false); setArchived(false); setQ('')
+  }
 
   const phoneOf = (l: Lead) => l.sales_contacts?.phone || l.sales_contacts?.mobile || l.sales_companies?.phone || ''
 
@@ -153,6 +184,39 @@ export function PipelineClient({ clients, initialClientId }: { clients: Client[]
           <input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} />Archief
         </label>
       </div>
+
+      {/* Verfijnen op firmografie en labels — enkel tonen als er iets te kiezen valt. */}
+      {(options.sectors.length > 0 || options.regions.length > 0 || options.cities.length > 0 || options.labels.length > 0) && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {options.sectors.length > 0 && (
+            <select className="input-base w-auto text-xs" value={sector} onChange={(e) => setSector(e.target.value)}>
+              <option value="">Alle sectoren</option>
+              {options.sectors.map((v) => <option key={v} value={v}>{v}</option>)}
+            </select>
+          )}
+          {options.regions.length > 0 && (
+            <select className="input-base w-auto text-xs" value={region} onChange={(e) => setRegion(e.target.value)}>
+              <option value="">Alle provincies</option>
+              {options.regions.map((v) => <option key={v} value={v}>{v}</option>)}
+            </select>
+          )}
+          {options.cities.length > 0 && (
+            <select className="input-base w-auto text-xs" value={city} onChange={(e) => setCity(e.target.value)}>
+              <option value="">Alle steden</option>
+              {options.cities.map((v) => <option key={v} value={v}>{v}</option>)}
+            </select>
+          )}
+          {options.labels.length > 0 && (
+            <select className="input-base w-auto text-xs" value={label} onChange={(e) => setLabel(e.target.value)}>
+              <option value="">Alle labels</option>
+              {options.labels.map((v) => <option key={v} value={v}>{v}</option>)}
+            </select>
+          )}
+          {anyFilter && (
+            <button onClick={clearFilters} className="text-xs text-gray-500 hover:text-black">Filters wissen</button>
+          )}
+        </div>
+      )}
 
       {/* Bulk-balk: verschijnt alleen wanneer er iets geselecteerd is. */}
       {picked.size > 0 && (

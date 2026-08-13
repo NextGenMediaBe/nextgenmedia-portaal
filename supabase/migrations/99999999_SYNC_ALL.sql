@@ -1730,3 +1730,28 @@ DO $sales$ BEGIN
   CREATE TRIGGER trg_sales_appointments_updated BEFORE UPDATE ON public.sales_appointments
     FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 EXCEPTION WHEN duplicate_object THEN NULL; END $sales$;
+
+-- ── Herinneringsmails naar prospects (§8, optioneel per klant) ───────────────
+-- BEWUST OPT-IN: standaard een lege lijst = geen enkele automatische mail.
+-- Dat sluit aan bij de platformregel dat er nooit ongevraagd mail uitgaat; de
+-- admin zet dit per klant expliciet aan in het beschikbaarheidsscherm.
+ALTER TABLE public.sales_clients
+  ADD COLUMN IF NOT EXISTS reminder_days_before integer[] NOT NULL DEFAULT '{}',
+  -- Ondertekening van de mail: de prospect hoort de KLANT te zien, niet ons.
+  ADD COLUMN IF NOT EXISTS reminder_sender_name text;
+
+-- Eén rij per verstuurde herinnering, zodat een dagelijkse cron nooit dubbel mailt.
+CREATE TABLE IF NOT EXISTS public.sales_appointment_reminders (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  appointment_id uuid NOT NULL REFERENCES public.sales_appointments(id) ON DELETE CASCADE,
+  days_before    integer NOT NULL,
+  sent_at        timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS sales_appt_reminder_once
+  ON public.sales_appointment_reminders (appointment_id, days_before);
+
+ALTER TABLE public.sales_appointment_reminders ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "sales_appt_reminders admin all" ON public.sales_appointment_reminders;
+CREATE POLICY "sales_appt_reminders admin all" ON public.sales_appointment_reminders FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));

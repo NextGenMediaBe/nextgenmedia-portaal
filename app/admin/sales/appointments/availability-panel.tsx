@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, X, Plus, Trash2, Save, Settings2, CalendarOff } from 'lucide-react'
+import { Loader2, X, Plus, Trash2, Save, Settings2, CalendarOff, BellRing } from 'lucide-react'
 
 type Rule = { weekday: number; start_time: string; end_time: string }
 type Exception = { date: string; closed: boolean; start_time?: string | null; end_time?: string | null; note?: string | null }
@@ -11,6 +11,8 @@ type Settings = {
   min_notice_min: number; max_horizon_days: number
   max_per_day: number; slot_interval_min: number; default_duration_min: number
   timezone: string
+  reminder_days_before: number[]
+  reminder_sender_name: string | null
 }
 
 const DAYS = ['Maandag', 'Dinsdag', 'Woensdag', 'Donderdag', 'Vrijdag', 'Zaterdag', 'Zondag']
@@ -32,6 +34,7 @@ export function AvailabilityPanel({ clientId, clientName, onClose, onSaved }: {
     buffer_before_min: 0, buffer_after_min: 0, min_notice_min: 60,
     max_horizon_days: 60, max_per_day: 8, slot_interval_min: 30,
     default_duration_min: 30, timezone: 'Europe/Brussels',
+    reminder_days_before: [], reminder_sender_name: null,
   })
 
   const load = useCallback(async () => {
@@ -44,7 +47,7 @@ export function AvailabilityPanel({ clientId, clientName, onClose, onSaved }: {
         date: e.date.slice(0, 10), closed: e.closed,
         start_time: hm(e.start_time ?? ''), end_time: hm(e.end_time ?? ''), note: e.note ?? '',
       })))
-      if (j.client) setS((p) => ({ ...p, ...j.client }))
+      if (j.client) setS((p) => ({ ...p, ...j.client, reminder_days_before: j.client.reminder_days_before ?? [] }))
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Laden mislukt') } finally { setLoading(false) }
   }, [clientId])
   useEffect(() => { load() }, [load])
@@ -144,6 +147,42 @@ export function AvailabilityPanel({ clientId, clientName, onClose, onSaved }: {
                     onChange={(e) => setS((p) => ({ ...p, timezone: e.target.value }))} placeholder="Europe/Brussels" />
                 </div>
               </div>
+            </div>
+
+            {/* Herinneringsmails — bewust opt-in */}
+            <div className="border-t border-gray-100 pt-4">
+              <h4 className="text-sm font-semibold text-gray-900 mb-1 flex items-center gap-2">
+                <BellRing className="h-3.5 w-3.5 text-gray-400" />Herinneringsmails naar de prospect
+              </h4>
+              <p className="text-[11px] text-gray-500 mb-2">
+                Standaard uit. Vink aan wanneer de prospect een herinnering mag krijgen — een kale mail
+                zonder onze naam, ondertekend namens deze klant. Antwoorden gaan naar het e-mailadres van de klant.
+              </p>
+              <div className="flex gap-1.5 flex-wrap">
+                {[0, 1, 2, 3, 7].map((d) => {
+                  const on = s.reminder_days_before.includes(d)
+                  return (
+                    <button key={d} type="button"
+                      onClick={() => setS((p) => ({
+                        ...p,
+                        reminder_days_before: on
+                          ? p.reminder_days_before.filter((x) => x !== d)
+                          : [...p.reminder_days_before, d].sort((a, b) => b - a),
+                      }))}
+                      className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${on ? 'bg-black text-white border-black' : 'border-gray-200 text-gray-700 hover:bg-gray-50'}`}>
+                      {d === 0 ? 'Op de dag zelf' : d === 1 ? '1 dag vooraf' : `${d} dagen vooraf`}
+                    </button>
+                  )
+                })}
+              </div>
+              {s.reminder_days_before.length > 0 && (
+                <div className="mt-2">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Ondertekend door</label>
+                  <input className="input-base" value={s.reminder_sender_name ?? ''}
+                    onChange={(e) => setS((p) => ({ ...p, reminder_sender_name: e.target.value }))}
+                    placeholder={`Naam contactpersoon — anders ${clientName}`} />
+                </div>
+              )}
             </div>
 
             {/* Uitzonderingen */}

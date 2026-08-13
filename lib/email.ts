@@ -19,7 +19,12 @@ export type SendResult = { ok: boolean; id?: string; error?: string }
 
 /** Verstuurt één mail. Geef `html` mee voor opgemaakte mails; anders wordt de
  *  tekst als simpele HTML verzonden. */
-export async function sendEmail(opts: { to: string | string[]; subject: string; text: string; html?: string }): Promise<SendResult> {
+export async function sendEmail(opts: {
+  to: string | string[]; subject: string; text: string; html?: string
+  /** Antwoorden komen hier terecht i.p.v. bij de afzender. Gebruikt bij mails
+   *  die wij namens iemand anders sturen (bv. afspraakherinneringen). */
+  replyTo?: string | null
+}): Promise<SendResult> {
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) return { ok: false, error: 'Geen mailprovider geconfigureerd (RESEND_API_KEY ontbreekt).' }
 
@@ -29,7 +34,14 @@ export async function sendEmail(opts: { to: string | string[]; subject: string; 
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: EMAIL_FROM, to: Array.isArray(opts.to) ? opts.to : [opts.to], subject: opts.subject, text: opts.text, html }),
+      body: JSON.stringify({
+        from: EMAIL_FROM,
+        to: Array.isArray(opts.to) ? opts.to : [opts.to],
+        subject: opts.subject,
+        text: opts.text,
+        html,
+        ...(opts.replyTo ? { reply_to: opts.replyTo } : {}),
+      }),
     })
     const json = await res.json().catch(() => ({}))
     if (!res.ok) return { ok: false, error: json?.message || `Resend-fout (${res.status})` }
