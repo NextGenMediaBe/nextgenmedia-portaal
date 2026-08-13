@@ -1,11 +1,12 @@
 import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
-import { loadCalendar, logLeadEvent, getOrCreatePipeline } from '@/lib/sales/service'
+import { loadCalendar, logLeadEvent, getOrCreateSalesOrg } from '@/lib/sales/service'
 import { isBookable } from '@/lib/sales/availability'
 import { APPOINTMENT_STAGE } from '@/lib/sales/stages'
 import { createEvent, moveEvent, deleteEvent } from '@/lib/sales/google-calendar'
 import { normalizePhone } from '@/lib/sales/dedupe'
+import { listPipelines, defaultPipelineId } from '@/lib/sales/pipelines'
 import { logAudit, requestMeta } from '@/lib/audit'
 
 export const dynamic = 'force-dynamic'
@@ -70,7 +71,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Eén pipeline: het id komt van de server, nooit uit het verzoek.
-    const client = await getOrCreatePipeline()
+    const client = await getOrCreateSalesOrg()
     const salesClientId = client.id
 
     // Welke agenda (persoon)? Zonder keuze pakt loadCalendar de eerste.
@@ -90,14 +91,19 @@ export async function POST(req: NextRequest) {
     let contactId: string | null = null
     let attendee: string | null = String(b.attendeeEmail ?? '').trim() || null
     let leadStage: string | null = null
+    // Voor welk merk is deze afspraak? Komt hij van een lead, dan erft hij het
+    // merk van die lead — daar hangen de brochure en de afzender van de
+    // herinneringsmail aan vast. Dat mag dus nooit uit de browser komen.
+    let pipelineId: string | null = null
     if (leadId) {
       const { data: lead } = await admin
         .from('sales_leads')
-        .select('id, contact_id, stage_key, sales_contacts ( id, email )')
+        .select('id, contact_id, stage_key, pipeline_id, sales_contacts ( id, email )')
         .eq('id', leadId).eq('sales_client_id', salesClientId).maybeSingle()
       if (!lead) return NextResponse.json({ error: 'Deze lead staat niet in de pipeline' }, { status: 400 })
       contactId = (lead as { contact_id: string | null }).contact_id
       leadStage = (lead as { stage_key: string }).stage_key
+      pipelineId = (lead as { pipeline_id: string | null }).pipeline_id
       const leadEmail = (lead as { sales_contacts?: { email?: string | null } | null }).sales_contacts?.email ?? null
       if (!attendee) attendee = leadEmail
       else if (contactId && attendee !== leadEmail) {
@@ -105,10 +111,20 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Zonder lead (bv. een afspraak die rechtstreeks ingepland wordt) mag de
+    // setter het merk wel kiezen; we aanvaarden enkel een van onze eigen
+    // pipelines en vallen anders terug op de standaard.
+    if (!pipelineId) {
+      const pipelines = await listPipelines()
+      pipelineId = pipelines.find((p) => p.id === String(b.pipelineId ?? ''))?.id
+        ?? await defaultPipelineId()
+    }
+
     // 2) Afspraak vastleggen. De exclusion-constraint in de database is de
     //    laatste rem tegen dubbel boeken bij gelijktijdige verzoeken.
     const { data: appt, error: apptErr } = await admin.from('sales_appointments').insert({
       sales_client_id: salesClientId,
+      pipeline_id: pipelineId,
       lead_id: leadId,
       contact_id: contactId,
       setter_id: actor.id,
@@ -189,7 +205,7 @@ export async function PATCH(req: NextRequest) {
     if (!appt) return NextResponse.json({ error: 'Afspraak niet gevonden' }, { status: 404 })
     if (appt.status === 'cancelled') return NextResponse.json({ error: 'Deze afspraak is geannuleerd' }, { status: 400 })
 
-    const pipeline = await getOrCreatePipeline()
+    const pipeline = await getOrCreateSalesOrg()
     await assertBookable(appt.sales_client_id as string, start, end, (appt.calendar_id as string | null), id)
 
     const { error } = await admin.from('sales_appointments')

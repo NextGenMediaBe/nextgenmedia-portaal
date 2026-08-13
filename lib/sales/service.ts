@@ -21,18 +21,20 @@ export async function getSalesClient(id: string): Promise<SalesClient | null> {
 }
 
 /**
- * DE pipeline. We bellen niet voor andere bedrijven: er is één algemene
- * pipeline van NextGenMedia zelf, waarin onze appointment setters werken.
+ * ONZE organisatie — de rij waar de gedeelde zaken aan hangen: de agenda's van
+ * Bram en Marco, de werkuren en de boekingsregels. Die zijn gedeeld over beide
+ * merken, want Bram is maar één keer beschikbaar.
  *
- * De onderliggende tabel heet nog `sales_clients` — dat blijft zo, want alle
- * leads, agenda's, werkuren en afspraken hangen aan die rij. In de app is er
- * geen klantbegrip meer: dit wordt nergens getoond of gekozen.
+ * De MERKEN (NextGenMedia, NextGenSolutions) zitten in sales_pipelines, zie
+ * lib/sales/pipelines.ts. De onderliggende tabel heet nog `sales_clients` uit
+ * de eerste opzet; in de app bestaat er geen klantbegrip meer en wordt dit
+ * nergens getoond of gekozen.
  *
- * Bestond er al een rij (uit de eerste opzet), dan gebruiken we die verder —
- * zo blijft bestaande data zichtbaar. Bij meerdere rijen kiezen we die met een
- * gekoppelde agenda, anders de oudste. Er wordt nooit iets verwijderd.
+ * Bestond er al een rij, dan gebruiken we die verder — zo blijft bestaande data
+ * zichtbaar. Bij meerdere rijen kiezen we die met een gekoppelde agenda, anders
+ * de oudste. Er wordt nooit iets verwijderd.
  */
-export async function getOrCreatePipeline(): Promise<SalesClient> {
+export async function getOrCreateSalesOrg(): Promise<SalesClient> {
   const admin = createAdminSupabaseClient()
 
   const { data: rows } = await admin
@@ -90,6 +92,8 @@ export async function seedDefaultAvailability(salesClientId: string): Promise<vo
 
 export type NewLeadInput = {
   salesClientId: string
+  /** Voor welk merk bellen we deze lead: NextGenMedia of NextGenSolutions. */
+  pipelineId: string
   company: { name: string; website?: string; sector?: string; employees?: number; city?: string; region?: string; country?: string; phone?: string; linkedin?: string }
   contact: { name?: string; role?: string; email?: string; phone?: string; mobile?: string; linkedin?: string }
   labels?: string[]
@@ -111,7 +115,8 @@ export async function createLead(input: NewLeadInput): Promise<NewLeadResult> {
 
   const dedupe = companyDedupeKey(name, input.company.website)
 
-  // Bestaat het bedrijf al bij deze klant?
+  // Het bedrijfsdossier is gedeeld over beide pipelines: dezelfde firma hoeft
+  // maar één keer te bestaan.
   const { data: existingCompany } = await admin
     .from('sales_companies').select('id')
     .eq('sales_client_id', input.salesClientId).eq('dedupe_key', dedupe).maybeSingle()
@@ -119,9 +124,12 @@ export async function createLead(input: NewLeadInput): Promise<NewLeadResult> {
   let companyId = existingCompany?.id as string | undefined
 
   if (companyId) {
+    // Ontdubbelen gebeurt PER PIPELINE. Hetzelfde bedrijf mag dus wel bij
+    // NextGenMedia én bij NextGenSolutions staan — dat zijn twee gesprekken.
     const { data: openLead } = await admin
       .from('sales_leads').select('id')
       .eq('sales_client_id', input.salesClientId).eq('company_id', companyId)
+      .eq('pipeline_id', input.pipelineId)
       .is('archived_at', null).maybeSingle()
     if (openLead) {
       return { ok: false, error: `Er staat al een lead voor ${name} in deze pipeline.`, existingLeadId: openLead.id as string }
@@ -158,6 +166,7 @@ export async function createLead(input: NewLeadInput): Promise<NewLeadResult> {
 
   const { data: lead, error: leadErr } = await admin.from('sales_leads').insert({
     sales_client_id: input.salesClientId,
+    pipeline_id: input.pipelineId,
     company_id: companyId,
     contact_id: contact?.id ?? null,
     stage_key: 'to_contact',

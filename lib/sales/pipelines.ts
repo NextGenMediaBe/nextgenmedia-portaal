@@ -1,0 +1,79 @@
+import 'server-only'
+import { createAdminSupabaseClient } from '@/lib/supabase/server'
+import { getOrCreateSalesOrg } from '@/lib/sales/service'
+
+/**
+ * De twee merken waarvoor onze setters bellen: NextGenMedia en
+ * NextGenSolutions. Elke lead hoort bij één merk, en de afspraak erft dat —
+ * daar hangen de juiste brochure en afzender aan vast.
+ *
+ * De agenda's van Bram en Marco staan hier bewust BUITEN: die zijn gedeeld.
+ * Zouden beide merken hun eigen agenda's hebben, dan kon dezelfde persoon voor
+ * het ene merk geboekt worden op een uur dat voor het andere al bezet is.
+ */
+
+export type SalesPipeline = {
+  id: string
+  key: string
+  name: string
+  position: number
+  reminder_enabled: boolean
+  brochure_url: string | null
+  brochure_filename: string | null
+  reminder_from: string | null
+  reminder_reply_to: string | null
+}
+
+const SEED: { key: string; name: string; position: number; brochure_filename: string }[] = [
+  { key: 'nextgenmedia', name: 'NextGenMedia', position: 1, brochure_filename: 'Kennismaking_NextGenMedia.pdf' },
+  { key: 'nextgensolutions', name: 'NextGenSolutions', position: 2, brochure_filename: 'Kennismaking_NextGenSolutions.pdf' },
+]
+
+/**
+ * Beide pipelines ophalen; ontbreken ze, dan worden ze aangemaakt met de
+ * brochure die in /public/brochures staat. Idempotent.
+ */
+export async function listPipelines(): Promise<SalesPipeline[]> {
+  const admin = createAdminSupabaseClient()
+  const org = await getOrCreateSalesOrg()
+
+  const { data } = await admin.from('sales_pipelines')
+    .select('*').eq('sales_client_id', org.id).order('position')
+  let rows = (data ?? []) as SalesPipeline[]
+
+  const missing = SEED.filter((s) => !rows.some((r) => r.key === s.key))
+  if (missing.length > 0) {
+    await admin.from('sales_pipelines').upsert(
+      missing.map((s) => ({
+        sales_client_id: org.id,
+        key: s.key, name: s.name, position: s.position,
+        brochure_filename: s.brochure_filename,
+        // Relatief pad: de brochure wordt bij verzenden pas tot een volledige
+        // URL gemaakt, zodat een domeinwissel niets breekt.
+        brochure_url: `/brochures/${s.brochure_filename}`,
+      })),
+      { onConflict: 'sales_client_id,key' },
+    )
+    const { data: again } = await admin.from('sales_pipelines')
+      .select('*').eq('sales_client_id', org.id).order('position')
+    rows = (again ?? []) as SalesPipeline[]
+  }
+  return rows
+}
+
+/** Eén pipeline op id — en meteen de controle dat hij van ons is. */
+export async function getPipeline(id: string): Promise<SalesPipeline | null> {
+  if (!id) return null
+  const all = await listPipelines()
+  return all.find((p) => p.id === id) ?? null
+}
+
+/**
+ * De pipeline die gebruikt wordt als er geen keuze is meegegeven. Bewust de
+ * eerste (NextGenMedia) i.p.v. een fout: een lead zonder merk is erger dan een
+ * lead in het verkeerde merk, want dat laatste zie je meteen op het scherm.
+ */
+export async function defaultPipelineId(): Promise<string> {
+  const all = await listPipelines()
+  return all[0]?.id ?? ''
+}

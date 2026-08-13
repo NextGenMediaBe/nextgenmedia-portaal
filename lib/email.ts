@@ -24,6 +24,12 @@ export async function sendEmail(opts: {
   /** Antwoorden komen hier terecht i.p.v. bij de afzender. Gebruikt bij mails
    *  die wij namens iemand anders sturen (bv. afspraakherinneringen). */
   replyTo?: string | null
+  /** Afzender overschrijven — nodig omdat wij voor twee bedrijven mailen.
+   *  Het domein moet wél geverifieerd zijn bij Resend, anders weigert die. */
+  from?: string | null
+  /** Bijlagen. `path` is een publiek bereikbare URL; Resend haalt het bestand
+   *  zelf op, zodat wij geen megabytes door een serverless functie duwen. */
+  attachments?: { filename: string; path: string }[]
 }): Promise<SendResult> {
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) return { ok: false, error: 'Geen mailprovider geconfigureerd (RESEND_API_KEY ontbreekt).' }
@@ -35,12 +41,13 @@ export async function sendEmail(opts: {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: EMAIL_FROM,
+        from: opts.from || EMAIL_FROM,
         to: Array.isArray(opts.to) ? opts.to : [opts.to],
         subject: opts.subject,
         text: opts.text,
         html,
         ...(opts.replyTo ? { reply_to: opts.replyTo } : {}),
+        ...(opts.attachments?.length ? { attachments: opts.attachments } : {}),
       }),
     })
     const json = await res.json().catch(() => ({}))

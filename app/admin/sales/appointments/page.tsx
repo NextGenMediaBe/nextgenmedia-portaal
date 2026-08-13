@@ -1,12 +1,13 @@
 export const dynamic = 'force-dynamic'
 
-import { getOrCreatePipeline } from '@/lib/sales/service'
+import { getOrCreateSalesOrg } from '@/lib/sales/service'
+import { listPipelines } from '@/lib/sales/pipelines'
 import { SalesCalendar } from './calendar'
 
 // Appointment setting — sleep een afspraak in de agenda van Bram of Marco.
 export default async function SalesAppointmentsPage({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const sp = await searchParams
-  const pipeline = await getOrCreatePipeline()
+  const [pipeline, pipelines] = await Promise.all([getOrCreateSalesOrg(), listPipelines()])
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -25,6 +26,7 @@ export default async function SalesAppointmentsPage({ searchParams }: { searchPa
           slot_interval_min: pipeline.slot_interval_min,
           default_duration_min: pipeline.default_duration_min,
         }}
+        pipelines={pipelines.map((p) => ({ id: p.id, name: p.name }))}
         initialLeadId={sp.lead}
       />
     </div>

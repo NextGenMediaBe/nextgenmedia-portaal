@@ -5,10 +5,12 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import {
   Loader2, Plus, Search, Phone, Mail, X, CalendarClock, Archive, PhoneOff, Tag, Clock, Headphones, Upload,
+  MailCheck,
 } from 'lucide-react'
 import { MANUAL_STAGES, stageLabel, STAGES } from '@/lib/sales/stages'
 import { FocusMode } from './focus-mode'
 import { ImportModal } from './import-modal'
+import { ReminderSettings } from './reminder-settings'
 
 type Lead = {
   id: string; stage_key: string; labels: string[]; callback_at: string | null
@@ -29,9 +31,17 @@ const STAGE_STYLE: Record<string, string> = {
   lost: 'bg-red-100 text-red-700',
 }
 
-/** Eén algemene pipeline: `pipelineId` ligt vast, er valt niets te kiezen. */
-export function PipelineClient({ pipelineId }: { pipelineId: string }) {
-  const clientId = pipelineId
+type Pipeline = { id: string; name: string; key: string }
+
+/**
+ * Twee pipelines: NextGenMedia en NextGenSolutions. De keuze bovenaan bepaalt
+ * in welk merk je werkt — nieuwe leads, imports en afspraken erven dat merk,
+ * en daarmee de brochure die bij de herinneringsmail gaat.
+ */
+export function PipelineClient({ pipelines, initialPipelineId }: {
+  pipelines: Pipeline[]; initialPipelineId: string
+}) {
+  const [pipelineId, setPipelineId] = useState(initialPipelineId)
   const [leads, setLeads] = useState<Lead[]>([])
   // Voorraad om de filter-keuzelijsten mee te vullen (zonder actieve filters).
   const [pool, setPool] = useState<Lead[]>([])
@@ -49,6 +59,7 @@ export function PipelineClient({ pipelineId }: { pipelineId: string }) {
   const [newLead, setNewLead] = useState(false)
   const [focus, setFocus] = useState(false)
   const [importing, setImporting] = useState(false)
+  const [reminders, setReminders] = useState(false)
   // Selectie voor bulk-acties (§4).
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [bulkBusy, setBulkBusy] = useState(false)
@@ -56,7 +67,7 @@ export function PipelineClient({ pipelineId }: { pipelineId: string }) {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const p = new URLSearchParams()
+      const p = new URLSearchParams({ pipeline: pipelineId })
       if (q.trim()) p.set('q', q.trim())
       if (stage) p.set('stage', stage)
       if (archived) p.set('archived', '1')
@@ -73,7 +84,7 @@ export function PipelineClient({ pipelineId }: { pipelineId: string }) {
       // andere opties zodra je één filter kiest en kom je er niet meer uit.
       if (!sector && !region && !city && !label) setPool(j.leads ?? [])
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Laden mislukt') } finally { setLoading(false) }
-  }, [q, stage, archived, hideDnc, callbackToday, sector, region, city, label])
+  }, [pipelineId, q, stage, archived, hideDnc, callbackToday, sector, region, city, label])
 
   // Kleine vertraging bij typen, zodat we niet bij elke toetsaanslag zoeken.
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t) }, [load])
@@ -131,9 +142,19 @@ export function PipelineClient({ pipelineId }: { pipelineId: string }) {
 
   return (
     <div className="space-y-4">
-      {/* Kop: zoeken, knoppen */}
+      {/* Kop: merk, zoeken, knoppen */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Voor welk bedrijf bel je? Bepaalt ook welke one-pager meegaat. */}
+          <div className="inline-flex rounded-lg border border-gray-200 p-0.5 bg-gray-50">
+            {pipelines.map((p) => (
+              <button key={p.id} onClick={() => { setPipelineId(p.id); setSelected(null); setPicked(new Set()) }}
+                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                  p.id === pipelineId ? 'bg-white text-black shadow-sm' : 'text-gray-500 hover:text-black'}`}>
+                {p.name}
+              </button>
+            ))}
+          </div>
           <div className="relative">
             <Search className="h-4 w-4 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input className="input-base pl-8 w-64" value={q} onChange={(e) => setQ(e.target.value)}
@@ -146,6 +167,10 @@ export function PipelineClient({ pipelineId }: { pipelineId: string }) {
           </button>
           <button onClick={() => setImporting(true)} className="btn-secondary text-sm" title="Lijst met prospects in bulk toevoegen">
             <Upload className="h-4 w-4" />Importeren
+          </button>
+          <button onClick={() => setReminders(true)} className="btn-secondary text-sm"
+            title="De herinneringsmail die de dag voor een afspraak vertrekt">
+            <MailCheck className="h-4 w-4" />Herinneringsmail
           </button>
           <button onClick={() => setNewLead(true)} className="btn-primary text-sm"><Plus className="h-4 w-4" />Nieuwe lead</button>
         </div>
@@ -311,9 +336,11 @@ export function PipelineClient({ pipelineId }: { pipelineId: string }) {
         />
       )}
 
-      {importing && <ImportModal onClose={() => setImporting(false)} onDone={load} />}
+      {reminders && <ReminderSettings onClose={() => setReminders(false)} />}
 
-      {newLead && <NewLeadModal onClose={() => setNewLead(false)} onCreated={() => { setNewLead(false); load() }} />}
+      {importing && <ImportModal pipelineId={pipelineId} onClose={() => setImporting(false)} onDone={load} />}
+
+      {newLead && <NewLeadModal pipelineId={pipelineId} onClose={() => setNewLead(false)} onCreated={() => { setNewLead(false); load() }} />}
     </div>
   )
 }
@@ -430,7 +457,7 @@ function LeadDetail({ lead, onChanged, onClose }: {
 }
 
 // ── Nieuwe lead ──────────────────────────────────────────────────────────────
-function NewLeadModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+function NewLeadModal({ pipelineId, onClose, onCreated }: { pipelineId: string; onClose: () => void; onCreated: () => void }) {
   const [f, setF] = useState({ company: '', website: '', sector: '', city: '', companyPhone: '', contact: '', role: '', email: '', phone: '' })
   const [saving, setSaving] = useState(false)
   const set = (k: keyof typeof f, v: string) => setF((p) => ({ ...p, [k]: v }))
@@ -442,6 +469,7 @@ function NewLeadModal({ onClose, onCreated }: { onClose: () => void; onCreated: 
       const res = await fetch('/api/admin/sales/leads', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          pipelineId,
           company: { name: f.company, website: f.website, sector: f.sector, city: f.city, phone: f.companyPhone },
           contact: { name: f.contact, role: f.role, email: f.email, phone: f.phone },
         }),

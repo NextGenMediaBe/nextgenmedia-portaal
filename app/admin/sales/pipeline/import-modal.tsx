@@ -20,8 +20,8 @@ type Analysis = {
  * controleert en bevestigt → pas dán worden er leads aangemaakt.
  * Er wordt niets opgeslagen vóór de bevestiging.
  */
-export function ImportModal({ onClose, onDone }: {
-  onClose: () => void; onDone: () => void
+export function ImportModal({ pipelineId, onClose, onDone }: {
+  pipelineId: string; onClose: () => void; onDone: () => void
 }) {
   const [busy, setBusy] = useState(false)
   const [a, setA] = useState<Analysis | null>(null)
@@ -47,7 +47,7 @@ export function ImportModal({ onClose, onDone }: {
     try {
       const res = await fetch('/api/admin/sales/import', {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ table: a.table, mapping }),
+        body: JSON.stringify({ pipelineId, table: a.table, mapping }),
       })
       const j = await res.json(); if (!res.ok) throw new Error(j.error)
       setResult(j)

@@ -1,7 +1,8 @@
 import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireStaff } from '@/lib/supabase/server'
-import { createLead, getOrCreatePipeline } from '@/lib/sales/service'
+import { createLead, getOrCreateSalesOrg } from '@/lib/sales/service'
+import { listPipelines, defaultPipelineId } from '@/lib/sales/pipelines'
 import {
   parseCsv, guessMapping, sanitizeMapping, applyMapping, IMPORT_FIELDS,
   type ColumnMapping, type ParsedTable,
@@ -133,7 +134,10 @@ export async function PUT(req: NextRequest) {
   try {
     if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const b = await req.json()
-    const salesClientId = (await getOrCreatePipeline()).id
+    const salesClientId = (await getOrCreateSalesOrg()).id
+    const pipelines = await listPipelines()
+    const pipelineId = pipelines.find((p) => p.id === String(b.pipelineId ?? ''))?.id
+      ?? await defaultPipelineId()
     const mapping = (b.mapping ?? {}) as ColumnMapping
     const table = (b.table ?? null) as ParsedTable | null
     if (!table?.headers?.length) return NextResponse.json({ error: 'Geen gegevens ontvangen' }, { status: 400 })
@@ -152,6 +156,7 @@ export async function PUT(req: NextRequest) {
       if (!companyName) { skipped++; continue }   // rij zonder bedrijf is onbruikbaar
       const res = await createLead({
         salesClientId,
+        pipelineId,
         company: {
           name: companyName,
           website: r.company.website, sector: r.company.sector,

@@ -1,7 +1,7 @@
 import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireStaff } from '@/lib/supabase/server'
-import { getOrCreatePipeline, loadCalendar } from '@/lib/sales/service'
+import { getOrCreateSalesOrg, loadCalendar } from '@/lib/sales/service'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
     // Ruim begrensd zodat één verzoek nooit een half jaar aan agenda ophaalt.
     if (to - from > 40 * 86400000) return NextResponse.json({ error: 'Venster te groot' }, { status: 400 })
 
-    const pipeline = await getOrCreatePipeline()
+    const pipeline = await getOrCreateSalesOrg()
     const data = await loadCalendar(pipeline.id, from, to, sp.get('owner'))
     if (!data) return NextResponse.json({ error: 'Pipeline niet gevonden' }, { status: 404 })
     return NextResponse.json(data)

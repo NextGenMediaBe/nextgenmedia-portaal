@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
-import { getOrCreatePipeline } from '@/lib/sales/service'
+import { getOrCreateSalesOrg } from '@/lib/sales/service'
 import { PhoneCall, CalendarClock, ArrowRight, Target } from 'lucide-react'
 
 // Command Center-blok voor de Verkoop-module: wat staat er vandaag te doen in
@@ -11,7 +11,7 @@ export async function SalesToday() {
   let pipelineId: string
   try {
     admin = createAdminSupabaseClient()
-    pipelineId = (await getOrCreatePipeline()).id
+    pipelineId = (await getOrCreateSalesOrg()).id
   } catch { return null }
 
   const now = new Date()

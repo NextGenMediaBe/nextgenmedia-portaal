@@ -1,7 +1,7 @@
 import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
-import { getOrCreatePipeline } from '@/lib/sales/service'
+import { getOrCreateSalesOrg } from '@/lib/sales/service'
 
 export const dynamic = 'force-dynamic'
 
@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic'
 export async function GET(req: NextRequest) {
   try {
     if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
-    const client = (await getOrCreatePipeline()).id
+    const client = (await getOrCreateSalesOrg()).id
     const admin = createAdminSupabaseClient()
     const [{ data: rules }, { data: exceptions }, { data: c }, { data: conn }] = await Promise.all([
       admin.from('sales_availability_rules').select('*').eq('sales_client_id', client).order('weekday'),
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
   try {
     if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const b = await req.json()
-    const client = (await getOrCreatePipeline()).id
+    const client = (await getOrCreateSalesOrg()).id
     const admin = createAdminSupabaseClient()
 
     // Voor wie gelden deze uren? Leeg = voor de hele klant (elke agenda zonder

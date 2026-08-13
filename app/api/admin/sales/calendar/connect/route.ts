@@ -2,7 +2,7 @@ import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireStaff } from '@/lib/supabase/server'
 import { authUrl, googleConfigured } from '@/lib/sales/google-calendar'
-import { getOrCreatePipeline } from '@/lib/sales/service'
+import { getOrCreateSalesOrg } from '@/lib/sales/service'
 import { randomUUID } from 'crypto'
 
 export const dynamic = 'force-dynamic'
@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     }
     // Naam van de persoon wiens agenda we koppelen (Bram, Marco, ...).
     const name = (req.nextUrl.searchParams.get('name') ?? '').trim()
-    const pipeline = await getOrCreatePipeline()
+    const pipeline = await getOrCreateSalesOrg()
     return NextResponse.redirect(authUrl(pipeline.id, randomUUID(), name))
   } catch (err) {
     return NextResponse.json({ error: safeMessage(err) }, { status: 400 })

@@ -15,7 +15,8 @@ type Appt = {
   id: string; starts_at: string; ends_at: string; status: string
   lead_id: string | null; company: string | null; contact: string | null
 }
-type LeadOption = { id: string; label: string; email: string | null }
+type LeadOption = { id: string; label: string; email: string | null; pipelineId: string | null }
+type Pipeline = { id: string; name: string }
 
 // Zichtbaar dagvenster. Buiten deze uren is toch alles grijs; dit houdt de
 // kalender compact zonder dat je 24 uur moet scrollen.
@@ -34,8 +35,9 @@ const hhmm = (ms: number) =>
   new Date(ms).toLocaleTimeString('nl-BE', { hour: '2-digit', minute: '2-digit' })
 
 /** Eén algemene pipeline; de keuze die telt is WIENS agenda je bekijkt. */
-export function SalesCalendar({ client, initialLeadId }: {
+export function SalesCalendar({ client, pipelines, initialLeadId }: {
   client: SalesClient
+  pipelines: Pipeline[]
   initialLeadId?: string
 }) {
   const clientId = client.id
@@ -84,16 +86,19 @@ export function SalesCalendar({ client, initialLeadId }: {
 
   // Leads voor de koppeling in het boekingspaneel.
   useEffect(() => {
-    fetch('/api/admin/sales/leads')
+    // 'all': je moet hier een lead uit beide merken kunnen kiezen.
+    fetch('/api/admin/sales/leads?pipeline=all')
       .then((r) => r.json())
       .then((j) => setLeads((j.leads ?? []).map((l: {
         id: string
+        pipeline_id?: string | null
         sales_companies?: { name?: string } | null
         sales_contacts?: { name?: string; email?: string } | null
       }) => ({
         id: l.id,
         label: [l.sales_companies?.name, l.sales_contacts?.name].filter(Boolean).join(' · ') || 'Lead',
         email: l.sales_contacts?.email ?? null,
+        pipelineId: l.pipeline_id ?? null,
       }))))
       .catch(() => setLeads([]))
   }, [])
@@ -401,6 +406,7 @@ export function SalesCalendar({ client, initialLeadId }: {
           start={booking.start}
           end={booking.end}
           leads={leads}
+          pipelines={pipelines}
           initialLeadId={initialLeadId}
           ownerId={ownerId}
           ownerName={owners.find((o) => o.id === ownerId)?.name ?? null}
@@ -434,13 +440,16 @@ export function SalesCalendar({ client, initialLeadId }: {
 }
 
 // ── Boekingspaneel ───────────────────────────────────────────────────────────
-function BookingPanel({ ownerId, ownerName, start, end, leads, initialLeadId, onClose, onBooked }: {
+function BookingPanel({ ownerId, ownerName, start, end, leads, pipelines, initialLeadId, onClose, onBooked }: {
   ownerId: string; ownerName: string | null
   start: number; end: number
-  leads: LeadOption[]; initialLeadId?: string
+  leads: LeadOption[]; pipelines: Pipeline[]; initialLeadId?: string
   onClose: () => void; onBooked: () => void
 }) {
   const [leadId, setLeadId] = useState(initialLeadId ?? '')
+  // Zonder lead kies je het merk zelf; met een lead erft de afspraak het merk
+  // van die lead en valt er niets te kiezen.
+  const [pipelineId, setPipelineId] = useState(pipelines[0]?.id ?? '')
   const [email, setEmail] = useState('')
   const [notes, setNotes] = useState('')
   const [clientNote, setClientNote] = useState('')
@@ -448,6 +457,7 @@ function BookingPanel({ ownerId, ownerName, start, end, leads, initialLeadId, on
   const [saving, setSaving] = useState(false)
 
   const lead = leads.find((l) => l.id === leadId)
+  const leadPipeline = lead ? pipelines.find((p) => p.id === lead.pipelineId) ?? null : null
 
   const book = async () => {
     setSaving(true)
@@ -455,7 +465,8 @@ function BookingPanel({ ownerId, ownerName, start, end, leads, initialLeadId, on
       const res = await fetch('/api/admin/sales/appointments', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ownerId: ownerId || null, startsAt: start, endsAt: end,
+          ownerId: ownerId || null, pipelineId: pipelineId || null,
+          startsAt: start, endsAt: end,
           leadId: leadId || null, attendeeEmail: email.trim() || null,
           notes, clientNote, withMeet,
         }),
@@ -487,6 +498,25 @@ function BookingPanel({ ownerId, ownerName, start, end, leads, initialLeadId, on
               {leads.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
             </select>
             {leadId && <p className="text-[11px] text-gray-500 mt-1">Deze lead springt na het boeken naar “Afspraak ingepland”.</p>}
+          </div>
+
+          {/* Voor welk bedrijf is deze afspraak? Bepaalt de brochure en de
+              afzender van de herinneringsmail die de dag ervoor uitgaat. */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Afspraak voor</label>
+            {leadPipeline ? (
+              <div className="input-base bg-gray-50 text-gray-700 flex items-center justify-between">
+                <span>{leadPipeline.name}</span>
+                <span className="text-[11px] text-gray-500">volgt uit de lead</span>
+              </div>
+            ) : (
+              <select className="input-base" value={pipelineId} onChange={(e) => setPipelineId(e.target.value)}>
+                {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            )}
+            <p className="text-[11px] text-gray-500 mt-1">
+              Hiermee gaat de juiste one-pager mee met de herinneringsmail.
+            </p>
           </div>
 
           <div>

@@ -2,7 +2,7 @@ import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { listCalendars, defaultBusyIds, setBusyCalendars } from '@/lib/sales/google-calendar'
-import { getOrCreatePipeline } from '@/lib/sales/service'
+import { getOrCreateSalesOrg } from '@/lib/sales/service'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
@@ -17,7 +17,7 @@ export const maxDuration = 30
 async function ownConnection(connectionId: string): Promise<boolean> {
   if (!connectionId) return false
   const admin = createAdminSupabaseClient()
-  const pipeline = await getOrCreatePipeline()
+  const pipeline = await getOrCreateSalesOrg()
   const { data } = await admin.from('sales_calendar_connections')
     .select('id').eq('id', connectionId).eq('sales_client_id', pipeline.id).maybeSingle()
   return !!data

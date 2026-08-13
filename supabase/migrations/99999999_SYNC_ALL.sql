@@ -1826,3 +1826,65 @@ UPDATE public.sales_calendar_connections
 -- op en gebruikt alle eigen agenda's. Zo werkt het ook vóór deze migratie.
 ALTER TABLE public.sales_calendar_connections
   ADD COLUMN IF NOT EXISTS busy_calendar_ids text[];
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- VERKOOP — twee pipelines: NextGenMedia en NextGenSolutions
+-- ═══════════════════════════════════════════════════════════════════════════
+-- We bellen voor twee eigen bedrijven. Een lead hoort bij één van beide, en de
+-- afspraak erft dat merk — daar hangt de juiste brochure en afzender aan vast.
+--
+-- Belangrijk: het MERK zit hier, niet in sales_clients. Die rij blijft de
+-- organisatie (agenda's van Bram en Marco, werkuren, boekingsregels), want die
+-- zijn gedeeld. Twee aparte sales_clients zou betekenen dat Bram voor beide
+-- merken los geboekt kan worden — en dus dubbel bezet raakt.
+
+CREATE TABLE IF NOT EXISTS public.sales_pipelines (
+  id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  sales_client_id      uuid NOT NULL REFERENCES public.sales_clients(id) ON DELETE CASCADE,
+  key                  text NOT NULL,      -- 'nextgenmedia' | 'nextgensolutions'
+  name                 text NOT NULL,
+  position             integer NOT NULL DEFAULT 1,
+  -- Herinneringsmail (dag vooraf) per merk.
+  reminder_enabled     boolean NOT NULL DEFAULT true,
+  brochure_url         text,               -- bijlage; publieke URL
+  brochure_filename    text,
+  reminder_from        text,               -- afzender, bv. 'NextGenSolutions <info@…>'
+  reminder_reply_to    text,
+  created_at           timestamptz NOT NULL DEFAULT now(),
+  updated_at           timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS sales_pipelines_key
+  ON public.sales_pipelines (sales_client_id, key);
+
+-- Waar hoort deze lead / afspraak bij?
+ALTER TABLE public.sales_leads
+  ADD COLUMN IF NOT EXISTS pipeline_id uuid REFERENCES public.sales_pipelines(id) ON DELETE SET NULL;
+ALTER TABLE public.sales_appointments
+  ADD COLUMN IF NOT EXISTS pipeline_id uuid REFERENCES public.sales_pipelines(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS sales_leads_pipeline ON public.sales_leads (pipeline_id, stage_key);
+
+-- Eén actieve lead per bedrijf PER PIPELINE. Hetzelfde bedrijf mag dus zowel
+-- bij NextGenMedia als bij NextGenSolutions in de lijst staan — dat zijn twee
+-- verschillende gesprekken. Het bedrijfsdossier zelf blijft gedeeld.
+DROP INDEX IF EXISTS public.sales_leads_one_per_company;
+CREATE UNIQUE INDEX IF NOT EXISTS sales_leads_one_per_company_pipeline
+  ON public.sales_leads (
+    sales_client_id,
+    COALESCE(pipeline_id, '00000000-0000-0000-0000-000000000000'::uuid),
+    company_id
+  ) WHERE archived_at IS NULL;
+
+ALTER TABLE public.sales_pipelines ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "sales_pipelines admin all" ON public.sales_pipelines;
+CREATE POLICY "sales_pipelines admin all" ON public.sales_pipelines FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
+DO $sales$ BEGIN
+  CREATE TRIGGER trg_sales_pipelines_updated BEFORE UPDATE ON public.sales_pipelines
+    FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+EXCEPTION WHEN duplicate_object THEN NULL; END $sales$;
+
+-- De herinnering kent nu soorten ('day_before'), niet enkel een aantal dagen.
+ALTER TABLE public.sales_appointment_reminders
+  ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'day_before';
