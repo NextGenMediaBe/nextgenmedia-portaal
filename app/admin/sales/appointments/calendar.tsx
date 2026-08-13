@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, ChevronLeft, ChevronRight, Link2, CalendarClock, X, Trash2, Video, Settings2, Move, CalendarRange } from 'lucide-react'
+import { Loader2, ChevronLeft, ChevronRight, Link2, CalendarClock, X, Trash2, Video, Settings2, Move, CalendarRange, UserRound } from 'lucide-react'
 import { complement, snapToSlot, isBookable, type Interval } from '@/lib/sales/availability'
 import { AvailabilityPanel } from './availability-panel'
 import { BusyCalendarsPanel } from './busy-calendars'
+import { AgendaDialog } from './agenda-dialog'
 
 type SalesClient = {
   id: string; name: string; timezone: string
@@ -48,7 +49,10 @@ export function SalesCalendar({ client, pipelines, initialLeadId }: {
   const [connected, setConnected] = useState(false)
   const [leads, setLeads] = useState<LeadOption[]>([])
   // Agenda's (personen) van deze klant — Bram, Marco, …
-  const [owners, setOwners] = useState<{ id: string; name: string; account_email: string | null; status: string }[]>([])
+  const [owners, setOwners] = useState<{
+    id: string; name: string; account_email: string | null; status: string
+    signature_image_url?: string | null
+  }[]>([])
   const [ownerId, setOwnerId] = useState<string>('')
 
   // Sleep-selectie
@@ -57,6 +61,8 @@ export function SalesCalendar({ client, pipelines, initialLeadId }: {
   const [booking, setBooking] = useState<{ start: number; end: number } | null>(null)
   const [showAvailability, setShowAvailability] = useState(false)
   const [showCalendars, setShowCalendars] = useState(false)
+  // null = dicht, 'new' = koppelen, anders de agenda die bewerkt wordt.
+  const [agendaDialog, setAgendaDialog] = useState<'new' | string | null>(null)
 
   // Bestaande afspraak verslepen naar een ander wit moment (§5).
   const [moving, setMoving] = useState<{ id: string; start: number; end: number; valid: boolean } | null>(null)
@@ -255,6 +261,12 @@ export function SalesCalendar({ client, pipelines, initialLeadId }: {
         </div>
         <div className="flex items-center gap-2">
           {ownerId && (
+            <button onClick={() => setAgendaDialog(ownerId)} className="btn-secondary text-sm"
+              title="Naam en e-mailhandtekening van deze agenda">
+              <UserRound className="h-4 w-4" />Handtekening
+            </button>
+          )}
+          {ownerId && (
             <button onClick={() => setShowCalendars(true)} className="btn-secondary text-sm"
               title="Welke agenda's van dit Google-account blokkeren de beschikbaarheid">
               <CalendarRange className="h-4 w-4" />Agenda&apos;s
@@ -268,11 +280,7 @@ export function SalesCalendar({ client, pipelines, initialLeadId }: {
           )}
           {/* Meerdere agenda's: elke persoon koppelt zijn eigen Google-account. */}
           <button
-            onClick={() => {
-              const naam = prompt('Van wie is deze agenda? (bv. Bram of Marco)')
-              if (naam === null) return
-              window.location.href = `/api/admin/sales/calendar/connect?name=${encodeURIComponent(naam.trim())}`
-            }}
+            onClick={() => setAgendaDialog('new')}
             className={owners.length === 0 ? 'btn-primary text-sm' : 'btn-secondary text-sm'}>
             <Link2 className="h-4 w-4" />{owners.length === 0 ? 'Google Agenda koppelen' : 'Agenda toevoegen'}
           </button>
@@ -412,6 +420,14 @@ export function SalesCalendar({ client, pipelines, initialLeadId }: {
           ownerName={owners.find((o) => o.id === ownerId)?.name ?? null}
           onClose={() => setBooking(null)}
           onBooked={() => { setBooking(null); load() }}
+        />
+      )}
+
+      {agendaDialog && (
+        <AgendaDialog
+          existing={agendaDialog === 'new' ? null : owners.find((o) => o.id === agendaDialog) ?? null}
+          onClose={() => setAgendaDialog(null)}
+          onSaved={() => { setAgendaDialog(null); load() }}
         />
       )}
 

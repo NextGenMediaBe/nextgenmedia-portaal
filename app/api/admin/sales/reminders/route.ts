@@ -28,7 +28,7 @@ type Item = {
   startsAt: string
   /** Wanneer de mail vertrekt (of vertrokken is). */
   dueAt: string
-  state: 'sent' | 'scheduled' | 'pending' | 'blocked'
+  state: 'sent' | 'scheduled' | 'pending' | 'blocked' | 'cancelled'
   /** Alleen bij 'blocked': waarom er niets uitgaat. */
   reason: string | null
   /** Echte status bij Resend, indien bekend. */
@@ -70,7 +70,7 @@ export async function GET() {
 
     const [{ data: reminderRows }, { data: leadRows }, { data: ownerRows }] = await Promise.all([
       admin.from('sales_appointment_reminders')
-        .select('appointment_id, resend_id, scheduled_for, sent_at')
+        .select('appointment_id, resend_id, scheduled_for, sent_at, cancelled_at')
         .in('appointment_id', appts.map((a) => a.id)),
       admin.from('sales_leads')
         .select('id, sales_companies ( name ), sales_contacts ( name )')
@@ -79,8 +79,10 @@ export async function GET() {
     ])
 
     const reminders = new Map(
-      ((reminderRows ?? []) as { appointment_id: string; resend_id: string | null; scheduled_for: string | null }[])
-        .map((r) => [r.appointment_id, r]),
+      ((reminderRows ?? []) as {
+        appointment_id: string; resend_id: string | null
+        scheduled_for: string | null; cancelled_at?: string | null
+      }[]).map((r) => [r.appointment_id, r]),
     )
     const leadInfo = new Map(
       ((leadRows ?? []) as { id: string; sales_companies?: { name?: string } | null; sales_contacts?: { name?: string } | null }[])
@@ -101,7 +103,9 @@ export async function GET() {
       // anders beweert dan wat er echt gebeurt.
       let state: Item['state'] = 'pending'
       let reason: string | null = null
-      if (rem) {
+      if (rem?.cancelled_at) {
+        state = 'cancelled'; reason = 'Handmatig tegengehouden'
+      } else if (rem) {
         state = due <= now ? 'sent' : 'scheduled'
       } else if (!a.attendee_email) {
         state = 'blocked'; reason = 'Geen e-mailadres bij deze afspraak'
@@ -140,6 +144,9 @@ export async function GET() {
     await Promise.all(withId.map(async ({ it, id }) => {
       const st = await getEmailStatus(id)
       if (!st) return
+      // Een handmatig tegengehouden mail blijft tegengehouden, wat Resend ook
+      // nog over de oude verzending zegt.
+      if (it.state === 'cancelled') return
       it.resendEvent = st.lastEvent
       // Resend is hier de baas: zegt die 'canceled', dan gaat er niets uit,
       // wat onze eigen tabel ook denkt.
@@ -149,6 +156,7 @@ export async function GET() {
 
     // Wat nog moet gebeuren bovenaan, daarna de geschiedenis omgekeerd.
     const upcoming = items.filter((i) => i.state !== 'sent').sort((a, b) => a.dueAt.localeCompare(b.dueAt))
+    // 'cancelled' hoort bij "gaat niet uit", niet bij de geschiedenis.
     const history = items.filter((i) => i.state === 'sent').sort((a, b) => b.dueAt.localeCompare(a.dueAt))
 
     return NextResponse.json({ items: [...upcoming, ...history] })

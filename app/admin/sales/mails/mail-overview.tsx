@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import {
-  Loader2, RefreshCw, Clock, CheckCircle2, AlertTriangle, MailX, Send, Inbox,
+  Loader2, RefreshCw, Clock, CheckCircle2, AlertTriangle, MailX, Send, Inbox, Ban, CalendarClock, X,
 } from 'lucide-react'
 
 type Item = {
@@ -15,7 +15,7 @@ type Item = {
   owner: string | null
   startsAt: string
   dueAt: string
-  state: 'sent' | 'scheduled' | 'pending' | 'blocked'
+  state: 'sent' | 'scheduled' | 'pending' | 'blocked' | 'cancelled'
   reason: string | null
   resendEvent: string | null
 }
@@ -72,7 +72,7 @@ export function MailOverview() {
   }
 
   const open = items.filter((i) => i.state === 'scheduled' || i.state === 'pending')
-  const blocked = items.filter((i) => i.state === 'blocked')
+  const blocked = items.filter((i) => i.state === 'blocked' || i.state === 'cancelled')
   const sent = items.filter((i) => i.state === 'sent')
   const failed = sent.filter((i) => i.resendEvent && EVENT[i.resendEvent]?.good === false)
 
@@ -94,6 +94,7 @@ export function MailOverview() {
         empty="Er staat op dit moment niets klaar."
         rows={open}
         showDue
+        onChanged={() => load(true)}
       />
 
       {blocked.length > 0 && (
@@ -103,6 +104,7 @@ export function MailOverview() {
           empty=""
           rows={blocked}
           showDue={false}
+          onChanged={() => load(true)}
         />
       )}
 
@@ -127,13 +129,14 @@ function Stat({ n, label, tone }: { n: number; label: string; tone: string }) {
   )
 }
 
-function Section({ title, icon: Icon, empty, rows, showDue, past }: {
+function Section({ title, icon: Icon, empty, rows, showDue, past, onChanged }: {
   title: string
   icon: typeof Clock
   empty: string
   rows: Item[]
   showDue: boolean
   past?: boolean
+  onChanged?: () => void
 }) {
   if (rows.length === 0 && !empty) return null
   return (
@@ -159,6 +162,7 @@ function Section({ title, icon: Icon, empty, rows, showDue, past }: {
                 <th className="table-th">{past ? 'Verstuurd' : 'Vertrekt'}</th>
                 <th className="table-th">Afspraak</th>
                 <th className="table-th">Status</th>
+                {onChanged && <th className="table-th text-right">Actie</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -193,6 +197,11 @@ function Section({ title, icon: Icon, empty, rows, showDue, past }: {
                   <td className="table-td">
                     <StatusCell item={i} />
                   </td>
+                  {onChanged && (
+                    <td className="table-td text-right">
+                      <RowActions item={i} onChanged={onChanged} />
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -210,6 +219,16 @@ function StatusCell({ item }: { item: Item }) {
       <span className={`status-badge ${e.tone} flex items-center gap-1 w-fit`}>
         {e.good ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}{e.label}
       </span>
+    )
+  }
+  if (item.state === 'cancelled') {
+    return (
+      <div className="max-w-[16rem]">
+        <span className="status-badge bg-gray-200 text-gray-700 flex items-center gap-1 w-fit">
+          <Ban className="h-3 w-3" />Tegengehouden
+        </span>
+        <div className="text-[11px] text-gray-500 mt-0.5">Gaat niet uit; handmatig gestopt.</div>
+      </div>
     )
   }
   if (item.state === 'blocked') {
@@ -234,4 +253,76 @@ function StatusCell({ item }: { item: Item }) {
     )
   }
   return <span className="status-badge bg-green-50 text-green-700">Verstuurd</span>
+}
+
+// ── Handmatig ingrijpen ──────────────────────────────────────────────────────
+
+/** Datum-tijd voor een <input type="datetime-local">, in lokale tijd. */
+function forInput(iso: string): string {
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function RowActions({ item, onChanged }: { item: Item; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [when, setWhen] = useState<string | null>(null)
+
+  // Een tegengehouden mail of een geblokkeerde rij zonder adres valt niets meer
+  // mee te doen; dan tonen we ook geen knoppen die toch zouden falen.
+  const canAct = item.state === 'scheduled' || item.state === 'pending'
+  if (!canAct) return <span className="text-gray-300 text-xs">—</span>
+
+  const act = async (action: string, at?: string) => {
+    if (action === 'cancel' && !confirm(
+      `Deze mail tegenhouden?
+
+${item.company ?? 'Deze prospect'} krijgt dan geen herinnering. ` +
+      'Dat kan later niet ongedaan gemaakt worden zonder hem opnieuw in te plannen.',
+    )) return
+    setBusy(true)
+    try {
+      const r = await fetch('/api/admin/sales/reminders/action', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appointmentId: item.appointmentId, action, at }),
+      })
+      const j = await r.json(); if (!r.ok) throw new Error(j.error)
+      toast.success(j.message ?? 'Aangepast.')
+      setWhen(null)
+      onChanged()
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Mislukt') } finally { setBusy(false) }
+  }
+
+  if (when !== null) {
+    return (
+      <div className="flex items-center gap-1 justify-end">
+        <input type="datetime-local" className="input-base w-auto text-xs py-1"
+          value={when} onChange={(e) => setWhen(e.target.value)} />
+        <button onClick={() => act('reschedule', new Date(when).toISOString())} disabled={busy || !when}
+          className="btn-primary text-xs px-2 py-1">
+          {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Zet'}
+        </button>
+        <button onClick={() => setWhen(null)} className="h-6 w-6 flex items-center justify-center rounded hover:bg-gray-100 text-gray-400">
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-1 justify-end">
+      <button onClick={() => act('send_now')} disabled={busy} title="Nu meteen versturen"
+        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs border border-gray-200 hover:bg-gray-50 disabled:opacity-50">
+        {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}Nu
+      </button>
+      <button onClick={() => setWhen(forInput(item.dueAt))} disabled={busy} title="Op een ander moment zetten"
+        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs border border-gray-200 hover:bg-gray-50 disabled:opacity-50">
+        <CalendarClock className="h-3 w-3" />Verzetten
+      </button>
+      <button onClick={() => act('cancel')} disabled={busy} title="Deze mail niet versturen"
+        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50">
+        <Ban className="h-3 w-3" />
+      </button>
+    </div>
+  )
 }

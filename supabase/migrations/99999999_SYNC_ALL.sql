@@ -1919,3 +1919,20 @@ DROP POLICY IF EXISTS "login_settings admin all" ON public.login_settings;
 CREATE POLICY "login_settings admin all" ON public.login_settings FOR ALL TO authenticated
   USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
   WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- VERKOOP — e-mailhandtekening per agenda + handmatig ingrijpen op mails
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Onder "Met vriendelijke groeten" hoort de handtekening van de persoon in
+-- wiens agenda de afspraak staat. Blijft dit leeg, dan zoekt de code zelf de
+-- juiste afbeelding op basis van de naam van de agenda (Bram, Marco, ...).
+ALTER TABLE public.sales_calendar_connections
+  ADD COLUMN IF NOT EXISTS signature_image_url text,
+  ADD COLUMN IF NOT EXISTS signature_phone     text,
+  ADD COLUMN IF NOT EXISTS signature_email     text;
+
+-- Een handmatig geannuleerde herinnering. De rij blijft bewust staan: dat is
+-- precies wat verhindert dat het dagelijkse vangnet hem opnieuw inplant.
+ALTER TABLE public.sales_appointment_reminders
+  ADD COLUMN IF NOT EXISTS cancelled_at timestamptz,
+  ADD COLUMN IF NOT EXISTS cancelled_by uuid;

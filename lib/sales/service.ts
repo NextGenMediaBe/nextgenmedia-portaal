@@ -196,6 +196,7 @@ export async function logLeadEvent(leadId: string, e: {
 
 export type CalendarOwner = {
   id: string; name: string; account_email: string | null; status: string; active: boolean
+  signature_image_url?: string | null
 }
 
 export type CalendarData = {
@@ -214,9 +215,11 @@ export type CalendarData = {
 /** Alle gekoppelde agenda's (personen) van een klant. */
 export async function listOwners(salesClientId: string): Promise<CalendarOwner[]> {
   const admin = createAdminSupabaseClient()
+  // Bewust '*': de handtekeningkolommen bestaan pas na de migratie, en een
+  // vaste kolomlijst zou de hele query dan laten falen.
   const { data } = await admin
     .from('sales_calendar_connections')
-    .select('id, name, account_email, status, active')
+    .select('*')
     .eq('sales_client_id', salesClientId)
     .order('name')
   return ((data ?? []) as CalendarOwner[]).filter((o) => o.active !== false)

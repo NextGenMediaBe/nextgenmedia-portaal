@@ -26,8 +26,12 @@ export function redirectUri(): string {
   return `${baseUrl()}/api/admin/sales/calendar/callback`
 }
 
-/** Stap 1 van OAuth: waar sturen we de gebruiker heen. */
-export function authUrl(salesClientId: string, state: string, name: string): string {
+/**
+ * Stap 1 van OAuth: waar sturen we de gebruiker heen.
+ * Naam en handtekening reizen mee in `state`, zodat de callback ze meteen kan
+ * opslaan — die weet verder niets van het scherm waar je vandaan komt.
+ */
+export function authUrl(salesClientId: string, state: string, name: string, signature = ''): string {
   const p = new URLSearchParams({
     client_id: process.env.GOOGLE_CLIENT_ID ?? '',
     redirect_uri: redirectUri(),
@@ -35,8 +39,7 @@ export function authUrl(salesClientId: string, state: string, name: string): str
     scope: SCOPES.join(' '),
     access_type: 'offline',       // nodig voor een refresh token
     prompt: 'consent',            // dwingt een refresh token af, ook bij herkoppelen
-    // De naam van de agenda reist mee, zodat de callback weet van wie hij is.
-    state: `${salesClientId}:${state}:${encodeURIComponent(name)}`,
+    state: `${salesClientId}:${state}:${encodeURIComponent(name)}:${encodeURIComponent(signature)}`,
   })
   return `${AUTH_URL}?${p.toString()}`
 }
@@ -55,7 +58,9 @@ async function tokenRequest(body: Record<string, string>): Promise<TokenResponse
 }
 
 /** Stap 2: code omruilen voor tokens en de koppeling opslaan. */
-export async function exchangeCode(salesClientId: string, code: string, name: string): Promise<void> {
+export async function exchangeCode(
+  salesClientId: string, code: string, name: string, signature?: SignatureFields,
+): Promise<void> {
   const tok = await tokenRequest({
     code,
     client_id: process.env.GOOGLE_CLIENT_ID ?? '',
@@ -80,7 +85,7 @@ export async function exchangeCode(salesClientId: string, code: string, name: st
   // account opnieuw, dan verversen we de tokens i.p.v. een tweede rij te maken.
   // Zonder e-mailadres valt 'primary' terug op één rij per klant.
   const calendarId = email ?? 'primary'
-  const { data: saved } = await admin.from('sales_calendar_connections').upsert({
+  const base = {
     sales_client_id: salesClientId,
     provider: 'google',
     name: name || email || 'Agenda',
@@ -91,7 +96,18 @@ export async function exchangeCode(salesClientId: string, code: string, name: st
     refresh_token: tok.refresh_token ? encryptSecret(tok.refresh_token) : null,
     token_expires_at: new Date(Date.now() + (tok.expires_in ?? 3600) * 1000).toISOString(),
     status: 'connected',
-  }, { onConflict: 'sales_client_id,provider,calendar_id' }).select('id').single()
+  }
+  const save = (payload: Record<string, unknown>) => admin
+    .from('sales_calendar_connections')
+    .upsert(payload, { onConflict: 'sales_client_id,provider,calendar_id' })
+    .select('id').single()
+
+  let { data: saved, error: saveErr } = await save({ ...base, ...(signature ?? {}) })
+  // Bestaan de handtekeningkolommen nog niet, dan mag de koppeling daar niet op
+  // stuklopen — die is het belangrijkste. Handtekening kan nadien.
+  if (saveErr && /signature_|PGRST204|schema cache/i.test(saveErr.message)) {
+    ({ data: saved } = await save(base))
+  }
 
   // Meteen alle agenda's van dit account als bezet meetellen. Wie er eentje
   // niet wil laten meetellen, vinkt hem nadien uit; standaard blokkeert alles
@@ -111,6 +127,14 @@ export async function setBusyCalendars(connectionId: string, ids: string[]): Pro
   const { error } = await admin.from('sales_calendar_connections')
     .update({ busy_calendar_ids: ids }).eq('id', connectionId)
   if (error && !/busy_calendar_ids|PGRST204|schema cache/i.test(error.message)) throw new Error(error.message)
+}
+
+/** Handtekeningvelden op de koppeling; los gehouden zodat een oudere database
+ *  zonder die kolommen niet stukloopt (ze worden dan gewoon weggelaten). */
+export type SignatureFields = {
+  signature_image_url?: string | null
+  signature_phone?: string | null
+  signature_email?: string | null
 }
 
 type Connection = {

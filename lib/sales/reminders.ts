@@ -2,6 +2,7 @@ import 'server-only'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { sendEmail, cancelScheduledEmail, baseUrl, SCHEDULE_HORIZON_MS } from '@/lib/email'
 import { listPipelines, type SalesPipeline } from '@/lib/sales/pipelines'
+import { matchSignature } from '@/lib/sales/signatures'
 
 // Herinneringsmail naar de prospect vóór een geboekte afspraak (§8).
 //
@@ -15,14 +16,15 @@ import { listPipelines, type SalesPipeline } from '@/lib/sales/pipelines'
 // moment (die houdt hem tot 72 uur vast). Er hoeft dus geen cron elk kwartier
 // te draaien — dat kan ook niet op een Vercel Hobby-plan, waar één cron per dag
 // het maximum is. De dagelijkse cron is enkel een vangnet voor afspraken die
-// verder dan 72 uur vooruit geboekt zijn: die worden ingepland zodra ze binnen
-// die horizon komen.
+// verder dan 72 uur vooruit geboekt zijn.
 //
 // Wordt de afspraak geannuleerd of verplaatst, dan halen we de ingeplande mail
 // weer weg. Een herinnering voor een afgezegde afspraak is erger dan geen.
 //
 // Per afspraak gaat dit maximaal één keer uit; dat wordt afgedwongen met een
-// unieke index, niet met een tijdvenstertruc.
+// unieke index, niet met een tijdvenstertruc. De rij in
+// sales_appointment_reminders is meteen de rem: bestaat hij, dan wordt er niets
+// opnieuw ingepland — ook niet nadat iemand de mail handmatig geannuleerd heeft.
 
 export type ReminderResult = { checked: number; sent: number; skipped: number; errors: string[] }
 
@@ -79,6 +81,34 @@ export function reminderBody(opts: { hour: string; today: boolean; signer: strin
   ]
 }
 
+export type SignatureInfo = { imageUrl: string | null; name: string | null; phone: string | null; email: string | null }
+
+/**
+ * De mail als HTML, met de handtekening van de persoon in wiens agenda de
+ * afspraak staat.
+ *
+ * De naam blijft bewust als TEKST staan, los van de afbeelding: veel
+ * mailprogramma's blokkeren beelden standaard, en dan mag niet wegvallen van
+ * wie de mail komt. Telefoon en e-mail staan om diezelfde reden ook als tekst.
+ */
+export function reminderHtml(lines: string[], sig: SignatureInfo): string {
+  const body = lines.map((l) => (l === '' ? '<br>' : `<div>${escapeHtml(l)}</div>`)).join('')
+
+  const contact = [sig.phone, sig.email].filter((v): v is string => !!v)
+  const contactHtml = contact.length
+    ? `<div style="margin-top:2px;color:#555;font-size:13px">${contact.map(escapeHtml).join(' · ')}</div>`
+    : ''
+
+  const imgHtml = sig.imageUrl
+    ? `<div style="margin-top:14px"><img src="${escapeHtml(sig.imageUrl)}" width="400" alt="${
+        escapeHtml(sig.name ?? 'NextGenMedia')
+      }" style="display:block;width:400px;max-width:100%;height:auto;border:0;outline:none;text-decoration:none"></div>`
+    : ''
+
+  return `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.6;color:#111">${
+    body}${contactHtml}${imgHtml}</div>`
+}
+
 /** Brochure als bijlage. Relatief pad wordt hier pas een volledige URL. */
 function attachmentFor(p: SalesPipeline): { filename: string; path: string }[] {
   if (!p.brochure_url) return []
@@ -86,84 +116,132 @@ function attachmentFor(p: SalesPipeline): { filename: string; path: string }[] {
   return [{ filename: p.brochure_filename || 'Kennismaking.pdf', path: url }]
 }
 
-type ScheduleOutcome = 'scheduled' | 'skipped' | 'too_far' | 'error'
+type Built = {
+  appt: ApptRow
+  startsMs: number
+  due: number
+  to: string
+  subject: string
+  text: string
+  html: string
+  from: string | null
+  replyTo: string | null
+  attachments: { filename: string; path: string }[]
+}
 
 /**
- * Plant de herinnering voor één afspraak in bij Resend.
- * Idempotent: staat er al een herinnering voor deze afspraak, dan gebeurt er
- * niets. Ligt het verzendmoment verder dan 72 uur weg, dan doen we nog niets —
- * de dagelijkse cron pikt hem later op.
+ * Alles wat nodig is om de mail te versturen, klaargemaakt voor één afspraak.
+ * `sendAtMs` bepaalt de aanhef ("vandaag" of "morgen") — bij het verplaatsen
+ * van het verzendmoment moet die mee veranderen.
  */
-export async function scheduleReminderFor(
-  appointmentId: string, now = new Date(),
-): Promise<{ outcome: ScheduleOutcome; error?: string }> {
+async function buildReminder(
+  appointmentId: string, sendAtMs?: number,
+): Promise<{ ok: true; built: Built } | { ok: false; reason: string }> {
   const admin = createAdminSupabaseClient()
 
   const { data } = await admin.from('sales_appointments')
     .select('id, starts_at, created_at, status, attendee_email, pipeline_id, calendar_id')
     .eq('id', appointmentId).maybeSingle()
   const a = data as ApptRow | null
-  if (!a || a.status !== 'scheduled') return { outcome: 'skipped' }
-  if (!a.attendee_email) return { outcome: 'skipped' }       // geen adres → niets te sturen
-
-  const { data: existing } = await admin.from('sales_appointment_reminders')
-    .select('id').eq('appointment_id', a.id).maybeSingle()
-  if (existing) return { outcome: 'skipped' }                 // al ingepland of verstuurd
+  if (!a) return { ok: false, reason: 'Afspraak niet gevonden' }
+  if (a.status !== 'scheduled') return { ok: false, reason: 'Afspraak is niet meer ingepland' }
+  if (!a.attendee_email) return { ok: false, reason: 'Geen e-mailadres bij deze afspraak' }
 
   const pipelines = await listPipelines()
   const pipeline = pipelines.find((p) => p.id === a.pipeline_id)
   // Zonder merk weten we niet welke brochure erbij hoort. Dan liever niets
   // sturen dan de verkeerde one-pager.
-  if (!pipeline || !pipeline.reminder_enabled) return { outcome: 'skipped' }
+  if (!pipeline) return { ok: false, reason: 'Geen merk gekoppeld aan deze afspraak' }
+  if (!pipeline.reminder_enabled) return { ok: false, reason: `Herinneringen staan uit voor ${pipeline.name}` }
 
   const startsMs = new Date(a.starts_at).getTime()
-  const due = dueAt(startsMs, new Date(a.created_at).getTime())
-  if (due >= startsMs) return { outcome: 'skipped' }          // zou ná de afspraak vallen
-  if (due - now.getTime() > SCHEDULE_HORIZON_MS) return { outcome: 'too_far' }
+  const due = sendAtMs ?? dueAt(startsMs, new Date(a.created_at).getTime())
+  if (due >= startsMs) return { ok: false, reason: 'Het verzendmoment ligt ná de afspraak' }
 
   const { data: org } = await admin.from('sales_clients')
     .select('timezone').order('created_at', { ascending: true }).limit(1).maybeSingle()
   const tz = (org as { timezone?: string } | null)?.timezone ?? 'Europe/Brussels'
 
-  const { data: owner } = a.calendar_id
-    ? await admin.from('sales_calendar_connections').select('name').eq('id', a.calendar_id).maybeSingle()
+  const { data: ownerRow } = a.calendar_id
+    ? await admin.from('sales_calendar_connections').select('*').eq('id', a.calendar_id).maybeSingle()
     : { data: null }
-  const signer = (owner as { name?: string | null } | null)?.name ?? null
+  const owner = ownerRow as {
+    name?: string | null; account_email?: string | null
+    signature_image_url?: string | null; signature_phone?: string | null; signature_email?: string | null
+  } | null
+
+  // Niets ingesteld? Dan zoeken we de handtekening bij de naam van de agenda.
+  const fallback = matchSignature(owner?.name)
+  const rawImage = owner?.signature_image_url || fallback?.url || null
+  const sig: SignatureInfo = {
+    name: owner?.name ?? fallback?.label ?? null,
+    imageUrl: rawImage ? (rawImage.startsWith('http') ? rawImage : `${baseUrl()}${rawImage}`) : null,
+    phone: owner?.signature_phone || fallback?.phone || null,
+    email: owner?.signature_email || fallback?.email || owner?.account_email || null,
+  }
 
   const hour = hourText(a.starts_at, tz)
-  // "Vandaag" of "Morgen" hangt af van de dag waarop de mail VERTREKT, niet van
-  // vandaag: hij kan tot 72 uur vooruit ingepland worden.
-  const today = sameDay(new Date(a.starts_at), new Date(Math.max(due, now.getTime())), tz)
+  const today = sameDay(new Date(a.starts_at), new Date(Math.max(due, Date.now())), tz)
+  const lines = reminderBody({ hour, today, signer: sig.name })
 
-  const lines = reminderBody({ hour, today, signer })
-  const html = `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.6;color:#111">${
-    lines.map((l) => (l === '' ? '<br>' : `<div>${escapeHtml(l)}</div>`)).join('')
-  }</div>`
+  return {
+    ok: true,
+    built: {
+      appt: a, startsMs, due,
+      to: a.attendee_email,
+      subject: today ? `Tot straks om ${hour}` : `Tot morgen om ${hour}`,
+      text: [...lines, ...[sig.phone, sig.email].filter(Boolean)].join('\n'),
+      html: reminderHtml(lines, sig),
+      from: pipeline.reminder_from,
+      replyTo: pipeline.reminder_reply_to,
+      attachments: attachmentFor(pipeline),
+    },
+  }
+}
+
+type ScheduleOutcome = 'scheduled' | 'skipped' | 'too_far' | 'error'
+
+/**
+ * Plant de herinnering voor één afspraak in bij Resend.
+ * Idempotent: staat er al een rij voor deze afspraak, dan gebeurt er niets —
+ * ook niet als die rij een handmatige annulering is. Ligt het verzendmoment
+ * verder dan 72 uur weg, dan doen we nog niets; de dagelijkse cron pikt hem op.
+ */
+export async function scheduleReminderFor(
+  appointmentId: string, now = new Date(),
+): Promise<{ outcome: ScheduleOutcome; error?: string }> {
+  const admin = createAdminSupabaseClient()
+
+  const { data: existing } = await admin.from('sales_appointment_reminders')
+    .select('id').eq('appointment_id', appointmentId).maybeSingle()
+  if (existing) return { outcome: 'skipped' }
+
+  const b = await buildReminder(appointmentId)
+  if (!b.ok) return { outcome: 'skipped' }
+  const { built } = b
+  if (built.due - now.getTime() > SCHEDULE_HORIZON_MS) return { outcome: 'too_far' }
 
   const res = await sendEmail({
-    to: a.attendee_email,
-    subject: today ? `Tot straks om ${hour}` : `Tot morgen om ${hour}`,
-    text: lines.join('\n'), html,
-    from: pipeline.reminder_from,
-    replyTo: pipeline.reminder_reply_to,
-    attachments: attachmentFor(pipeline),
+    to: built.to, subject: built.subject, text: built.text, html: built.html,
+    from: built.from, replyTo: built.replyTo, attachments: built.attachments,
     // In het verleden inplannen mag niet; dan meteen versturen.
-    scheduledAt: due > now.getTime() ? new Date(due).toISOString() : null,
+    scheduledAt: built.due > now.getTime() ? new Date(built.due).toISOString() : null,
   })
   if (!res.ok) return { outcome: 'error', error: res.error }
 
   // Pas ná een geslaagde inplanning vastleggen, zodat een mislukte poging
   // morgen opnieuw geprobeerd wordt.
   await admin.from('sales_appointment_reminders').insert({
-    appointment_id: a.id, days_before: 1, kind: 'day_before',
-    resend_id: res.id ?? null, scheduled_for: new Date(due).toISOString(),
+    appointment_id: appointmentId, days_before: 1, kind: 'day_before',
+    resend_id: res.id ?? null, scheduled_for: new Date(built.due).toISOString(),
   })
   return { outcome: 'scheduled' }
 }
 
 /**
- * Herinnering weer intrekken — bij annuleren of verplaatsen. De rij verdwijnt
- * ook, zodat een verplaatste afspraak gewoon opnieuw ingepland kan worden.
+ * Herinnering weer intrekken — bij annuleren of verplaatsen van de AFSPRAAK.
+ * De rij verdwijnt ook, zodat een verplaatste afspraak opnieuw ingepland kan
+ * worden. Voor een handmatige annulering is er cancelReminderManually().
  */
 export async function cancelReminderFor(appointmentId: string): Promise<void> {
   const admin = createAdminSupabaseClient()
@@ -173,6 +251,96 @@ export async function cancelReminderFor(appointmentId: string): Promise<void> {
   if (!row) return
   if (row.resend_id) await cancelScheduledEmail(row.resend_id)
   await admin.from('sales_appointment_reminders').delete().eq('id', row.id)
+}
+
+// ── Handmatig ingrijpen vanuit het overzicht ────────────────────────────────
+
+export type ActionResult = { ok: true; message: string } | { ok: false; error: string }
+
+/**
+ * Deze mail gaat niet uit. De rij blijft staan met cancelled_at ingevuld: dat
+ * is precies wat verhindert dat het vangnet hem morgen opnieuw inplant.
+ */
+export async function cancelReminderManually(appointmentId: string, actorId?: string): Promise<ActionResult> {
+  const admin = createAdminSupabaseClient()
+  const { data } = await admin.from('sales_appointment_reminders')
+    .select('id, resend_id, cancelled_at').eq('appointment_id', appointmentId).maybeSingle()
+  const row = data as { id: string; resend_id: string | null; cancelled_at: string | null } | null
+
+  if (row?.cancelled_at) return { ok: true, message: 'Deze mail stond al geannuleerd.' }
+
+  if (row?.resend_id) {
+    const res = await cancelScheduledEmail(row.resend_id)
+    // Al vertrokken? Dan valt er niets meer tegen te houden; dat moet je weten.
+    if (!res.ok) return { ok: false, error: `Tegenhouden lukte niet: ${res.error ?? 'onbekende fout'}` }
+  }
+
+  if (row) {
+    await admin.from('sales_appointment_reminders')
+      .update({ cancelled_at: new Date().toISOString(), cancelled_by: actorId ?? null }).eq('id', row.id)
+  } else {
+    // Nog niet ingepland: een lege rij plaatsen houdt het vangnet tegen.
+    await admin.from('sales_appointment_reminders').insert({
+      appointment_id: appointmentId, days_before: 1, kind: 'day_before',
+      cancelled_at: new Date().toISOString(), cancelled_by: actorId ?? null,
+    })
+  }
+  return { ok: true, message: 'De mail gaat niet uit.' }
+}
+
+/**
+ * Verzendmoment wijzigen of meteen versturen (`at` in het verleden of nu).
+ * De oude ingeplande mail wordt eerst ingetrokken; anders zouden er twee
+ * vertrekken.
+ */
+export async function rescheduleReminder(
+  appointmentId: string, atMs: number, actorId?: string,
+): Promise<ActionResult> {
+  const admin = createAdminSupabaseClient()
+  const now = Date.now()
+
+  if (!Number.isFinite(atMs)) return { ok: false, error: 'Ongeldig tijdstip' }
+  if (atMs - now > SCHEDULE_HORIZON_MS) {
+    return { ok: false, error: 'Resend kan een mail maximaal 3 dagen vooruit vasthouden. Kies een moment dichterbij.' }
+  }
+
+  const b = await buildReminder(appointmentId, atMs)
+  if (!b.ok) return { ok: false, error: b.reason }
+  const { built } = b
+
+  const { data } = await admin.from('sales_appointment_reminders')
+    .select('id, resend_id, cancelled_at, scheduled_for').eq('appointment_id', appointmentId).maybeSingle()
+  const row = data as { id: string; resend_id: string | null; cancelled_at: string | null; scheduled_for: string | null } | null
+
+  // Stond er al iets klaar, dan eerst weg — anders vertrekken er twee.
+  if (row?.resend_id && !row.cancelled_at) {
+    const cancelled = await cancelScheduledEmail(row.resend_id)
+    if (!cancelled.ok) {
+      return { ok: false, error: `De vorige mail kon niet ingetrokken worden (${cancelled.error ?? 'onbekend'}). Er is niets gewijzigd.` }
+    }
+  }
+
+  const res = await sendEmail({
+    to: built.to, subject: built.subject, text: built.text, html: built.html,
+    from: built.from, replyTo: built.replyTo, attachments: built.attachments,
+    scheduledAt: atMs > now ? new Date(atMs).toISOString() : null,
+  })
+  if (!res.ok) return { ok: false, error: res.error ?? 'Versturen mislukt' }
+
+  const payload = {
+    appointment_id: appointmentId, days_before: 1, kind: 'day_before',
+    resend_id: res.id ?? null, scheduled_for: new Date(atMs).toISOString(),
+    cancelled_at: null, cancelled_by: actorId ?? null,
+  }
+  if (row) await admin.from('sales_appointment_reminders').update(payload).eq('id', row.id)
+  else await admin.from('sales_appointment_reminders').insert(payload)
+
+  return {
+    ok: true,
+    message: atMs > now
+      ? `Staat klaar voor ${new Date(atMs).toLocaleString('nl-BE', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.`
+      : 'De mail is verstuurd.',
+  }
 }
 
 /**
