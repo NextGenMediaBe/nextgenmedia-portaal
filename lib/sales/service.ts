@@ -48,14 +48,21 @@ export async function getOrCreatePipeline(): Promise<SalesClient> {
     return list.find((c) => withCal.has(c.id)) ?? list[0]
   }
 
-  const { data: created, error } = await admin.from('sales_clients')
+  const { error } = await admin.from('sales_clients')
     .insert({ name: 'NextGenMedia', timezone: 'Europe/Brussels' })
-    .select('*').single()
-  if (error || !created) throw new Error(error?.message ?? 'Pipeline aanmaken mislukt')
+  if (error) throw new Error(error.message)
 
-  await ensureStages(created.id as string)
-  await seedDefaultAvailability(created.id as string)
-  return created as SalesClient
+  // Bewust opnieuw de oudste ophalen in plaats van de zojuist ingevoegde rij:
+  // botsen twee gelijktijdige eerste verzoeken, dan komen ze zo allebei op
+  // dezelfde pipeline uit in plaats van elk op hun eigen rij.
+  const { data: after } = await admin
+    .from('sales_clients').select('*').neq('status', 'archived')
+    .order('created_at', { ascending: true }).limit(1).maybeSingle()
+  if (!after) throw new Error('Pipeline aanmaken mislukt')
+
+  await ensureStages(after.id as string)
+  await seedDefaultAvailability(after.id as string)
+  return after as SalesClient
 }
 
 /** Elke klant krijgt dezelfde vaste fase-set (§3). Idempotent. */
