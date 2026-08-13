@@ -125,13 +125,26 @@ async function accessToken(connectionId: string): Promise<{ token: string; calen
     await admin.from('sales_calendar_connections').update({ status: 'expired' }).eq('id', conn.id)
     return null
   }
-  const tok = await tokenRequest({
-    refresh_token: refresh,
-    client_id: process.env.GOOGLE_CLIENT_ID ?? '',
-    client_secret: process.env.GOOGLE_CLIENT_SECRET ?? '',
-    grant_type: 'refresh_token',
-  })
-  if (!tok.access_token) return null
+  // Google kan de koppeling intrekken: de gebruiker trekt toegang in, of het
+  // OAuth-project staat nog op "Testing" (dan vervalt een refresh token na 7
+  // dagen). We zetten de koppeling dan op 'expired' in plaats van stil te
+  // falen — anders lijkt de agenda gewoon leeg en weet niemand waarom.
+  let tok: TokenResponse
+  try {
+    tok = await tokenRequest({
+      refresh_token: refresh,
+      client_id: process.env.GOOGLE_CLIENT_ID ?? '',
+      client_secret: process.env.GOOGLE_CLIENT_SECRET ?? '',
+      grant_type: 'refresh_token',
+    })
+  } catch {
+    await admin.from('sales_calendar_connections').update({ status: 'expired' }).eq('id', conn.id)
+    return null
+  }
+  if (!tok.access_token) {
+    await admin.from('sales_calendar_connections').update({ status: 'expired' }).eq('id', conn.id)
+    return null
+  }
   await admin.from('sales_calendar_connections').update({
     access_token: encryptSecret(tok.access_token),
     token_expires_at: new Date(Date.now() + (tok.expires_in ?? 3600) * 1000).toISOString(),

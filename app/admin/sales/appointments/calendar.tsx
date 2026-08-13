@@ -273,6 +273,16 @@ export function SalesCalendar({ client, initialLeadId }: {
         </p>
       )}
 
+      {/* De koppeling kan van Google's kant vervallen. Dat mag nooit stil
+          gebeuren: zonder waarschuwing lijkt de agenda gewoon helemaal vrij. */}
+      {owners.length > 0 && !connected && (
+        <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          De koppeling met deze agenda werkt niet meer — we zien de bezette momenten van Google niet.
+          Wat hier wit staat, klopt dus mogelijk niet. Klik op <b>Agenda toevoegen</b> en koppel dezelfde
+          persoon opnieuw.
+        </p>
+      )}
+
       {/* Kalender */}
       <div className="card-base p-0 overflow-hidden">
         <div className="grid grid-cols-[52px_repeat(7,1fr)] border-b border-gray-100">
