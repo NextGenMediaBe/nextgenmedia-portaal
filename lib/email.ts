@@ -67,6 +67,21 @@ export async function sendEmail(opts: {
 export const SCHEDULE_HORIZON_MS = 72 * 3600 * 1000
 
 /**
+ * Een Resend-sleutel kan beperkt zijn tot "alleen verzenden". Versturen lukt
+ * dan wel, maar een ingeplande mail intrekken of een status opvragen niet.
+ * Die fout is niet op te lossen in de code — de sleutel moet ruimere rechten
+ * krijgen — dus zeggen we dat met zoveel woorden.
+ */
+export const RESTRICTED_KEY_HINT =
+  'De Resend-sleutel mag alleen mails versturen. Maak in Resend een sleutel met ' +
+  '"Full access" aan en zet die als RESEND_API_KEY — anders kunnen we ingeplande ' +
+  'mails niet intrekken en de bezorgstatus niet opvragen.'
+
+export function isRestrictedKeyError(msg: string | null | undefined): boolean {
+  return /restricted to only send|only send emails|not authorized|insufficient/i.test(msg ?? '')
+}
+
+/**
  * Een ingeplande mail alsnog tegenhouden — bijvoorbeeld wanneer de afspraak
  * geannuleerd of verplaatst wordt. Faalt dit, dan melden we dat: een
  * herinnering voor een afgezegde afspraak is erger dan geen herinnering.
@@ -82,7 +97,8 @@ export async function cancelScheduledEmail(id: string): Promise<SendResult> {
     })
     if (!res.ok) {
       const json = await res.json().catch(() => ({}))
-      return { ok: false, error: json?.message || `Resend-fout (${res.status})` }
+      const msg = json?.message || `Resend-fout (${res.status})`
+      return { ok: false, error: isRestrictedKeyError(msg) ? RESTRICTED_KEY_HINT : msg }
     }
     return { ok: true, id }
   } catch (err) {
@@ -129,26 +145,38 @@ export type EmailStatus = {
  * Dit is de enige betrouwbare bron: onze eigen tabel weet alleen dát we hem
  * hebben aangeboden, niet of hij ook aangekomen is.
  */
-export async function getEmailStatus(id: string): Promise<EmailStatus | null> {
+export type EmailStatusResult =
+  | { ok: true; status: EmailStatus }
+  | { ok: false; restricted: boolean }
+
+export async function getEmailStatus(id: string): Promise<EmailStatusResult> {
   const apiKey = process.env.RESEND_API_KEY
-  if (!apiKey || !id) return null
+  if (!apiKey || !id) return { ok: false, restricted: false }
   try {
     const res = await fetch(`https://api.resend.com/emails/${encodeURIComponent(id)}`, {
       headers: { Authorization: `Bearer ${apiKey}` },
       cache: 'no-store',
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}))
+      // Onderscheid maken tussen "mag niet" en "bestaat niet" — bij het eerste
+      // is er iets in te stellen, bij het tweede niet.
+      return { ok: false, restricted: isRestrictedKeyError(json?.message) || res.status === 401 || res.status === 403 }
+    }
     const j = await res.json() as {
       id?: string; last_event?: string; to?: string[] | string
       subject?: string; created_at?: string; scheduled_at?: string
     }
     return {
-      id: j.id ?? id,
-      lastEvent: j.last_event ?? null,
-      to: Array.isArray(j.to) ? j.to : j.to ? [j.to] : [],
-      subject: j.subject ?? null,
-      createdAt: j.created_at ?? null,
-      scheduledAt: j.scheduled_at ?? null,
+      ok: true,
+      status: {
+        id: j.id ?? id,
+        lastEvent: j.last_event ?? null,
+        to: Array.isArray(j.to) ? j.to : j.to ? [j.to] : [],
+        subject: j.subject ?? null,
+        createdAt: j.created_at ?? null,
+        scheduledAt: j.scheduled_at ?? null,
+      },
     }
-  } catch { return null }
+  } catch { return { ok: false, restricted: false } }
 }

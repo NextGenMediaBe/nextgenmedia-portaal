@@ -1,7 +1,7 @@
 import { safeMessage } from '@/lib/api-error'
 import { NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
-import { getEmailStatus } from '@/lib/email'
+import { getEmailStatus, RESTRICTED_KEY_HINT } from '@/lib/email'
 import { listPipelines } from '@/lib/sales/pipelines'
 import { getOrCreateSalesOrg } from '@/lib/sales/service'
 import { dueAt } from '@/lib/sales/reminders'
@@ -149,12 +149,17 @@ export async function GET() {
       .sort((a, b) => new Date(b.it.dueAt).getTime() - new Date(a.it.dueAt).getTime())
       .slice(0, MAX_STATUS_LOOKUPS)
 
+    let restrictedKey = false
     await Promise.all(withId.map(async ({ it, id }) => {
-      const st = await getEmailStatus(id)
-      if (!st) return
+      const res = await getEmailStatus(id)
+      if (!res.ok) {
+        if (res.restricted) restrictedKey = true
+        return
+      }
       // Een handmatig tegengehouden mail blijft tegengehouden, wat Resend ook
       // nog over de oude verzending zegt.
       if (it.state === 'cancelled') return
+      const st = res.status
       it.resendEvent = st.lastEvent
       // Resend is hier de baas: zegt die 'canceled', dan gaat er niets uit,
       // wat onze eigen tabel ook denkt.
@@ -176,7 +181,7 @@ export async function GET() {
       items: [...upcoming, ...history],
       hint: missingCols
         ? 'De laatste migratie is nog niet gedraaid, dus we kunnen niet zien welke mails al ingepland zijn. Draai supabase/migrations/99999999_SYNC_ALL.sql — tot dan klopt dit overzicht niet.'
-        : null,
+        : restrictedKey ? RESTRICTED_KEY_HINT : null,
     })
   } catch (err) {
     return NextResponse.json({ error: safeMessage(err) }, { status: 400 })

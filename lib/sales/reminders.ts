@@ -1,6 +1,8 @@
 import 'server-only'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
-import { sendEmail, cancelScheduledEmail, baseUrl, SCHEDULE_HORIZON_MS } from '@/lib/email'
+import {
+  sendEmail, cancelScheduledEmail, baseUrl, SCHEDULE_HORIZON_MS, RESTRICTED_KEY_HINT,
+} from '@/lib/email'
 import { listPipelines, type SalesPipeline } from '@/lib/sales/pipelines'
 import { matchSignature } from '@/lib/sales/signatures'
 
@@ -331,7 +333,12 @@ export async function cancelReminderManually(appointmentId: string, actorId?: st
   if (row?.resend_id) {
     const res = await cancelScheduledEmail(row.resend_id)
     // Al vertrokken? Dan valt er niets meer tegen te houden; dat moet je weten.
-    if (!res.ok) return { ok: false, error: `Tegenhouden lukte niet: ${res.error ?? 'onbekende fout'}` }
+    // We doen bewust NIET alsof het gelukt is: de mail staat bij Resend klaar en
+    // vertrekt hoe dan ook, wat onze eigen administratie ook beweert.
+    if (!res.ok) {
+      const why = res.error ?? 'onbekende fout'
+      return { ok: false, error: why === RESTRICTED_KEY_HINT ? why : `Tegenhouden lukte niet: ${why}` }
+    }
   }
 
   if (row) {
@@ -376,7 +383,13 @@ export async function rescheduleReminder(
   if (row?.resend_id && !row.cancelled_at) {
     const cancelled = await cancelScheduledEmail(row.resend_id)
     if (!cancelled.ok) {
-      return { ok: false, error: `De vorige mail kon niet ingetrokken worden (${cancelled.error ?? 'onbekend'}). Er is niets gewijzigd.` }
+      const why = cancelled.error ?? 'onbekend'
+      return {
+        ok: false,
+        error: why === RESTRICTED_KEY_HINT
+          ? `${why} Er is niets gewijzigd — anders zouden er twee mails vertrekken.`
+          : `De vorige mail kon niet ingetrokken worden (${why}). Er is niets gewijzigd.`,
+      }
     }
   }
 
