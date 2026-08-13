@@ -80,7 +80,7 @@ export async function exchangeCode(salesClientId: string, code: string, name: st
   // account opnieuw, dan verversen we de tokens i.p.v. een tweede rij te maken.
   // Zonder e-mailadres valt 'primary' terug op één rij per klant.
   const calendarId = email ?? 'primary'
-  await admin.from('sales_calendar_connections').upsert({
+  const { data: saved } = await admin.from('sales_calendar_connections').upsert({
     sales_client_id: salesClientId,
     provider: 'google',
     name: name || email || 'Agenda',
@@ -91,7 +91,26 @@ export async function exchangeCode(salesClientId: string, code: string, name: st
     refresh_token: tok.refresh_token ? encryptSecret(tok.refresh_token) : null,
     token_expires_at: new Date(Date.now() + (tok.expires_in ?? 3600) * 1000).toISOString(),
     status: 'connected',
-  }, { onConflict: 'sales_client_id,provider,calendar_id' })
+  }, { onConflict: 'sales_client_id,provider,calendar_id' }).select('id').single()
+
+  // Meteen alle agenda's van dit account als bezet meetellen. Wie er eentje
+  // niet wil laten meetellen, vinkt hem nadien uit; standaard blokkeert alles
+  // wat in dit account staat, want dat is de veilige kant van de vergissing.
+  if (saved?.id) {
+    const all = await listCalendars(saved.id as string)
+    if (all.length > 0) await setBusyCalendars(saved.id as string, defaultBusyIds(all))
+  }
+}
+
+/**
+ * Opslaan welke agenda's als bezet tellen. Stil overslaan als de kolom nog niet
+ * bestaat: de app moet ook vóór de migratie blijven werken (zie CLAUDE.md).
+ */
+export async function setBusyCalendars(connectionId: string, ids: string[]): Promise<void> {
+  const admin = createAdminSupabaseClient()
+  const { error } = await admin.from('sales_calendar_connections')
+    .update({ busy_calendar_ids: ids }).eq('id', connectionId)
+  if (error && !/busy_calendar_ids|PGRST204|schema cache/i.test(error.message)) throw new Error(error.message)
 }
 
 type Connection = {
@@ -104,20 +123,24 @@ type Connection = {
  * `connectionId` = de agenda (persoon). Alle aanroepen werken nu per agenda,
  * zodat Bram en Marco elk hun eigen tokens en agenda houden.
  */
-async function accessToken(connectionId: string): Promise<{ token: string; calendarId: string } | null> {
+async function accessToken(
+  connectionId: string,
+): Promise<{ token: string; calendarId: string; busyCalendarIds: string[] } | null> {
   const admin = createAdminSupabaseClient()
+  // Bewust '*': busy_calendar_ids bestaat pas na de migratie, en een expliciete
+  // kolomlijst zou dan de hele query laten falen.
   const { data } = await admin
-    .from('sales_calendar_connections')
-    .select('id, calendar_id, account_email, access_token, refresh_token, token_expires_at')
+    .from('sales_calendar_connections').select('*')
     .eq('id', connectionId).maybeSingle()
-  const conn = data as (Connection & { account_email?: string | null }) | null
+  const conn = data as (Connection & { busy_calendar_ids?: string[] | null }) | null
   if (!conn?.access_token) return null
 
   const calendarId = conn.calendar_id || 'primary'
+  const busyCalendarIds = Array.isArray(conn.busy_calendar_ids) ? conn.busy_calendar_ids : []
   const expires = conn.token_expires_at ? new Date(conn.token_expires_at).getTime() : 0
   // Een minuut marge, zodat een net-nog-geldig token niet halverwege verloopt.
   if (expires - 60000 > Date.now()) {
-    return { token: decryptSecret(conn.access_token), calendarId }
+    return { token: decryptSecret(conn.access_token), calendarId, busyCalendarIds }
   }
 
   const refresh = conn.refresh_token ? decryptSecret(conn.refresh_token) : ''
@@ -150,13 +173,75 @@ async function accessToken(connectionId: string): Promise<{ token: string; calen
     token_expires_at: new Date(Date.now() + (tok.expires_in ?? 3600) * 1000).toISOString(),
     status: 'connected',
   }).eq('id', conn.id)
-  return { token: tok.access_token, calendarId }
+  return { token: tok.access_token, calendarId, busyCalendarIds }
 }
 
-/** Bezette momenten uit de agenda van de klant — voedt het grijs (§7). */
+export type GoogleCalendar = {
+  id: string
+  summary: string
+  primary: boolean
+  /** owner | writer | reader | freeBusyReader */
+  accessRole: string
+}
+
+/**
+ * Feestdagen-, verjaardags- en vakantiefeeds staan in bijna elk Google-account
+ * en vullen hele dagen. Zouden die als bezet tellen, dan kleurt de kalender
+ * massaal grijs. Standaard laten we ze dus buiten beschouwing; wie ze tóch wil
+ * meetellen, kan ze gewoon aanvinken.
+ */
+function isNoiseCalendar(id: string): boolean {
+  return /holiday@group\.v\.calendar\.google\.com$|#contacts@group\.v\.calendar\.google\.com$|birthday/i.test(id)
+}
+
+/** Alle agenda's van het gekoppelde Google-account. */
+export async function listCalendars(connectionId: string): Promise<GoogleCalendar[]> {
+  const auth = await accessToken(connectionId)
+  if (!auth) return []
+  try {
+    const res = await fetch(`${API}/users/me/calendarList?maxResults=250&minAccessRole=freeBusyReader`, {
+      headers: { Authorization: `Bearer ${auth.token}` },
+    })
+    if (!res.ok) return []
+    const json = await res.json() as {
+      items?: { id?: string; summary?: string; summaryOverride?: string; primary?: boolean; accessRole?: string }[]
+    }
+    return (json.items ?? [])
+      .filter((c): c is { id: string } & typeof c => !!c.id)
+      .map((c) => ({
+        id: c.id,
+        summary: c.summaryOverride || c.summary || c.id,
+        primary: !!c.primary,
+        accessRole: c.accessRole ?? 'reader',
+      }))
+  } catch { return [] }
+}
+
+/** Welke agenda's tellen mee als bezet, met een verstandige standaardkeuze. */
+export function defaultBusyIds(all: GoogleCalendar[]): string[] {
+  return all.filter((c) => !isNoiseCalendar(c.id)).map((c) => c.id)
+}
+
+/**
+ * Bezette momenten uit ALLE meegetelde agenda's van dit account — voedt het
+ * grijs (§7). Eén Google-account heeft meestal meerdere agenda's; keken we
+ * enkel naar de hoofdagenda, dan zou een afspraak in de agenda "Marco" hier
+ * wit (boekbaar) blijken. Dat is precies de fout die je niet wil maken.
+ */
 export async function fetchBusy(connectionId: string, from: number, to: number): Promise<Interval[]> {
   const auth = await accessToken(connectionId)
   if (!auth) return []
+
+  let ids = auth.busyCalendarIds ?? []
+  if (ids.length === 0) {
+    // Nog geen keuze opgeslagen (of de kolom bestaat nog niet): live opvragen.
+    ids = defaultBusyIds(await listCalendars(connectionId))
+  }
+  // De schrijfagenda telt hoe dan ook mee, ook al zou hij niet aangevinkt zijn.
+  if (!ids.includes(auth.calendarId)) ids = [auth.calendarId, ...ids]
+  // freeBusy aanvaardt maximaal 50 agenda's per verzoek.
+  ids = ids.slice(0, 50)
+
   try {
     const res = await fetch(`${API}/freeBusy`, {
       method: 'POST',
@@ -164,13 +249,15 @@ export async function fetchBusy(connectionId: string, from: number, to: number):
       body: JSON.stringify({
         timeMin: new Date(from).toISOString(),
         timeMax: new Date(to).toISOString(),
-        items: [{ id: auth.calendarId }],
+        items: ids.map((id) => ({ id })),
       }),
     })
     if (!res.ok) return []
     const json = await res.json() as { calendars?: Record<string, { busy?: { start: string; end: string }[] }> }
-    const busy = json.calendars?.[auth.calendarId]?.busy ?? []
-    return busy.map((b) => ({ start: new Date(b.start).getTime(), end: new Date(b.end).getTime() }))
+    // Alles samengooien: bookableSegments() voegt overlappende blokken zelf samen.
+    return Object.values(json.calendars ?? {}).flatMap((c) =>
+      (c.busy ?? []).map((b) => ({ start: new Date(b.start).getTime(), end: new Date(b.end).getTime() })),
+    )
   } catch {
     // Agenda onbereikbaar → geen bezet-informatie. We tonen dan enkel onze eigen
     // afspraken als bezet; de DB-constraint voorkomt hoe dan ook dubbele boeking.

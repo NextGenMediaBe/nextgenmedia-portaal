@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2, ChevronLeft, ChevronRight, Link2, CalendarClock, X, Trash2, Video, Settings2, Move } from 'lucide-react'
+import { Loader2, ChevronLeft, ChevronRight, Link2, CalendarClock, X, Trash2, Video, Settings2, Move, CalendarRange } from 'lucide-react'
 import { complement, snapToSlot, isBookable, type Interval } from '@/lib/sales/availability'
 import { AvailabilityPanel } from './availability-panel'
+import { BusyCalendarsPanel } from './busy-calendars'
 
 type SalesClient = {
   id: string; name: string; timezone: string
@@ -53,6 +54,7 @@ export function SalesCalendar({ client, initialLeadId }: {
   const dragRef = useRef<{ seg: Interval; anchor: number } | null>(null)
   const [booking, setBooking] = useState<{ start: number; end: number } | null>(null)
   const [showAvailability, setShowAvailability] = useState(false)
+  const [showCalendars, setShowCalendars] = useState(false)
 
   // Bestaande afspraak verslepen naar een ander wit moment (§5).
   const [moving, setMoving] = useState<{ id: string; start: number; end: number; valid: boolean } | null>(null)
@@ -247,6 +249,12 @@ export function SalesCalendar({ client, initialLeadId }: {
           </span>
         </div>
         <div className="flex items-center gap-2">
+          {ownerId && (
+            <button onClick={() => setShowCalendars(true)} className="btn-secondary text-sm"
+              title="Welke agenda's van dit Google-account blokkeren de beschikbaarheid">
+              <CalendarRange className="h-4 w-4" />Agenda&apos;s
+            </button>
+          )}
           <button onClick={() => setShowAvailability(true)} className="btn-secondary text-sm" title="Werkuren, buffers en boekingsregels">
             <Settings2 className="h-4 w-4" />Beschikbaarheid
           </button>
@@ -398,6 +406,15 @@ export function SalesCalendar({ client, initialLeadId }: {
           ownerName={owners.find((o) => o.id === ownerId)?.name ?? null}
           onClose={() => setBooking(null)}
           onBooked={() => { setBooking(null); load() }}
+        />
+      )}
+
+      {showCalendars && ownerId && (
+        <BusyCalendarsPanel
+          connectionId={ownerId}
+          ownerName={owners.find((o) => o.id === ownerId)?.name || 'deze agenda'}
+          onClose={() => setShowCalendars(false)}
+          onSaved={() => { setShowCalendars(false); load() }}
         />
       )}
 

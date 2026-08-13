@@ -1813,3 +1813,16 @@ CREATE INDEX IF NOT EXISTS sales_appt_calendar
 UPDATE public.sales_calendar_connections
    SET name = COALESCE(name, account_email, 'Agenda')
  WHERE name IS NULL;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- VERKOOP — meerdere Google-agenda's per koppeling meetellen als bezet
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Eén Google-account heeft meestal meerdere agenda's (Marco, Bram, Chiara,
+-- NextGenMedia, ...). Tot nu keken we enkel naar de hoofdagenda, waardoor een
+-- bezet moment in een andere agenda toch wit (boekbaar) bleek.
+--
+-- busy_calendar_ids = welke agenda's van dat account als bezet tellen.
+-- NULL betekent "nog niet gekozen": de code haalt de lijst dan live bij Google
+-- op en gebruikt alle eigen agenda's. Zo werkt het ook vóór deze migratie.
+ALTER TABLE public.sales_calendar_connections
+  ADD COLUMN IF NOT EXISTS busy_calendar_ids text[];
