@@ -1,0 +1,237 @@
+'use client'
+
+import { useCallback, useEffect, useState } from 'react'
+import { toast } from 'sonner'
+import {
+  Loader2, RefreshCw, Clock, CheckCircle2, AlertTriangle, MailX, Send, Inbox,
+} from 'lucide-react'
+
+type Item = {
+  appointmentId: string
+  company: string | null
+  contact: string | null
+  email: string | null
+  pipeline: string | null
+  owner: string | null
+  startsAt: string
+  dueAt: string
+  state: 'sent' | 'scheduled' | 'pending' | 'blocked'
+  reason: string | null
+  resendEvent: string | null
+}
+
+/** Resend-gebeurtenis → wat het voor jou betekent. */
+const EVENT: Record<string, { label: string; tone: string; good: boolean }> = {
+  delivered:        { label: 'Aangekomen',        tone: 'bg-green-100 text-green-800', good: true },
+  sent:             { label: 'Verstuurd',         tone: 'bg-green-50 text-green-700', good: true },
+  opened:           { label: 'Geopend',           tone: 'bg-green-100 text-green-800', good: true },
+  clicked:          { label: 'Link aangeklikt',   tone: 'bg-green-100 text-green-800', good: true },
+  queued:           { label: 'In de wachtrij',    tone: 'bg-gray-100 text-gray-700', good: true },
+  scheduled:        { label: 'Staat klaar',       tone: 'bg-blue-50 text-blue-700', good: true },
+  delivery_delayed: { label: 'Vertraagd',         tone: 'bg-amber-100 text-amber-800', good: false },
+  bounced:          { label: 'Niet aangekomen',   tone: 'bg-red-100 text-red-700', good: false },
+  complained:       { label: 'Als spam gemeld',   tone: 'bg-red-100 text-red-700', good: false },
+  canceled:         { label: 'Geannuleerd',       tone: 'bg-gray-200 text-gray-700', good: false },
+  failed:           { label: 'Mislukt',           tone: 'bg-red-100 text-red-700', good: false },
+}
+
+const dt = (iso: string) =>
+  new Date(iso).toLocaleString('nl-BE', {
+    weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+  })
+
+/** "over 3 uur" / "2 dagen geleden" — sneller te lezen dan een datum. */
+function relative(iso: string): string {
+  const diff = new Date(iso).getTime() - Date.now()
+  const abs = Math.abs(diff)
+  const mins = Math.round(abs / 60000)
+  const val = mins < 60 ? `${mins} min`
+    : abs < 86400000 ? `${Math.round(mins / 60)} uur`
+    : `${Math.round(abs / 86400000)} dag${Math.round(abs / 86400000) === 1 ? '' : 'en'}`
+  return diff >= 0 ? `over ${val}` : `${val} geleden`
+}
+
+export function MailOverview() {
+  const [items, setItems] = useState<Item[]>([])
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+
+  const load = useCallback(async (quiet = false) => {
+    if (quiet) setRefreshing(true)
+    try {
+      const r = await fetch('/api/admin/sales/reminders', { cache: 'no-store' })
+      const j = await r.json(); if (!r.ok) throw new Error(j.error)
+      setItems(j.items ?? [])
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Laden mislukt') }
+    finally { setLoading(false); setRefreshing(false) }
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  if (loading) {
+    return <div className="card-base py-12 text-center text-gray-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></div>
+  }
+
+  const open = items.filter((i) => i.state === 'scheduled' || i.state === 'pending')
+  const blocked = items.filter((i) => i.state === 'blocked')
+  const sent = items.filter((i) => i.state === 'sent')
+  const failed = sent.filter((i) => i.resendEvent && EVENT[i.resendEvent]?.good === false)
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Stat n={open.length} label="staan klaar" tone="text-blue-700" />
+        <Stat n={sent.length - failed.length} label="verstuurd" tone="text-green-700" />
+        {failed.length > 0 && <Stat n={failed.length} label="niet aangekomen" tone="text-red-700" />}
+        {blocked.length > 0 && <Stat n={blocked.length} label="gaan niet uit" tone="text-amber-700" />}
+        <button onClick={() => load(true)} disabled={refreshing} className="btn-secondary text-sm ml-auto">
+          {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}Ververs
+        </button>
+      </div>
+
+      <Section
+        title="Gaat nog uit"
+        icon={Clock}
+        empty="Er staat op dit moment niets klaar."
+        rows={open}
+        showDue
+      />
+
+      {blocked.length > 0 && (
+        <Section
+          title="Hier gaat niets uit"
+          icon={MailX}
+          empty=""
+          rows={blocked}
+          showDue={false}
+        />
+      )}
+
+      <Section
+        title="Verstuurd"
+        icon={Send}
+        empty="Nog niets verstuurd."
+        rows={sent}
+        showDue
+        past
+      />
+    </div>
+  )
+}
+
+function Stat({ n, label, tone }: { n: number; label: string; tone: string }) {
+  return (
+    <div className="rounded-xl border border-gray-200/80 bg-white px-3 py-1.5 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+      <span className={`font-bold ${tone}`}>{n}</span>
+      <span className="text-sm text-gray-600 ml-1.5">{label}</span>
+    </div>
+  )
+}
+
+function Section({ title, icon: Icon, empty, rows, showDue, past }: {
+  title: string
+  icon: typeof Clock
+  empty: string
+  rows: Item[]
+  showDue: boolean
+  past?: boolean
+}) {
+  if (rows.length === 0 && !empty) return null
+  return (
+    <div className="card-base p-0 overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
+        <Icon className="h-4 w-4 text-gray-400" />
+        <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
+        <span className="text-xs text-gray-400">({rows.length})</span>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="empty-state text-sm flex flex-col items-center gap-2">
+          <Inbox className="h-6 w-6 opacity-30" />{empty}
+        </div>
+      ) : (
+        <div className="table-wrap">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100">
+                <th className="table-th">Bedrijf</th>
+                <th className="table-th">Merk</th>
+                <th className="table-th">Naar</th>
+                <th className="table-th">{past ? 'Verstuurd' : 'Vertrekt'}</th>
+                <th className="table-th">Afspraak</th>
+                <th className="table-th">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {rows.map((i) => (
+                <tr key={i.appointmentId} className="hover:bg-gray-50">
+                  <td className="table-td">
+                    <div className="font-medium truncate">{i.company ?? 'Afspraak zonder lead'}</div>
+                    {i.contact && <div className="text-[11px] text-gray-500 truncate">{i.contact}</div>}
+                  </td>
+                  <td className="table-td">
+                    {i.pipeline
+                      ? <span className="status-badge bg-gray-100 text-gray-700">{i.pipeline}</span>
+                      : <span className="text-gray-400">—</span>}
+                  </td>
+                  <td className="table-td">
+                    {i.email
+                      ? <span className="text-gray-700">{i.email}</span>
+                      : <span className="text-gray-400">geen adres</span>}
+                  </td>
+                  <td className="table-td whitespace-nowrap">
+                    {showDue ? (
+                      <>
+                        <div className="tabular">{dt(i.dueAt)}</div>
+                        <div className="text-[11px] text-gray-500">{relative(i.dueAt)}</div>
+                      </>
+                    ) : <span className="text-gray-400">—</span>}
+                  </td>
+                  <td className="table-td whitespace-nowrap">
+                    <div className="tabular text-gray-700">{dt(i.startsAt)}</div>
+                    {i.owner && <div className="text-[11px] text-gray-500">agenda {i.owner}</div>}
+                  </td>
+                  <td className="table-td">
+                    <StatusCell item={i} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StatusCell({ item }: { item: Item }) {
+  if (item.resendEvent) {
+    const e = EVENT[item.resendEvent] ?? { label: item.resendEvent, tone: 'bg-gray-100 text-gray-700', good: true }
+    return (
+      <span className={`status-badge ${e.tone} flex items-center gap-1 w-fit`}>
+        {e.good ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}{e.label}
+      </span>
+    )
+  }
+  if (item.state === 'blocked') {
+    return (
+      <div className="max-w-[16rem]">
+        <span className="status-badge bg-amber-100 text-amber-800 flex items-center gap-1 w-fit">
+          <AlertTriangle className="h-3 w-3" />Gaat niet uit
+        </span>
+        {item.reason && <div className="text-[11px] text-gray-500 mt-0.5">{item.reason}</div>}
+      </div>
+    )
+  }
+  if (item.state === 'scheduled') {
+    return <span className="status-badge bg-blue-50 text-blue-700 flex items-center gap-1 w-fit"><CheckCircle2 className="h-3 w-3" />Staat klaar</span>
+  }
+  if (item.state === 'pending') {
+    return (
+      <div className="max-w-[16rem]">
+        <span className="status-badge bg-gray-100 text-gray-700 w-fit">Wordt later ingepland</span>
+        <div className="text-[11px] text-gray-500 mt-0.5">Verder dan 3 dagen vooruit; gebeurt automatisch.</div>
+      </div>
+    )
+  }
+  return <span className="status-badge bg-green-50 text-green-700">Verstuurd</span>
+}

@@ -8,6 +8,7 @@ import {
   LayoutDashboard, Users, FileText, UserSquare2, ArrowLeftRight, TrendingUp,
   LogOut, ChevronDown, Globe, Calendar, Briefcase, RefreshCcw, Menu, X,
   Info, ClipboardList, CalendarDays, ShoppingCart, Mail, Receipt, Newspaper, Rocket, UserCog, CalendarClock, BarChart3, KanbanSquare,
+  MailCheck,
 } from 'lucide-react'
 import { canSeeModule } from '@/lib/staff'
 import { DISABLED_MODULE_KEYS } from '@/lib/features'
@@ -76,6 +77,7 @@ const SECTIONS: NavSection[] = [
     items: [
       { label: 'Appointment setting', href: '/admin/sales/appointments', icon: CalendarClock, module: 'sales' },
       { label: 'Pipeline',            href: '/admin/sales/pipeline',     icon: KanbanSquare, module: 'sales' },
+      { label: 'Herinneringsmails',   href: '/admin/sales/mails',        icon: MailCheck,    module: 'sales' },
     ],
   },
   {

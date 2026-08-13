@@ -113,3 +113,42 @@ export async function getAdminEmails(): Promise<string[]> {
   out.add('info@nextgenmedia.be')
   return [...out]
 }
+
+/** Wat Resend over één mail weet. `lastEvent` is de echte status. */
+export type EmailStatus = {
+  id: string
+  lastEvent: string | null      // scheduled | queued | sent | delivered | bounced | complained | canceled | ...
+  to: string[]
+  subject: string | null
+  createdAt: string | null
+  scheduledAt: string | null
+}
+
+/**
+ * Status van één verzonden of ingeplande mail opvragen bij Resend.
+ * Dit is de enige betrouwbare bron: onze eigen tabel weet alleen dát we hem
+ * hebben aangeboden, niet of hij ook aangekomen is.
+ */
+export async function getEmailStatus(id: string): Promise<EmailStatus | null> {
+  const apiKey = process.env.RESEND_API_KEY
+  if (!apiKey || !id) return null
+  try {
+    const res = await fetch(`https://api.resend.com/emails/${encodeURIComponent(id)}`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      cache: 'no-store',
+    })
+    if (!res.ok) return null
+    const j = await res.json() as {
+      id?: string; last_event?: string; to?: string[] | string
+      subject?: string; created_at?: string; scheduled_at?: string
+    }
+    return {
+      id: j.id ?? id,
+      lastEvent: j.last_event ?? null,
+      to: Array.isArray(j.to) ? j.to : j.to ? [j.to] : [],
+      subject: j.subject ?? null,
+      createdAt: j.created_at ?? null,
+      scheduledAt: j.scheduled_at ?? null,
+    }
+  } catch { return null }
+}
