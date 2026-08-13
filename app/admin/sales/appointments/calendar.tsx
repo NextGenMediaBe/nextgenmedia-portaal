@@ -16,6 +16,7 @@ type SalesClient = {
 type Appt = {
   id: string; starts_at: string; ends_at: string; status: string
   lead_id: string | null; company: string | null; contact: string | null
+  pipeline_id?: string | null
 }
 type LeadOption = { id: string; label: string; email: string | null; pipelineId: string | null }
 type Pipeline = { id: string; name: string }
@@ -401,9 +402,14 @@ function BookingPanel({ ownerId, ownerName, start, end, leads, pipelines, initia
   onClose: () => void; onBooked: () => void
 }) {
   const [leadId, setLeadId] = useState(initialLeadId ?? '')
-  // Zonder lead kies je het merk zelf; met een lead erft de afspraak het merk
-  // van die lead en valt er niets te kiezen.
+  /**
+   * Voor welk merk is deze afspraak? Standaard dat van de lead, maar je kunt
+   * het wisselen: aan de telefoon blijkt soms dat iemand uit de ene pipeline
+   * beter bij het andere merk past. `touched` onthoudt of je zelf gekozen hebt,
+   * zodat een latere leadwissel jouw keuze niet stilletjes overschrijft.
+   */
   const [pipelineId, setPipelineId] = useState(pipelines[0]?.id ?? '')
+  const [touched, setTouched] = useState(false)
   const [email, setEmail] = useState('')
   const [notes, setNotes] = useState('')
   const [clientNote, setClientNote] = useState('')
@@ -412,6 +418,11 @@ function BookingPanel({ ownerId, ownerName, start, end, leads, pipelines, initia
 
   const lead = leads.find((l) => l.id === leadId)
   const leadPipeline = lead ? pipelines.find((p) => p.id === lead.pipelineId) ?? null : null
+
+  // Lead gekozen en zelf nog niets aangeduid → het merk van die lead volgen.
+  useEffect(() => {
+    if (!touched && leadPipeline) setPipelineId(leadPipeline.id)
+  }, [touched, leadPipeline])
 
   const book = async () => {
     setSaving(true)
@@ -461,18 +472,17 @@ function BookingPanel({ ownerId, ownerName, start, end, leads, pipelines, initia
               afzender van de herinneringsmail die de dag ervoor uitgaat. */}
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Afspraak voor</label>
-            {leadPipeline ? (
-              <div className="input-base bg-gray-50 text-gray-700 flex items-center justify-between">
-                <span>{leadPipeline.name}</span>
-                <span className="text-[11px] text-gray-500">volgt uit de lead</span>
-              </div>
-            ) : (
-              <select className="input-base" value={pipelineId} onChange={(e) => setPipelineId(e.target.value)}>
-                {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            )}
+            <select className="input-base" value={pipelineId}
+              onChange={(e) => { setTouched(true); setPipelineId(e.target.value) }}>
+              {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
             <p className="text-[11px] text-gray-500 mt-1">
-              Hiermee gaat de juiste one-pager mee met de herinneringsmail.
+              Bepaalt welke one-pager en welke afzender bij de herinneringsmail horen.
+              {leadPipeline && pipelineId !== leadPipeline.id && (
+                <> De lead zelf blijft in <b>{leadPipeline.name}</b> staan; enkel deze afspraak telt voor het
+                gekozen merk.</>
+              )}
+              {leadPipeline && pipelineId === leadPipeline.id && <> Overgenomen van de lead.</>}
             </p>
           </div>
 

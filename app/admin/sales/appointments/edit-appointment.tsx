@@ -7,6 +7,7 @@ import { Loader2, X, CalendarClock, Trash2, AlertTriangle } from 'lucide-react'
 type Appt = {
   id: string; starts_at: string; ends_at: string
   lead_id: string | null; company: string | null; contact: string | null
+  pipeline_id?: string | null
 }
 type LeadOption = { id: string; label: string; email: string | null; pipelineId: string | null }
 type Pipeline = { id: string; name: string }
@@ -36,15 +37,19 @@ export function EditAppointment({ appt, leads, pipelines, onClose, onSaved }: {
   const [start, setStart] = useState(forInput(appt.starts_at))
   const [end, setEnd] = useState(forInput(appt.ends_at))
   const [leadId, setLeadId] = useState(appt.lead_id ?? '')
+  // Het merk kan hier ook nog wisselen — bv. wanneer tijdens het gesprek blijkt
+  // dat de prospect beter bij het andere bedrijf past.
+  const [pipelineId, setPipelineId] = useState(appt.pipeline_id ?? pipelines[0]?.id ?? '')
   const [saving, setSaving] = useState(false)
 
   const startMs = new Date(start).getTime()
   const endMs = new Date(end).getTime()
-  const changed = start !== forInput(appt.starts_at) || end !== forInput(appt.ends_at) || leadId !== (appt.lead_id ?? '')
+  const changed = start !== forInput(appt.starts_at) || end !== forInput(appt.ends_at)
+    || leadId !== (appt.lead_id ?? '') || pipelineId !== (appt.pipeline_id ?? '')
   const valid = Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs
 
   const lead = leads.find((l) => l.id === leadId)
-  const pipeline = lead ? pipelines.find((p) => p.id === lead.pipelineId) : null
+  const leadPipeline = lead ? pipelines.find((p) => p.id === lead.pipelineId) ?? null : null
 
   const save = async () => {
     if (!valid) { toast.error('Het einduur moet ná het beginuur liggen'); return }
@@ -52,7 +57,10 @@ export function EditAppointment({ appt, leads, pipelines, onClose, onSaved }: {
     try {
       const r = await fetch('/api/admin/sales/appointments', {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: appt.id, startsAt: startMs, endsAt: endMs, leadId: leadId || null }),
+        body: JSON.stringify({
+          id: appt.id, startsAt: startMs, endsAt: endMs,
+          leadId: leadId || null, pipelineId: pipelineId || null,
+        }),
       })
       const j = await r.json(); if (!r.ok) throw new Error(j.error)
       toast.success('Afspraak verzet.')
@@ -96,11 +104,20 @@ export function EditAppointment({ appt, leads, pipelines, onClose, onSaved }: {
               <option value="">Geen lead koppelen</option>
               {leads.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
             </select>
-            {pipeline && (
-              <p className="text-[11px] text-gray-500 mt-1">
-                Deze afspraak telt mee voor <b>{pipeline.name}</b>, dus die one-pager gaat mee met de herinnering.
-              </p>
-            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Afspraak voor</label>
+            <select className="input-base" value={pipelineId} onChange={(e) => setPipelineId(e.target.value)}>
+              {pipelines.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <p className="text-[11px] text-gray-500 mt-1">
+              Bepaalt welke one-pager en welke afzender bij de herinneringsmail horen.
+              {leadPipeline && pipelineId !== leadPipeline.id && (
+                <> De lead blijft in <b>{leadPipeline.name}</b> staan; enkel deze afspraak telt voor het
+                gekozen merk.</>
+              )}
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-2">

@@ -92,9 +92,10 @@ export async function POST(req: NextRequest) {
     let contactId: string | null = null
     let attendee: string | null = String(b.attendeeEmail ?? '').trim() || null
     let leadStage: string | null = null
-    // Voor welk merk is deze afspraak? Komt hij van een lead, dan erft hij het
-    // merk van die lead — daar hangen de brochure en de afzender van de
-    // herinneringsmail aan vast. Dat mag dus nooit uit de browser komen.
+    // Voor welk merk is deze afspraak? Standaard het merk van de lead, maar de
+    // setter mag dat overrulen: aan de telefoon blijkt soms dat een prospect uit
+    // de ene pipeline beter bij het andere merk past. De keuze wordt hieronder
+    // wel gecontroleerd tegen onze eigen pipelines.
     let pipelineId: string | null = null
     if (leadId) {
       const { data: lead } = await admin
@@ -112,14 +113,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Zonder lead (bv. een afspraak die rechtstreeks ingepland wordt) mag de
-    // setter het merk wel kiezen; we aanvaarden enkel een van onze eigen
-    // pipelines en vallen anders terug op de standaard.
-    if (!pipelineId) {
-      const pipelines = await listPipelines()
-      pipelineId = pipelines.find((p) => p.id === String(b.pipelineId ?? ''))?.id
-        ?? await defaultPipelineId()
-    }
+    const pipelines = await listPipelines()
+    const chosen = pipelines.find((p) => p.id === String(b.pipelineId ?? ''))?.id
+    // Een geldige keuze wint van het merk van de lead; anders de lead, anders
+    // de standaard. Een onbekend id wordt genegeerd, niet overgenomen.
+    pipelineId = chosen ?? pipelineId ?? await defaultPipelineId()
 
     // 2) Afspraak vastleggen. De exclusion-constraint in de database is de
     //    laatste rem tegen dubbel boeken bij gelijktijdige verzoeken.
@@ -233,6 +231,10 @@ export async function PATCH(req: NextRequest) {
       starts_at: new Date(start).toISOString(),
       ends_at: new Date(end).toISOString(),
     }
+    // Merk mag ook bij het verzetten nog wisselen.
+    const allPipelines = await listPipelines()
+    const wantedPipeline = allPipelines.find((p) => p.id === String(b.pipelineId ?? ''))?.id
+
     let newLeadId: string | null | undefined
     if ('leadId' in b) {
       newLeadId = b.leadId ? String(b.leadId) : null
@@ -253,6 +255,8 @@ export async function PATCH(req: NextRequest) {
     if (typeof b.attendeeEmail === 'string') {
       patch.attendee_email = b.attendeeEmail.trim() || null
     }
+    // Een uitdrukkelijke merkkeuze wint van wat de lead zegt.
+    if (wantedPipeline) patch.pipeline_id = wantedPipeline
 
     const { error } = await admin.from('sales_appointments').update(patch).eq('id', id)
     if (error) {

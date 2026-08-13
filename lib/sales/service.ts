@@ -207,7 +207,7 @@ export type CalendarData = {
   appointments: {
     id: string; starts_at: string; ends_at: string; status: string
     lead_id: string | null; company: string | null; contact: string | null
-    calendar_id: string | null
+    calendar_id: string | null; pipeline_id: string | null
   }[]
   connected: boolean
 }
@@ -245,7 +245,7 @@ export async function loadCalendar(
     admin.from('sales_availability_rules').select('weekday, start_time, end_time, calendar_id').eq('sales_client_id', salesClientId),
     admin.from('sales_availability_exceptions').select('date, closed, start_time, end_time, calendar_id').eq('sales_client_id', salesClientId),
     admin.from('sales_appointments')
-      .select('id, starts_at, ends_at, status, lead_id, contact_id, calendar_id')
+      .select('id, starts_at, ends_at, status, lead_id, contact_id, calendar_id, pipeline_id')
       .eq('sales_client_id', salesClientId).neq('status', 'cancelled')
       // Ruime marge: een afspraak die vóór het venster start kan erin doorlopen.
       .gte('starts_at', new Date(from - 86400000).toISOString())
@@ -267,6 +267,7 @@ export async function loadCalendar(
   const allAppts = (appts ?? []) as {
     id: string; starts_at: string; ends_at: string; status: string
     lead_id: string | null; contact_id: string | null; calendar_id: string | null
+    pipeline_id: string | null
   }[]
   // Alleen de afspraken van déze persoon blokkeren zijn agenda; een afspraak
   // van Marco mag Bram niet in de weg zitten.
@@ -312,7 +313,7 @@ export async function loadCalendar(
     connected: active?.status === 'connected',
     appointments: appointments.map((a) => ({
       id: a.id, starts_at: a.starts_at, ends_at: a.ends_at, status: a.status, lead_id: a.lead_id,
-      calendar_id: a.calendar_id,
+      calendar_id: a.calendar_id, pipeline_id: a.pipeline_id,
       company: a.lead_id ? nameByLead.get(a.lead_id)?.company ?? null : null,
       contact: a.lead_id ? nameByLead.get(a.lead_id)?.contact ?? null : null,
     })),
