@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { UserCog, Plus, Loader2, X, Trash2, KeyRound, Power } from 'lucide-react'
 import { toast } from 'sonner'
 import { ADMIN_MODULES, VISIBLE_ADMIN_MODULES, STAFF_PRESETS } from '@/lib/staff'
+import { LoginSettingsCard } from './login-settings-card'
 
 type Staff = { id: string; name: string | null; email: string | null; active: boolean; permissions: string[]; created_at: string; last_login_at: string | null }
 
@@ -63,6 +64,10 @@ export default function WerknemersPage() {
           ))}
         </div>
       )}
+
+      {/* Inloggen met of zonder code — geldt ook voor de adminaccounts zelf,
+          dus staat dit bewust apart van de werknemerslijst hierboven. */}
+      <LoginSettingsCard />
 
       {(creating || editing) && <Dialog staff={editing} onClose={() => { setCreating(false); setEditing(null) }} onDone={() => { setCreating(false); setEditing(null); load() }} />}
     </div>

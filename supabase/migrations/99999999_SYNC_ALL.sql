@@ -1895,3 +1895,27 @@ ALTER TABLE public.sales_appointment_reminders
 ALTER TABLE public.sales_appointment_reminders
   ADD COLUMN IF NOT EXISTS resend_id     text,
   ADD COLUMN IF NOT EXISTS scheduled_for timestamptz;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- INLOGINSTELLINGEN PER ACCOUNT — tweestapsverificatie aan of uit
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Tweestapsverificatie staat AAN voor elk intern account. Wie ze niet moet
+-- doorlopen, krijgt hier een rij met two_factor_required = false.
+--
+-- Bewust zo geschreven dat de veilige stand de standaard is: geen rij betekent
+-- "code verplicht". Een lege of ontbrekende tabel kan de beveiliging dus nooit
+-- per ongeluk uitschakelen.
+CREATE TABLE IF NOT EXISTS public.login_settings (
+  auth_user_id        uuid PRIMARY KEY,
+  two_factor_required boolean NOT NULL DEFAULT true,
+  note                text,          -- waarom deze uitzondering
+  updated_by          uuid,
+  updated_at          timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.login_settings ENABLE ROW LEVEL SECURITY;
+-- Alleen admins; de app leest dit sowieso via de service-role.
+DROP POLICY IF EXISTS "login_settings admin all" ON public.login_settings;
+CREATE POLICY "login_settings admin all" ON public.login_settings FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));

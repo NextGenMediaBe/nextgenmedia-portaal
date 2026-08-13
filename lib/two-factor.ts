@@ -84,3 +84,29 @@ export async function verifyToken(token: string | undefined, userId: string, now
     return false
   }
 }
+
+/**
+ * Moet dit account de toegestuurde code invullen?
+ *
+ * Standaard JA. Enkel een uitdrukkelijke rij in login_settings met
+ * two_factor_required = false zet dat uit. Elke andere uitkomst — geen rij,
+ * tabel bestaat nog niet, database onbereikbaar — houdt de code verplicht.
+ * De veilige kant is hier de standaard, niet de uitzondering.
+ *
+ * `db` is een Supabase-client; die wordt meegegeven omdat deze functie zowel in
+ * de Edge-middleware als in gewone routes gebruikt wordt.
+ */
+export async function twoFactorRequired(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: { from: (t: string) => any },
+  userId: string,
+): Promise<boolean> {
+  try {
+    const { data, error } = await db
+      .from('login_settings').select('two_factor_required').eq('auth_user_id', userId).maybeSingle()
+    if (error) return true
+    return (data as { two_factor_required?: boolean } | null)?.two_factor_required !== false
+  } catch {
+    return true
+  }
+}

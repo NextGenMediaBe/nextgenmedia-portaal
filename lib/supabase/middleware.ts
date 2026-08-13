@@ -2,7 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { pathToModule, canSeeModule, STAFF_API_WHITELIST, isStaffApiDenied, modulesForApiPath } from '@/lib/staff'
 import { isDisabledPath } from '@/lib/features'
-import { verifyToken, TWO_FA_COOKIE } from '@/lib/two-factor'
+import { verifyToken, TWO_FA_COOKIE, twoFactorRequired } from '@/lib/two-factor'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 
 // Rol/rechten worden via de service-role client gelezen (bypasst RLS). Reden:
@@ -77,7 +77,12 @@ export async function updateSession(request: NextRequest) {
     const twoFaOk = await verifyToken(request.cookies.get(TWO_FA_COOKIE)?.value, user.id)
 
     if (roleData?.role === 'admin') {
-      if (!twoFaOk) return NextResponse.json({ error: 'Verificatie vereist', code: '2fa_required' }, { status: 401 })
+      // Een account kan van de code vrijgesteld zijn (login_settings). We vragen
+      // dat pas op als de code ontbreekt, zodat de normale weg geen extra
+      // databasebevraging kost.
+      if (!twoFaOk && await twoFactorRequired(db, user.id)) {
+        return NextResponse.json({ error: 'Verificatie vereist', code: '2fa_required' }, { status: 401 })
+      }
       return supabaseResponse
     }
 
@@ -86,7 +91,9 @@ export async function updateSession(request: NextRequest) {
       .from('staff_members').select('active, permissions').eq('auth_user_id', user.id).maybeSingle()
     const activeStaff = !!staff && staff.active !== false
     if (!activeStaff) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
-    if (!twoFaOk) return NextResponse.json({ error: 'Verificatie vereist', code: '2fa_required' }, { status: 401 })
+    if (!twoFaOk && await twoFactorRequired(db, user.id)) {
+      return NextResponse.json({ error: 'Verificatie vereist', code: '2fa_required' }, { status: 401 })
+    }
     if (isStaffApiDenied(path)) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     if (STAFF_API_WHITELIST.some((p) => path === p || path.startsWith(p + '?'))) return supabaseResponse
     const perms = Array.isArray(staff!.permissions) ? (staff!.permissions as string[]) : []
@@ -151,7 +158,9 @@ export async function updateSession(request: NextRequest) {
   // Klanten en partners loggen gewoon met wachtwoord in.
   if ((role === 'admin' || role === 'employee') && path.startsWith('/admin')) {
     const twoFaOk = await verifyToken(request.cookies.get(TWO_FA_COOKIE)?.value, user.id)
-    if (!twoFaOk) {
+    // Vrijgesteld? Dan volstaat e-mail + wachtwoord. Staat er niets ingesteld,
+    // dan blijft de code verplicht — zie twoFactorRequired().
+    if (!twoFaOk && await twoFactorRequired(db, user.id)) {
       const url = request.nextUrl.clone()
       url.pathname = '/login/verify'
       url.search = ''

@@ -3,18 +3,23 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminSupabaseClient, isActiveStaff } from '@/lib/supabase/server'
 import { sendEmail } from '@/lib/email'
 import { buildEmailHtml, buildEmailText } from '@/lib/email-html'
-import { generateCode, hashCode, CODE_TTL_MS, RESEND_COOLDOWN_MS } from '@/lib/two-factor'
+import { generateCode, hashCode, CODE_TTL_MS, RESEND_COOLDOWN_MS, twoFactorRequired } from '@/lib/two-factor'
 import { requestMeta } from '@/lib/audit'
 import { rateLimit, clientIp } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
-/** Heeft dit account tweestapsverificatie nodig? Enkel admin + actieve werknemer. */
+/**
+ * Heeft dit account tweestapsverificatie nodig?
+ * Enkel interne accounts (admin + actieve werknemer), en enkel als het niet
+ * uitdrukkelijk uitgezet is voor dat account (login_settings).
+ */
 async function needsTwoFactor(userId: string): Promise<boolean> {
   const admin = createAdminSupabaseClient()
   const { data } = await admin.from('user_roles').select('role').eq('user_id', userId).maybeSingle()
-  if (data?.role === 'admin') return true
-  return await isActiveStaff(userId)
+  const internal = data?.role === 'admin' ? true : await isActiveStaff(userId)
+  if (!internal) return false
+  return await twoFactorRequired(admin, userId)
 }
 
 // POST — stuur een nieuwe inlogcode naar het e-mailadres van de ingelogde
