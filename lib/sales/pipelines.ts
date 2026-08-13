@@ -57,6 +57,19 @@ export async function listPipelines(): Promise<SalesPipeline[]> {
     const { data: again } = await admin.from('sales_pipelines')
       .select('*').eq('sales_client_id', org.id).order('position')
     rows = (again ?? []) as SalesPipeline[]
+
+    // Leads van vóór deze opsplitsing hebben nog geen merk. Zonder dit zouden
+    // ze in geen van beide lijsten verschijnen — dus zetten we ze eenmalig in
+    // de eerste pipeline. Raakt alleen rijen die nog leeg zijn.
+    const first = rows[0]
+    if (first) {
+      await admin.from('sales_leads')
+        .update({ pipeline_id: first.id })
+        .eq('sales_client_id', org.id).is('pipeline_id', null)
+    }
+    // Bestaande AFSPRAKEN krijgen bewust géén merk: die zijn geboekt vóór de
+    // herinneringsmail bestond, en zo vertrekt er met terugwerkende kracht
+    // niets naar een prospect.
   }
   return rows
 }
