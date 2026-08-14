@@ -14,6 +14,7 @@ import { ReminderSettings } from './reminder-settings'
 
 type Lead = {
   id: string; stage_key: string; labels: string[]; callback_at: string | null
+  pipeline_id?: string | null
   do_not_call: boolean; updated_at: string; lost_reason: string | null; email_brief: string | null
   sales_companies: { id: string; name: string; website: string | null; sector: string | null; city: string | null; region: string | null; phone: string | null } | null
   sales_contacts: { id: string; name: string | null; email: string | null; phone: string | null; mobile: string | null; role: string | null } | null
@@ -323,7 +324,7 @@ export function PipelineClient({ pipelines, initialPipelineId }: {
         {/* Detailpaneel */}
         <div>
           {selected
-            ? <LeadDetail key={selected.id} lead={selected} onChanged={() => { load(); setSelected(null) }} onClose={() => setSelected(null)} />
+            ? <LeadDetail key={selected.id} lead={selected} pipelines={pipelines} onChanged={() => { load(); setSelected(null) }} onClose={() => setSelected(null)} />
             : <div className="card-base text-sm text-gray-500">Kies een lead om de details te zien.</div>}
         </div>
       </div>
@@ -346,8 +347,8 @@ export function PipelineClient({ pipelines, initialPipelineId }: {
 }
 
 // ── Detailpaneel ─────────────────────────────────────────────────────────────
-function LeadDetail({ lead, onChanged, onClose }: {
-  lead: Lead; onChanged: () => void; onClose: () => void
+function LeadDetail({ lead, pipelines, onChanged, onClose }: {
+  lead: Lead; pipelines: Pipeline[]; onChanged: () => void; onClose: () => void
 }) {
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('')
@@ -377,6 +378,25 @@ function LeadDetail({ lead, onChanged, onClose }: {
         </div>
         <button onClick={onClose} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-gray-100"><X className="h-4 w-4" /></button>
       </div>
+
+      {/* Voor welk merk bellen we deze lead? Verhuizen kan zolang er nog geen
+          afspraak staat; blijkt aan de telefoon dat iemand beter bij het andere
+          bedrijf past, dan zet je hem hier over. */}
+      {pipelines.length > 1 && (
+        <div className="inline-flex rounded-lg border border-gray-200 p-0.5 bg-gray-50 w-full">
+          {pipelines.map((p) => {
+            const active = (lead.pipeline_id ?? pipelines[0]?.id) === p.id
+            return (
+              <button key={p.id} disabled={busy || active}
+                onClick={() => patch({ pipelineId: p.id }, `Verhuisd naar ${p.name}.`)}
+                className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  active ? 'bg-white text-black shadow-sm' : 'text-gray-500 hover:text-black disabled:opacity-50'}`}>
+                {p.name}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       <div className="flex gap-2 flex-wrap">
         {phone && <a href={`tel:${phone}`} className="btn-secondary text-sm"><Phone className="h-4 w-4" />Bellen</a>}

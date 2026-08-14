@@ -208,6 +208,7 @@ export type CalendarData = {
     id: string; starts_at: string; ends_at: string; status: string
     lead_id: string | null; company: string | null; contact: string | null
     calendar_id: string | null; pipeline_id: string | null
+    outcome: string | null; deal_value_cents: number | null; commission_pct: number | null
   }[]
   connected: boolean
 }
@@ -245,7 +246,7 @@ export async function loadCalendar(
     admin.from('sales_availability_rules').select('weekday, start_time, end_time, calendar_id').eq('sales_client_id', salesClientId),
     admin.from('sales_availability_exceptions').select('date, closed, start_time, end_time, calendar_id').eq('sales_client_id', salesClientId),
     admin.from('sales_appointments')
-      .select('id, starts_at, ends_at, status, lead_id, contact_id, calendar_id, pipeline_id')
+      .select('*')
       .eq('sales_client_id', salesClientId).neq('status', 'cancelled')
       // Ruime marge: een afspraak die vóór het venster start kan erin doorlopen.
       .gte('starts_at', new Date(from - 86400000).toISOString())
@@ -268,6 +269,7 @@ export async function loadCalendar(
     id: string; starts_at: string; ends_at: string; status: string
     lead_id: string | null; contact_id: string | null; calendar_id: string | null
     pipeline_id: string | null
+    outcome?: string | null; deal_value_cents?: number | null; commission_pct?: number | null
   }[]
   // Alleen de afspraken van déze persoon blokkeren zijn agenda; een afspraak
   // van Marco mag Bram niet in de weg zitten.
@@ -314,8 +316,51 @@ export async function loadCalendar(
     appointments: appointments.map((a) => ({
       id: a.id, starts_at: a.starts_at, ends_at: a.ends_at, status: a.status, lead_id: a.lead_id,
       calendar_id: a.calendar_id, pipeline_id: a.pipeline_id,
+      outcome: a.outcome ?? null,
+      deal_value_cents: a.deal_value_cents ?? null,
+      commission_pct: a.commission_pct ?? null,
       company: a.lead_id ? nameByLead.get(a.lead_id)?.company ?? null : null,
       contact: a.lead_id ? nameByLead.get(a.lead_id)?.contact ?? null : null,
     })),
   }
+}
+
+/**
+ * Een lead naar het andere merk verhuizen.
+ *
+ * Er mag maar één actieve lead per bedrijf per pipeline bestaan. Staat datzelfde
+ * bedrijf daar al, dan verhuizen we NIET en zeggen we waarom — twee open
+ * gesprekken met dezelfde firma binnen één merk is precies wat die regel moet
+ * voorkomen, en stil samenvoegen zou werk van iemand anders kunnen wissen.
+ */
+export async function moveLeadToPipeline(
+  leadId: string, pipelineId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const admin = createAdminSupabaseClient()
+
+  const { data: lead } = await admin.from('sales_leads')
+    .select('id, company_id, sales_client_id, sales_companies ( name )')
+    .eq('id', leadId).maybeSingle()
+  if (!lead) return { ok: false, error: 'Lead niet gevonden' }
+
+  const row = lead as { company_id: string; sales_client_id: string; sales_companies?: { name?: string } | null }
+  const { data: clash } = await admin.from('sales_leads')
+    .select('id')
+    .eq('sales_client_id', row.sales_client_id)
+    .eq('company_id', row.company_id)
+    .eq('pipeline_id', pipelineId)
+    .is('archived_at', null)
+    .neq('id', leadId)
+    .maybeSingle()
+  if (clash) {
+    const name = row.sales_companies?.name ?? 'Dit bedrijf'
+    return { ok: false, error: `${name} staat daar al in de lijst. Werk die lead bij of archiveer hem eerst.` }
+  }
+
+  const { error } = await admin.from('sales_leads').update({ pipeline_id: pipelineId }).eq('id', leadId)
+  if (error) {
+    const dup = /duplicate key|unique/i.test(error.message)
+    return { ok: false, error: dup ? 'Dit bedrijf staat al in die pipeline.' : 'Verhuizen mislukt' }
+  }
+  return { ok: true }
 }

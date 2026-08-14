@@ -2,7 +2,8 @@ import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { canTransition, transitionError, APPOINTMENT_STAGE } from '@/lib/sales/stages'
-import { logLeadEvent } from '@/lib/sales/service'
+import { logLeadEvent, moveLeadToPipeline } from '@/lib/sales/service'
+import { listPipelines } from '@/lib/sales/pipelines'
 import { normalizePhone } from '@/lib/sales/dedupe'
 
 export const dynamic = 'force-dynamic'
@@ -35,8 +36,28 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const b = await req.json()
     const admin = createAdminSupabaseClient()
 
-    const { data: current } = await admin.from('sales_leads').select('id, stage_key, contact_id').eq('id', id).maybeSingle()
+    const { data: current } = await admin.from('sales_leads')
+      .select('id, stage_key, contact_id, pipeline_id, company_id, sales_client_id')
+      .eq('id', id).maybeSingle()
     if (!current) return NextResponse.json({ error: 'Lead niet gevonden' }, { status: 404 })
+
+    // Merk wisselen: de lead verhuist naar de andere pipeline. Dat kan botsen
+    // met de regel "één actieve lead per bedrijf per pipeline", dus we melden
+    // dat netjes in plaats van een databasefout te tonen.
+    if (b.pipelineId) {
+      const pipelines = await listPipelines()
+      const target = pipelines.find((p) => p.id === String(b.pipelineId))
+      if (!target) return NextResponse.json({ error: 'Onbekende pipeline' }, { status: 400 })
+      const cur = current as { pipeline_id: string | null; company_id: string; sales_client_id: string }
+      if (cur.pipeline_id !== target.id) {
+        const moved = await moveLeadToPipeline(id, target.id)
+        if (!moved.ok) return NextResponse.json({ error: moved.error }, { status: 409 })
+        await logLeadEvent(id, {
+          kind: 'system', body: `Verhuisd naar ${target.name}`,
+          actorId: actor.id, actorEmail: actor.email ?? null,
+        })
+      }
+    }
 
     const patch: Record<string, unknown> = {}
 

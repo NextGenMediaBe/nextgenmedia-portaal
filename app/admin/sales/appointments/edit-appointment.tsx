@@ -3,11 +3,15 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { Loader2, X, CalendarClock, Trash2, AlertTriangle } from 'lucide-react'
+import { OutcomePanel } from './outcome-panel'
 
 type Appt = {
   id: string; starts_at: string; ends_at: string
   lead_id: string | null; company: string | null; contact: string | null
   pipeline_id?: string | null
+  outcome?: 'won' | 'lost' | null
+  deal_value_cents?: number | null
+  commission_pct?: number | null
 }
 type LeadOption = { id: string; label: string; email: string | null; pipelineId: string | null }
 type Pipeline = { id: string; name: string }
@@ -27,10 +31,12 @@ function forInput(iso: string | number): string {
  * zien en raakt de herinneringsmail — dat hoort niet per ongeluk te kunnen
  * gebeuren omdat je de muis liet slippen.
  */
-export function EditAppointment({ appt, leads, pipelines, onClose, onSaved }: {
+export function EditAppointment({ appt, leads, pipelines, isAdmin, onClose, onSaved }: {
   appt: Appt
   leads: LeadOption[]
   pipelines: Pipeline[]
+  /** Enkel een admin legt gewonnen/verloren vast — daar hangt commissie aan. */
+  isAdmin?: boolean
   onClose: () => void
   onSaved: () => void
 }) {
@@ -145,6 +151,16 @@ export function EditAppointment({ appt, leads, pipelines, onClose, onSaved }: {
                 uitnodiging. Staat de herinneringsmail nog klaar, dan wordt die op het nieuwe uur gezet.
               </span>
             </p>
+          )}
+
+          {isAdmin && (
+            <OutcomePanel
+              appointmentId={appt.id}
+              outcome={appt.outcome ?? null}
+              dealValueCents={appt.deal_value_cents}
+              commissionPct={appt.commission_pct}
+              onDone={onSaved}
+            />
           )}
 
           <p className="text-[11px] text-gray-500">

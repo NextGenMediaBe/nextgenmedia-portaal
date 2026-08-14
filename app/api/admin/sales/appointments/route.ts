@@ -1,7 +1,7 @@
 import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
-import { loadCalendar, logLeadEvent, getOrCreateSalesOrg } from '@/lib/sales/service'
+import { loadCalendar, logLeadEvent, getOrCreateSalesOrg, moveLeadToPipeline } from '@/lib/sales/service'
 import { isBookable } from '@/lib/sales/availability'
 import { APPOINTMENT_STAGE } from '@/lib/sales/stages'
 import { createEvent, moveEvent, deleteEvent } from '@/lib/sales/google-calendar'
@@ -97,6 +97,7 @@ export async function POST(req: NextRequest) {
     // de ene pipeline beter bij het andere merk past. De keuze wordt hieronder
     // wel gecontroleerd tegen onze eigen pipelines.
     let pipelineId: string | null = null
+    let leadPipelineId: string | null = null
     if (leadId) {
       const { data: lead } = await admin
         .from('sales_leads')
@@ -105,7 +106,8 @@ export async function POST(req: NextRequest) {
       if (!lead) return NextResponse.json({ error: 'Deze lead staat niet in de pipeline' }, { status: 400 })
       contactId = (lead as { contact_id: string | null }).contact_id
       leadStage = (lead as { stage_key: string }).stage_key
-      pipelineId = (lead as { pipeline_id: string | null }).pipeline_id
+      leadPipelineId = (lead as { pipeline_id: string | null }).pipeline_id
+      pipelineId = leadPipelineId
       const leadEmail = (lead as { sales_contacts?: { email?: string | null } | null }).sales_contacts?.email ?? null
       if (!attendee) attendee = leadEmail
       else if (contactId && attendee !== leadEmail) {
@@ -172,6 +174,22 @@ export async function POST(req: NextRequest) {
       })
     }
 
+    // 4b) Boek je een lead voor het ándere merk, dan hoort die lead daar
+    //     voortaan ook thuis: blijkt aan de telefoon dat iemand uit de ene
+    //     pipeline beter bij het andere past, dan verhuist hij mee.
+    let leadMoveWarning: string | null = null
+    if (leadId && pipelineId && leadPipelineId && pipelineId !== leadPipelineId) {
+      const moved = await moveLeadToPipeline(leadId, pipelineId)
+      if (moved.ok) {
+        await logLeadEvent(leadId, {
+          kind: 'system', body: 'Verhuisd naar het merk van de geboekte afspraak',
+          actorId: actor.id, actorEmail: actor.email ?? null,
+        })
+      } else {
+        leadMoveWarning = `De afspraak staat geboekt, maar de lead kon niet mee verhuizen: ${moved.error}`
+      }
+    }
+
     // 5) Herinneringsmail inplannen bij Resend op het juiste moment. Mislukt
     //    dat, dan blijft de afspraak gewoon staan — een boeking mag hier nooit
     //    op stuklopen. Maar we ZEGGEN het wel: een herinnering die er stil niet
@@ -197,7 +215,10 @@ export async function POST(req: NextRequest) {
       ip: meta.ip, userAgent: meta.userAgent,
     })
 
-    return NextResponse.json({ ok: true, id: appt.id, meetUrl, reminderWarning })
+    return NextResponse.json({
+      ok: true, id: appt.id, meetUrl,
+      reminderWarning: reminderWarning ?? leadMoveWarning,
+    })
   } catch (err) {
     return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }

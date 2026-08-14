@@ -17,6 +17,9 @@ type Appt = {
   id: string; starts_at: string; ends_at: string; status: string
   lead_id: string | null; company: string | null; contact: string | null
   pipeline_id?: string | null
+  outcome?: 'won' | 'lost' | null
+  deal_value_cents?: number | null
+  commission_pct?: number | null
 }
 type LeadOption = { id: string; label: string; email: string | null; pipelineId: string | null }
 type Pipeline = { id: string; name: string }
@@ -38,9 +41,10 @@ const hhmm = (ms: number) =>
   new Date(ms).toLocaleTimeString('nl-BE', { hour: '2-digit', minute: '2-digit' })
 
 /** Eén algemene pipeline; de keuze die telt is WIENS agenda je bekijkt. */
-export function SalesCalendar({ client, pipelines, initialLeadId }: {
+export function SalesCalendar({ client, pipelines, isAdmin, initialLeadId }: {
   client: SalesClient
   pipelines: Pipeline[]
+  isAdmin?: boolean
   initialLeadId?: string
 }) {
   const clientId = client.id
@@ -357,6 +361,7 @@ export function SalesCalendar({ client, pipelines, initialLeadId }: {
           appt={editing}
           leads={leads}
           pipelines={pipelines}
+          isAdmin={isAdmin}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); load() }}
         />

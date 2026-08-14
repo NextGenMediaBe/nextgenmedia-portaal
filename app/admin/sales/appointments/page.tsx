@@ -2,12 +2,15 @@ export const dynamic = 'force-dynamic'
 
 import { getOrCreateSalesOrg } from '@/lib/sales/service'
 import { listPipelines } from '@/lib/sales/pipelines'
+import { requireAdmin } from '@/lib/supabase/server'
 import { SalesCalendar } from './calendar'
 
 // Appointment setting — sleep een afspraak in de agenda van Bram of Marco.
 export default async function SalesAppointmentsPage({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   const sp = await searchParams
-  const [pipeline, pipelines] = await Promise.all([getOrCreateSalesOrg(), listPipelines()])
+  const [pipeline, pipelines, admin] = await Promise.all([
+    getOrCreateSalesOrg(), listPipelines(), requireAdmin(),
+  ])
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -27,6 +30,7 @@ export default async function SalesAppointmentsPage({ searchParams }: { searchPa
           default_duration_min: pipeline.default_duration_min,
         }}
         pipelines={pipelines.map((p) => ({ id: p.id, name: p.name }))}
+        isAdmin={!!admin}
         initialLeadId={sp.lead}
       />
     </div>

@@ -1936,3 +1936,107 @@ ALTER TABLE public.sales_calendar_connections
 ALTER TABLE public.sales_appointment_reminders
   ADD COLUMN IF NOT EXISTS cancelled_at timestamptz,
   ADD COLUMN IF NOT EXISTS cancelled_by uuid;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- VERKOOP — appointment setters: uren, commissie en resultaten
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Onze setters werken op uurbasis (standaard € 50/u) plus een commissie op de
+-- waarde van het eerste contract (standaard 7 %). Beide worden per maand
+-- uitbetaald, en dat zijn twee aparte afrekeningen: uren en commissie.
+--
+-- BEDRAGEN IN CENTEN (integer). Bewust geen float: bij geld leidt afronden in
+-- binaire kommagetallen tot bedragen die net niet kloppen, en dit gaat over wat
+-- iemand effectief uitbetaald krijgt.
+
+CREATE TABLE IF NOT EXISTS public.sales_setters (
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  sales_client_id   uuid NOT NULL REFERENCES public.sales_clients(id) ON DELETE CASCADE,
+  auth_user_id      uuid,                 -- login van de setter (staff_members)
+  name              text NOT NULL,
+  email             text,
+  hourly_rate_cents integer NOT NULL DEFAULT 5000,     -- € 50,00 per uur
+  commission_pct    numeric(5,2) NOT NULL DEFAULT 7.00,
+  active            boolean NOT NULL DEFAULT true,
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  updated_at        timestamptz NOT NULL DEFAULT now()
+);
+-- Eén profiel per login; anders zouden uren over twee profielen versnipperen.
+CREATE UNIQUE INDEX IF NOT EXISTS sales_setters_user
+  ON public.sales_setters (auth_user_id) WHERE auth_user_id IS NOT NULL;
+
+-- ── Gewerkte tijd ────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.sales_time_entries (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  setter_id   uuid NOT NULL REFERENCES public.sales_setters(id) ON DELETE CASCADE,
+  started_at  timestamptz NOT NULL,
+  ended_at    timestamptz,               -- NULL = de timer loopt nog
+  note        text,
+  source      text NOT NULL DEFAULT 'timer',   -- timer | manual
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT sales_time_range CHECK (ended_at IS NULL OR ended_at > started_at)
+);
+-- Nooit twee lopende timers voor dezelfde persoon: anders tikken de uren dubbel.
+CREATE UNIQUE INDEX IF NOT EXISTS sales_time_one_running
+  ON public.sales_time_entries (setter_id) WHERE ended_at IS NULL;
+CREATE INDEX IF NOT EXISTS sales_time_setter_start
+  ON public.sales_time_entries (setter_id, started_at DESC);
+
+-- ── Resultaat van een afspraak ───────────────────────────────────────────────
+-- De commissie wordt bij het vastleggen BEREKEND EN OPGESLAGEN, niet later
+-- opnieuw uitgerekend. Verandert het commissiepercentage volgend jaar, dan mag
+-- dat niets veranderen aan wat er vorig jaar afgesproken was.
+ALTER TABLE public.sales_appointments
+  ADD COLUMN IF NOT EXISTS setter_profile_id uuid REFERENCES public.sales_setters(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS outcome           text,        -- won | lost | NULL
+  ADD COLUMN IF NOT EXISTS outcome_reason    text,
+  ADD COLUMN IF NOT EXISTS deal_value_cents  bigint,
+  ADD COLUMN IF NOT EXISTS commission_cents  bigint,
+  ADD COLUMN IF NOT EXISTS commission_pct    numeric(5,2),
+  ADD COLUMN IF NOT EXISTS outcome_at        timestamptz,
+  ADD COLUMN IF NOT EXISTS outcome_by        uuid;
+CREATE INDEX IF NOT EXISTS sales_appt_setter
+  ON public.sales_appointments (setter_profile_id, starts_at DESC);
+
+-- ── Uitbetalingen: per setter, per maand, per soort ─────────────────────────
+-- 'hours' en 'commission' zijn twee losse afrekeningen, zoals afgesproken.
+CREATE TABLE IF NOT EXISTS public.sales_payouts (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  setter_id    uuid NOT NULL REFERENCES public.sales_setters(id) ON DELETE CASCADE,
+  month        date NOT NULL,            -- altijd de 1e van de maand
+  kind         text NOT NULL,            -- hours | commission
+  amount_cents bigint NOT NULL DEFAULT 0,
+  status       text NOT NULL DEFAULT 'open',   -- open | paid
+  paid_at      timestamptz,
+  paid_by      uuid,
+  note         text,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  updated_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS sales_payouts_unique
+  ON public.sales_payouts (setter_id, month, kind);
+
+ALTER TABLE public.sales_setters      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sales_time_entries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sales_payouts      ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "sales_setters admin all" ON public.sales_setters;
+CREATE POLICY "sales_setters admin all" ON public.sales_setters FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+DROP POLICY IF EXISTS "sales_time admin all" ON public.sales_time_entries;
+CREATE POLICY "sales_time admin all" ON public.sales_time_entries FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+DROP POLICY IF EXISTS "sales_payouts admin all" ON public.sales_payouts;
+CREATE POLICY "sales_payouts admin all" ON public.sales_payouts FOR ALL TO authenticated
+  USING      (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+  WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+
+DO $sales$ BEGIN
+  CREATE TRIGGER trg_sales_setters_updated BEFORE UPDATE ON public.sales_setters
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+EXCEPTION WHEN duplicate_object THEN NULL; END $sales$;
+DO $sales$ BEGIN
+  CREATE TRIGGER trg_sales_payouts_updated BEFORE UPDATE ON public.sales_payouts
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+EXCEPTION WHEN duplicate_object THEN NULL; END $sales$;

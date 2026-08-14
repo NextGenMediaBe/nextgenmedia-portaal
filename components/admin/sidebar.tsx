@@ -78,6 +78,7 @@ const SECTIONS: NavSection[] = [
       { label: 'Appointment setting', href: '/admin/sales/appointments', icon: CalendarClock, module: 'sales' },
       { label: 'Pipeline',            href: '/admin/sales/pipeline',     icon: KanbanSquare, module: 'sales' },
       { label: 'Herinneringsmails',   href: '/admin/sales/mails',        icon: MailCheck,    module: 'sales' },
+      { label: 'Resultaten',          href: '/admin/sales/resultaten',   icon: BarChart3,    module: 'sales' },
     ],
   },
   {
