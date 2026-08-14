@@ -2,6 +2,7 @@ import 'server-only'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
 import { listSetters, monthPeriod, statsFor } from '@/lib/sales/setters'
 import { hoursText } from '@/lib/sales/earnings'
+import { createInvoiceTask } from '@/lib/clickup'
 
 /**
  * De twee facturen die een appointment setter ons per maand stuurt: gewerkte
@@ -87,6 +88,16 @@ export async function syncSetterInvoices(month: Date): Promise<SyncResult> {
 
       if (!row) {
         if (line.cents <= 0) { out.skipped++; continue }   // niets te factureren
+        // Taak in ClickUp, zodat de betaling niet enkel in dit scherm leeft.
+        // Best-effort: geen ClickUp of een fout mag de factuur niet tegenhouden.
+        const task = await createInvoiceTask({
+          clientName: s.setter.name,
+          amountIncl: amount,
+          invoiceDate,
+          type: line.kind === KINDS.hours ? 'Uren appointment setter' : 'Commissie appointment setter',
+          title: `Factuur betalen — ${s.setter.name} (${line.kind === KINDS.hours ? 'uren' : 'commissie'} ${key})`,
+        })
+
         const { error } = await admin.from('invoices').insert({
           invoice_month: key,
           invoice_date: invoiceDate,
@@ -98,6 +109,7 @@ export async function syncSetterInvoices(month: Date): Promise<SyncResult> {
           kind: line.kind,
           setter_id: s.setter.id,
           source: 'auto',
+          clickup_task_id: task.taskId,
         })
         if (!error) out.created++
         continue

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ChevronLeft, ChevronRight, Plus, X, Loader2, Trash2, Link2, Send, Repeat, FileText, Ban, User, TrendingUp, CalendarDays, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, X, Loader2, Trash2, Send, Repeat, FileText, Ban, User, CalendarDays, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatEuro, SERVICE_LABELS } from '@/lib/utils'
 import {
@@ -27,7 +27,11 @@ const SETTER_KIND: Record<string, string> = {
   setter_commission: 'Commissie appointment setter',
 }
 type ClientOpt = { id: string; company_name: string }
-type Summary = { omzetExcl: number; linkedExcl: number; verschil: number; pct: number }
+type Summary = {
+  omzetExcl: number; linkedExcl: number; verschil: number; pct: number
+  /** Nog te versturen en al verstuurd, beide excl. btw. */
+  openExcl?: number; doneExcl?: number
+}
 
 const SERVICE_OPTS = ['', 'social-media', 'webdesign', 'foto-video', 'grafisch-ontwerp', 'marketing-consultancy', 'ads']
 const svcLabel = (s: string | null) => (s ? (SERVICE_LABELS[s] ?? s) : '—')
@@ -61,7 +65,7 @@ export function InvoicesPanel() {
   const [busy, setBusy] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [clickupEnabled, setClickupEnabled] = useState(false)
-  const [fClient, setFClient] = useState(''); const [fService, setFService] = useState(''); const [fStatus, setFStatus] = useState(''); const [fType, setFType] = useState(''); const [fLinked, setFLinked] = useState(''); const [fContract, setFContract] = useState('')
+  const [fClient, setFClient] = useState(''); const [fService, setFService] = useState(''); const [fStatus, setFStatus] = useState(''); const [fType, setFType] = useState(''); const [fContract, setFContract] = useState('')
 
   // Performance: enkel de geopende maand laden; bij maandwissel opnieuw.
   const load = useCallback(async () => {
@@ -83,7 +87,6 @@ export function InvoicesPanel() {
     (!fService || r.service_slug === fService) &&
     (!fStatus || r.status === fStatus) &&
     (!fType || r.kind === fType) &&
-    (!fLinked || (fLinked === 'linked' ? !!r.revenue_id : !r.revenue_id)) &&
     (!fContract || (fContract === 'with' ? !!r.contract_id : !r.contract_id))
   )
 
@@ -103,18 +106,14 @@ export function InvoicesPanel() {
     for (const o of cands) { const sc = matchScore(r, o); if (sc > bestScore) { best = o; bestScore = sc } }
     return bestScore >= 50 ? best : null
   }
-  // Vertrouwensscore voor weergave (gekoppeld → t.o.v. gekoppelde prognose; anders → beste kandidaat).
-  const confidence = (r: Row): number | null => {
-    if (r.revenue_id) { const o = omzetById.get(r.revenue_id); return o ? matchScore(r, o) : 100 }
-    const sug = suggestionFor(r); return sug ? matchScore(r, sug) : null
-  }
+
   const warnings = (r: Row): { icon: string; text: string; tone: string }[] => {
     if (r.status === 'geannuleerd') return [{ icon: '⚪', text: 'Geannuleerd', tone: 'text-gray-400' }]
     const w: { icon: string; text: string; tone: string }[] = []
-    if (!r.revenue_id) w.push({ icon: '🔴', text: 'Geen prognose gekoppeld', tone: 'text-red-600' })
+    // Prognoses zijn uit het platform verdwenen; daar wordt hier dus ook niet
+    // meer op gewezen.
     if (r.status === 'te_versturen' && r.billing_date && r.billing_date < todayStr()) w.push({ icon: '🔴', text: 'Factuurdatum voorbij — nog niet verstuurd', tone: 'text-red-600' })
     if (clickupEnabled && !r.clickup_task_id && r.status !== 'geannuleerd') w.push({ icon: '🟠', text: 'Geen ClickUp-taak', tone: 'text-amber-600' })
-    if (r.revenue_id) { const o = omzetById.get(r.revenue_id); if (o && Math.abs(o.amount_excl - r.amount_excl) > 0.01) w.push({ icon: '🟠', text: 'Bedrag wijkt af van prognose', tone: 'text-amber-600' }) }
     if (w.length === 0) w.push({ icon: '🟢', text: 'In orde', tone: 'text-green-600' })
     return w
   }
@@ -160,7 +159,7 @@ export function InvoicesPanel() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Kpi label="Te versturen" value={teVersturen} />
         <Kpi label="Verstuurd" value={verstuurd} />
-        <Kpi label="Prognose gekoppeld" value={formatEuro(summary.linkedExcl)} sub="excl. btw" />
+        <Kpi label="Openstaand bedrag" value={formatEuro(summary.openExcl ?? 0)} sub="excl. btw" />
         <Kpi label="Facturatie voltooid" value={`${summary.pct}%`} />
       </div>
 
@@ -187,7 +186,6 @@ export function InvoicesPanel() {
         <select value={fType} onChange={(e) => setFType(e.target.value)} className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"><option value="">Alle types</option><option value="eenmalig">Eenmalig</option><option value="recurring">Recurring</option></select>
         <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"><option value="">Alle statussen</option>{INVOICE_STATUSES.map((s) => <option key={s} value={s}>{INVOICE_STATUS_LABEL[s]}</option>)}</select>
         <select value={fContract} onChange={(e) => setFContract(e.target.value)} className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"><option value="">Alle (contract)</option><option value="with">Met contract</option><option value="without">Zonder contract</option></select>
-        <select value={fLinked} onChange={(e) => setFLinked(e.target.value)} className="rounded-lg border border-gray-200 px-2 py-1.5 text-xs"><option value="">Gekoppeld + niet</option><option value="linked">Gekoppeld</option><option value="unlinked">Niet gekoppeld</option></select>
         <span className="text-xs text-gray-400">{filtered.length} factuur/facturen</span>
       </div>
 
@@ -199,8 +197,6 @@ export function InvoicesPanel() {
       ) : (
         <div className="space-y-2">
           {filtered.map((r) => {
-            const sug = suggestionFor(r)
-            const conf = confidence(r)
             const ws = warnings(r)
             const cancelled = r.status === 'geannuleerd'
             const remaining = r.recurring_end ? Math.max(0, monthsBetween(month, r.recurring_end) + 1) : null
@@ -222,7 +218,6 @@ export function InvoicesPanel() {
                           Te betalen · {SETTER_KIND[r.invoiceKind] ?? 'appointment setter'}
                         </span>
                       )}
-                      {conf != null && <span className="inline-flex items-center gap-1 text-[10px] text-gray-500" title="Vertrouwensscore koppeling"><span className={`h-2 w-2 rounded-full ${scoreDot(conf)}`} />{conf}%</span>}
                     </div>
                     <div className="text-xs text-gray-400 mt-0.5 flex flex-wrap gap-x-2">
                       <span>{svcLabel(r.service_slug)}</span>
@@ -248,10 +243,8 @@ export function InvoicesPanel() {
                   <div className="flex items-center gap-1 shrink-0">
                     {r.status === 'te_versturen' && <button onClick={() => setStatus(r, 'verstuurd')} disabled={busy === r.rowId} className="btn-primary text-xs" title="Markeer als verstuurd">{busy === r.rowId ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}Verstuurd</button>}
                     {r.status === 'verstuurd' && <button onClick={() => setStatus(r, 'te_versturen')} disabled={busy === r.rowId} className="btn-secondary text-xs" title="Terug naar te versturen">Te versturen</button>}
-                    {!sug ? null : <button onClick={() => link(r, sug.revenue_id)} disabled={busy === r.rowId} className="btn-secondary text-xs" title="Koppel aan prognose"><Link2 className="h-3.5 w-3.5" />Koppelen</button>}
                     {!cancelled && <button onClick={() => setStatus(r, 'geannuleerd')} disabled={busy === r.rowId} className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400" title="Annuleren"><Ban className="h-3.5 w-3.5" /></button>}
                     {r.client_id && <Link href={`/admin/clients/${r.client_id}`} className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400" title="Open klant"><User className="h-3.5 w-3.5" /></Link>}
-                    <Link href="/admin/revenue/omzet" className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400" title="Open prognose"><TrendingUp className="h-3.5 w-3.5" /></Link>
                     <button onClick={() => remove(r)} disabled={busy === r.rowId} className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-red-400" title="Verwijderen">{busy === r.rowId ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}</button>
                   </div>
                 </div>

@@ -176,12 +176,18 @@ export async function GET(req: NextRequest) {
 
     const omzet = expandRevenueForMonth((revenue ?? []) as RevenueEntry[], month)
     const omzetExcl = omzet.reduce((s, x) => s + x.amount_excl, 0)
-    const linkedExcl = rows.filter((r) => r.revenue_id && r.status !== 'geannuleerd').reduce((s, r) => s + r.amount_excl, 0)
-    const pct = omzetExcl > 0 ? Math.min(100, Math.round((linkedExcl / omzetExcl) * 100)) : (rows.length === 0 ? 0 : 100)
+
+    // Prognoses bestaan niet meer; de voortgang van een maand is nu simpelweg
+    // hoeveel van de facturen effectief verstuurd is.
+    const live = rows.filter((r) => r.status !== 'geannuleerd')
+    const openExcl = live.filter((r) => r.status !== 'verstuurd').reduce((s, r) => s + r.amount_excl, 0)
+    const doneExcl = live.filter((r) => r.status === 'verstuurd').reduce((s, r) => s + r.amount_excl, 0)
+    const totalExcl = openExcl + doneExcl
+    const pct = totalExcl > 0 ? Math.round((doneExcl / totalExcl) * 100) : (live.length === 0 ? 0 : 100)
 
     return NextResponse.json({
       rows, omzet, clients: clients ?? [],
-      summary: { omzetExcl, linkedExcl, verschil: Math.max(0, omzetExcl - linkedExcl), pct },
+      summary: { omzetExcl, openExcl, doneExcl, linkedExcl: doneExcl, verschil: openExcl, pct },
       billingDate: lastDayOfMonth(month),
       clickup_enabled: clickupConfigured(),
     })

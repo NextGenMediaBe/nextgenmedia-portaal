@@ -400,6 +400,9 @@ async function findOrCreateInvoiceList(): Promise<string | null> {
 
 export type InvoiceTaskInput = {
   clientName: string; amountIncl: number; invoiceDate: string; dueDate?: string | null; type: string
+  /** Eigen titel; leeg = "Factuur versturen — [naam]". Gebruikt voor
+   *  afrekeningen die WIJ moeten betalen in plaats van versturen. */
+  title?: string
 }
 
 export type InvoiceTaskResult = { taskId: string | null; assigneeFound: boolean }
@@ -419,7 +422,10 @@ export async function createInvoiceTask(input: InvoiceTaskInput): Promise<Invoic
       input.dueDate ? `Vervaldatum: ${input.dueDate}` : null,
       `Type: ${input.type}`,
     ].filter(Boolean).join('\n')
-    const body: Record<string, unknown> = { name: `Factuur versturen — ${input.clientName}`, description: desc, status: STATUS_NEW }
+    const body: Record<string, unknown> = {
+      name: input.title || `Factuur versturen — ${input.clientName}`,
+      description: desc, status: STATUS_NEW,
+    }
     if (assignee) body.assignees = [assignee]
     const due = Date.parse(`${input.invoiceDate}T12:00:00Z`)
     if (!Number.isNaN(due)) body.due_date = due
