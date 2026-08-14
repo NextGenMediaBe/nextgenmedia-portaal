@@ -7,11 +7,14 @@ import {
 } from 'lucide-react'
 import { euro, hoursText, monthLabel } from '@/lib/sales/earnings'
 import { TimerCard } from './timer-card'
+import { TimeEntries } from './time-entries'
 
 type Stat = {
   setter: { id: string; name: string; hourly_rate_cents: number; commission_pct: number }
   seconds: number
   earnedCents: number
+  closedSeconds: number
+  closedEarnedCents: number
   runningSince: string | null
   appointments: number
   won: number
@@ -112,7 +115,8 @@ export function ResultsClient() {
       </div>
 
       {/* De timer is enkel voor wie zelf belt. */}
-      {!isAdmin && <TimerCard alreadyEarnedCents={mine?.earnedCents ?? 0} onChanged={load} />}
+      {/* ZONDER de lopende sessie: die telt de kaart er zelf per seconde bij. */}
+      {!isAdmin && <TimerCard alreadyEarnedCents={mine?.closedEarnedCents ?? 0} onChanged={load} />}
 
       {loading ? (
         <div className="card-base py-12 text-center text-gray-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></div>
@@ -177,6 +181,24 @@ export function ResultsClient() {
               </table>
             </div>
           </div>
+
+          {/* De losse belperiodes, met de mogelijkheid er een te wissen.
+              Bij "alle setters" tonen we ze niet: dan wordt het een onleesbare
+              hoop. Kies eerst iemand, dan zie je diens periodes. */}
+          {(!isAdmin || focus) && (
+            <TimeEntries
+              month={monthParam(month)}
+              setterId={focus || undefined}
+              hourlyRateCents={(focus ? stats.find((x) => x.setter.id === focus) : mine)?.setter.hourly_rate_cents ?? 5000}
+              onChanged={load}
+            />
+          )}
+
+          {isAdmin && !focus && (
+            <p className="text-[11px] text-gray-500">
+              Kies hierboven een setter om zijn belperiodes te zien en er eventueel een te verwijderen.
+            </p>
+          )}
 
           {/* Afrekeningen — enkel voor de admin */}
           {isAdmin && payouts.length > 0 && (

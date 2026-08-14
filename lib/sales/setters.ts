@@ -28,6 +28,15 @@ export type SetterStats = {
   /** Gewerkte tijd in seconden, inclusief een timer die nu loopt. */
   seconds: number
   earnedCents: number
+  /**
+   * Hetzelfde, maar ZONDER de sessie die op dit moment loopt.
+   *
+   * Nodig voor de teller op het scherm: die telt de lopende sessie er zelf per
+   * seconde bij. Zou hij vertrekken van het totaal hierboven, dan telde die
+   * sessie dubbel — en dat is precies wat er misging.
+   */
+  closedSeconds: number
+  closedEarnedCents: number
   /** Loopt er op dit moment een timer, en sinds wanneer? */
   runningSince: string | null
   appointments: number
@@ -137,6 +146,7 @@ export async function statsFor(period: Period, setterId?: string): Promise<Sette
     const entries = timeBySetter.get(setter.id) ?? []
     const seconds = totalSeconds(entries, now)
     const running = entries.find((e) => e.ended_at === null)
+    const closedSeconds = totalSeconds(entries.filter((e) => e.ended_at !== null), now)
 
     const mine = ((appts ?? []) as {
       setter_profile_id: string; status: string; outcome: string | null
@@ -152,6 +162,8 @@ export async function statsFor(period: Period, setterId?: string): Promise<Sette
       setter,
       seconds,
       earnedCents: hours,
+      closedSeconds,
+      closedEarnedCents: earnedCents(closedSeconds, setter.hourly_rate_cents),
       runningSince: running?.started_at ?? null,
       appointments: mine.length,
       won: won.length,
