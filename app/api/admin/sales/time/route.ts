@@ -2,7 +2,6 @@ import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff, requireAdmin } from '@/lib/supabase/server'
 import { getOrCreateSetter, listSetters, monthPeriod } from '@/lib/sales/setters'
-import { syncRecentSetterInvoices } from '@/lib/sales/setter-invoices'
 import { logAudit, requestMeta } from '@/lib/audit'
 
 export const dynamic = 'force-dynamic'
@@ -90,9 +89,6 @@ export async function DELETE(req: NextRequest) {
 
     const { error } = await admin.from('sales_time_entries').delete().eq('id', id)
     if (error) throw new Error(error.message)
-
-    // Minder uren = een lagere factuur; die moet mee.
-    await syncRecentSetterInvoices()
 
     // Uren wissen verandert wat er uitbetaald wordt, dus dit hoort in het
     // logboek — ook wanneer iemand zijn eigen tijd verwijdert.

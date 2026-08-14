@@ -1,148 +1,29 @@
 import 'server-only'
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
-import { listSetters, monthPeriod, statsFor } from '@/lib/sales/setters'
-import { hoursText } from '@/lib/sales/earnings'
-import { createInvoiceTask } from '@/lib/clickup'
 
 /**
- * De twee facturen die een appointment setter ons per maand stuurt: gewerkte
- * uren en commissie.
+ * Opruimen van automatisch aangemaakte setterfacturen.
  *
- * Ze staan in dezelfde facturentabel, zodat je ze op het facturenscherm ziet,
- * maar met `kind` op setter_hours of setter_commission. Die markering is niet
- * cosmetisch: de omzet in Financiën komt uit deze tabel, en zonder dat
- * onderscheid zou de kost van een setter als ONZE omzet meetellen.
+ * Even is geprobeerd om de afrekeningen van een appointment setter als factuur
+ * in het facturenscherm te zetten. Dat was verkeerd: dat scherm gaat over wat
+ * WIJ aan klanten factureren — onze omzet. Een setter factureert ons, dat is
+ * een kost, en die staat bij Verkoop → Resultaten en in Financiën → Kosten.
  *
- * Bedragen zijn EXCL. btw — € 50/u is een tarief zonder btw. Het btw-percentage
- * blijft op de standaard staan; wat een zelfstandige effectief aanrekent, hangt
- * van zijn statuut af en dat vult wie de factuur ontvangt zelf aan.
- *
- * BIJWERKEN, NIET OVERSCHRIJVEN: zodra een factuur op iets anders dan
- * "te factureren" staat, blijven bedrag en omschrijving met rust. Anders zou
- * een late tijdregistratie een al verstuurde factuur stilletjes veranderen.
+ * Deze functie haalt enkel de rijen weg die de app zelf had aangemaakt
+ * (source = 'auto' én gekoppeld aan een setter). Handmatig ingevoerde facturen
+ * blijven onaangeroerd.
  */
-
-export type SyncResult = { created: number; updated: number; skipped: number }
-
-/** Maandsleutel zoals de facturentabel hem gebruikt: 'YYYY-MM'. */
-export function invoiceMonth(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
-
-const KINDS = {
-  hours: 'setter_hours',
-  commission: 'setter_commission',
-} as const
-
-/**
- * Zorgt dat de facturen van één maand kloppen met wat er gewerkt en gewonnen is.
- * Idempotent: kan zo vaak draaien als je wil.
- *
- * Er wordt pas een factuur aangemaakt zodra er ECHT iets te factureren valt —
- * meer dan nul, dus vanaf de eerste seconde die tot een cent leidt. Een factuur
- * van € 0,00 helpt niemand.
- */
-export async function syncSetterInvoices(month: Date): Promise<SyncResult> {
-  const admin = createAdminSupabaseClient()
-  const out: SyncResult = { created: 0, updated: 0, skipped: 0 }
-
-  const period = monthPeriod(month)
-  const key = invoiceMonth(period.from)
-  const setters = await listSetters()
-  if (setters.length === 0) return out
-
-  const stats = await statsFor(period)
-
-  const { data: existingRows, error: readErr } = await admin.from('invoices')
-    .select('id, setter_id, kind, amount_excl, status, source')
-    .eq('invoice_month', key)
-    .not('setter_id', 'is', null)
-  // Kolommen bestaan nog niet → niets doen in plaats van stukgaan.
-  if (readErr) return out
-
-  const existing = new Map(
-    ((existingRows ?? []) as { id: string; setter_id: string; kind: string; status: string }[])
-      .map((r) => [`${r.setter_id}|${r.kind}`, r]),
-  )
-
-  // De laatste dag van de maand: een afrekening loopt tot het einde van de maand.
-  const invoiceDate = new Date(period.to.getTime() - 86400000).toISOString().slice(0, 10)
-
-  for (const s of stats) {
-    const lines: { kind: string; cents: number; description: string }[] = [
-      {
-        kind: KINDS.hours,
-        cents: s.earnedCents,
-        description: `Appointment setting — ${hoursText(s.seconds)} gebeld (${(s.setter.hourly_rate_cents / 100).toFixed(2)}/u)`,
-      },
-      {
-        kind: KINDS.commission,
-        cents: s.commissionCents,
-        description: `Commissie — ${s.won} contract(en) à ${Number(s.setter.commission_pct)}%`,
-      },
-    ]
-
-    for (const line of lines) {
-      const row = existing.get(`${s.setter.id}|${line.kind}`)
-      const amount = Number((line.cents / 100).toFixed(2))
-
-      if (!row) {
-        if (line.cents <= 0) { out.skipped++; continue }   // niets te factureren
-        // Taak in ClickUp, zodat de betaling niet enkel in dit scherm leeft.
-        // Best-effort: geen ClickUp of een fout mag de factuur niet tegenhouden.
-        const task = await createInvoiceTask({
-          clientName: s.setter.name,
-          amountIncl: amount,
-          invoiceDate,
-          type: line.kind === KINDS.hours ? 'Uren appointment setter' : 'Commissie appointment setter',
-          title: `Factuur betalen — ${s.setter.name} (${line.kind === KINDS.hours ? 'uren' : 'commissie'} ${key})`,
-        })
-
-        const { error } = await admin.from('invoices').insert({
-          invoice_month: key,
-          invoice_date: invoiceDate,
-          description: `${s.setter.name} · ${line.description}`,
-          amount_excl: amount,
-          amount_incl: amount,       // btw laten we op de ontvangen factuur zelf
-          vat_pct: 0,
-          status: 'te_factureren',
-          kind: line.kind,
-          setter_id: s.setter.id,
-          source: 'auto',
-          clickup_task_id: task.taskId,
-        })
-        if (!error) out.created++
-        continue
-      }
-
-      // Al verstuurd of betaald? Dan blijft het bedrag zoals het was.
-      if (row.status !== 'te_factureren') { out.skipped++; continue }
-
-      const { error } = await admin.from('invoices').update({
-        amount_excl: amount,
-        amount_incl: amount,
-        description: `${s.setter.name} · ${line.description}`,
-        invoice_date: invoiceDate,
-      }).eq('id', row.id)
-      if (!error) out.updated++
-    }
-  }
-
-  return out
-}
-
-/**
- * De maand van vandaag bijwerken, plus de vorige.
- *
- * Die vorige maand is er bewust bij: commissie valt in de maand waarin het
- * contract getekend is, en dat kan gaan over een afspraak van vorige maand die
- * je nu pas afsluit.
- */
-export async function syncRecentSetterInvoices(now = new Date()): Promise<void> {
+export async function removeAutoSetterInvoices(): Promise<number> {
   try {
-    await syncSetterInvoices(now)
-    await syncSetterInvoices(new Date(now.getFullYear(), now.getMonth() - 1, 1))
+    const admin = createAdminSupabaseClient()
+    const { data } = await admin.from('invoices')
+      .delete()
+      .eq('source', 'auto')
+      .not('setter_id', 'is', null)
+      .select('id')
+    return (data ?? []).length
   } catch {
-    // Facturen bijwerken mag nooit een scherm of een boeking laten falen.
+    // Kolommen bestaan niet (of er valt niets op te ruimen) → niets aan de hand.
+    return 0
   }
 }

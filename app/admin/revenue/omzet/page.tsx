@@ -19,7 +19,8 @@ export default async function FinanceOverviewPage({ searchParams }: { searchPara
   const omzetPeriod = slice.reduce((s, m) => s + m.omzet, 0)
   const invoicedPeriod = slice.reduce((s, m) => s + m.omzetInvoiced, 0)
   const openPeriod = slice.reduce((s, m) => s + m.omzetOpen, 0)
-  const kostenPeriod = slice.reduce((s, m) => s + m.kostenManual + (c.setterPerMonth[m.mi] ?? 0), 0)
+  const setterPeriod = slice.reduce((s, m) => s + (c.setterPerMonth[m.mi] ?? 0), 0)
+  const kostenPeriod = slice.reduce((s, m) => s + m.kostenManual, 0) + setterPeriod
   const winstPeriod = omzetPeriod - kostenPeriod
   const periodLabel = period === 'fy' ? `boekjaar ${year}` : period === 'quarter' ? `Q${quarter} ${year}` : `${MONTHS[month - 1]} ${year}`
 
@@ -49,7 +50,11 @@ export default async function FinanceOverviewPage({ searchParams }: { searchPara
         <Kpi label={`Omzet ${periodLabel}`} value={formatEuro(omzetPeriod)} sub={period !== 'fy' ? `Boekjaar: ${formatEuro(c.omzetFY)}` : undefined} color="text-green-600" Icon={TrendingUp} />
         <Kpi label="Gefactureerd" value={formatEuro(invoicedPeriod)} sub="verstuurd of betaald" color="text-green-600" Icon={Receipt} />
         <Kpi label="Nog te factureren" value={formatEuro(openPeriod)} color={openPeriod > 0 ? 'text-amber-600' : 'text-gray-600'} Icon={Clock} />
-        <Kpi label="Winst" value={formatEuro(winstPeriod)} sub={`Kosten: ${formatEuro(kostenPeriod)}`} color={winstPeriod >= 0 ? 'text-green-600' : 'text-red-600'} Icon={Wallet} />
+        <Kpi label="Winst" value={formatEuro(winstPeriod)}
+          sub={setterPeriod > 0
+            ? `Kosten: ${formatEuro(kostenPeriod)} · waarvan ${formatEuro(setterPeriod)} appointment setting`
+            : `Kosten: ${formatEuro(kostenPeriod)}`}
+          color={winstPeriod >= 0 ? 'text-green-600' : 'text-red-600'} Icon={Wallet} />
       </div>
 
       <OmzetCharts monthly={monthlyChart} quarters={quarters} year={year} />

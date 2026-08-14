@@ -92,3 +92,19 @@ export function monthLabel(key: string): string {
   const d = new Date(key)
   return d.toLocaleDateString('nl-BE', { month: 'long', year: 'numeric' })
 }
+
+/** Standaard btw-tarief in België. */
+export const VAT_PCT = 21
+
+/**
+ * Bedrag inclusief btw, in centen.
+ *
+ * De tarieven van een setter (€ 50/u, 7 % commissie) zijn EXCLUSIEF btw. Wat
+ * hij effectief moet factureren hangt van zijn statuut af — een vrijgestelde
+ * kleine onderneming rekent geen btw — dus het percentage staat apart en is
+ * aanpasbaar in plaats van vastgeklonken.
+ */
+export function withVat(cents: number, pct = VAT_PCT): number {
+  if (cents <= 0) return 0
+  return Math.round(cents * (1 + pct / 100))
+}

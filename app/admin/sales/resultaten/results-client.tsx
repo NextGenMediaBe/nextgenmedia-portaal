@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import {
-  Loader2, ChevronLeft, ChevronRight, Trophy, CalendarCheck, Clock, Euro, Check,
+  Loader2, ChevronLeft, ChevronRight, Trophy, CalendarCheck, Clock, Euro, Check, Receipt,
 } from 'lucide-react'
-import { euro, hoursText, monthLabel } from '@/lib/sales/earnings'
+import { euro, hoursText, monthLabel, withVat, VAT_PCT } from '@/lib/sales/earnings'
 import { TimerCard } from './timer-card'
 import { TimeEntries } from './time-entries'
 
@@ -181,6 +181,65 @@ export function ResultsClient() {
               </table>
             </div>
           </div>
+
+          {/* Wat de setter zelf moet factureren. Staat bewust HIER en niet bij
+              Facturen: dat scherm gaat over wat wij aan klanten sturen. */}
+          {(!isAdmin || focus) && (() => {
+            const s = focus ? stats.find((x) => x.setter.id === focus) : mine
+            if (!s) return null
+            const rows = [
+              { label: `Gewerkte uren — ${hoursText(s.seconds)}`, cents: s.earnedCents },
+              { label: `Commissie — ${s.won} contract(en) à ${Number(s.setter.commission_pct)}%`, cents: s.commissionCents },
+            ].filter((r) => r.cents > 0)
+            const totalExcl = rows.reduce((sum, r) => sum + r.cents, 0)
+            if (totalExcl === 0) return null
+
+            return (
+              <div className="card-base">
+                <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
+                  <div>
+                    <h2 className="font-semibold text-gray-900 flex items-center gap-2">
+                      <Receipt className="h-4 w-4 text-gray-400" />
+                      {isAdmin ? `Wat ${s.setter.name} factureert` : 'Wat jij factureert aan NextGenMedia'}
+                    </h2>
+                    <p className="text-sm text-gray-500 mt-0.5 capitalize">{monthLabel(monthParam(month))}</p>
+                  </div>
+                </div>
+
+                <div className="table-wrap">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-100">
+                        <th className="table-th">Omschrijving</th>
+                        <th className="table-th text-right">Excl. btw</th>
+                        <th className="table-th text-right">Incl. {VAT_PCT}% btw</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {rows.map((r) => (
+                        <tr key={r.label}>
+                          <td className="table-td">{r.label}</td>
+                          <td className="table-td text-right tabular">{euro(r.cents)}</td>
+                          <td className="table-td text-right tabular">{euro(withVat(r.cents))}</td>
+                        </tr>
+                      ))}
+                      <tr className="bg-[#fff848]/15">
+                        <td className="table-td font-semibold">Totaal te factureren</td>
+                        <td className="table-td text-right tabular font-semibold">{euro(totalExcl)}</td>
+                        <td className="table-td text-right tabular font-semibold">{euro(withVat(totalExcl))}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <p className="text-[11px] text-gray-500 mt-3">
+                  Bedragen excl. btw zijn wat er afgesproken is; het btw-bedrag is berekend aan {VAT_PCT}%.
+                  Val je onder de vrijstelling voor kleine ondernemingen, dan factureer je enkel de kolom
+                  zonder btw. Zolang de maand loopt kan dit nog oplopen.
+                </p>
+              </div>
+            )
+          })()}
 
           {/* De losse belperiodes, met de mogelijkheid er een te wissen.
               Bij "alle setters" tonen we ze niet: dan wordt het een onleesbare

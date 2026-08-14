@@ -6,7 +6,7 @@ import {
   inclFromExcl, lastDayOfMonth, billingDateFor, expandRevenueForMonth, normalizeInvoiceStatus,
   recurringActiveInMonth, INVOICE_STATUSES, INVOICE_DAYS, DEFAULT_VAT, type RevenueEntry, type RecurringInvoice,
 } from '@/lib/invoices'
-import { syncRecentSetterInvoices } from '@/lib/sales/setter-invoices'
+import { removeAutoSetterInvoices } from '@/lib/sales/setter-invoices'
 import { createInvoiceTask, completeInvoiceTask, clickupConfigured, INVOICE_ASSIGNEE_NAME } from '@/lib/clickup'
 
 // Gebruikt cookies/sessie: nooit statisch renderen.
@@ -108,10 +108,11 @@ export async function GET(req: NextRequest) {
     if (!month) return NextResponse.json({ error: 'month vereist' }, { status: 400 })
     const admin = createAdminSupabaseClient()
 
-    // De afrekeningen van de setters bijwerken vóór we lezen, zodat het scherm
-    // altijd de actuele uren en commissie toont. Faalt dat, dan tonen we gewoon
-    // wat er is.
-    await syncRecentSetterInvoices()
+    // Dit scherm is onze UITGAANDE facturatie — wat wij aan klanten sturen, en
+    // dus onze omzet. Wat een appointment setter ONS factureert hoort hier niet
+    // tussen; dat staat bij Verkoop → Resultaten en telt mee als kost.
+    // Eerder gemaakte automatische regels ruimen we hier eenmalig op.
+    await removeAutoSetterInvoices()
 
     const [{ data: invoices }, { data: recurring }, { data: recMonths }, { data: revenue }, { data: clients }] = await Promise.all([
       admin.from('invoices').select('*').eq('invoice_month', month),
