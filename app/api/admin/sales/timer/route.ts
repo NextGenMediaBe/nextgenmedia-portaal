@@ -14,6 +14,17 @@ export const dynamic = 'force-dynamic'
  * nooit uit het verzoek.
  */
 
+/**
+ * De vorm waarin een lopende timer naar het scherm gaat.
+ *
+ * ÉÉN vorm voor GET én POST. Ze liepen uiteen — GET gaf `startedAt`, POST de
+ * ruwe kolom `started_at` — waardoor de teller na het starten op NaN stond tot
+ * je de pagina herlaadde.
+ */
+function runningShape(row: { id: string; started_at: string } | null) {
+  return row ? { id: row.id, startedAt: row.started_at } : null
+}
+
 async function mySetter() {
   const actor = await requireStaff()
   if (!actor) return null
@@ -36,7 +47,7 @@ export async function GET() {
 
     return NextResponse.json({
       setter: { id: setter.id, name: setter.name, hourlyRateCents: setter.hourly_rate_cents, commissionPct: Number(setter.commission_pct) },
-      running: data ? { id: (data as { id: string }).id, startedAt: (data as { started_at: string }).started_at } : null,
+      running: runningShape(data as { id: string; started_at: string } | null),
     })
   } catch (err) {
     return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
@@ -57,12 +68,17 @@ export async function POST(req: NextRequest) {
     if (b.action === 'start') {
       // Al bezig? Dan de lopende teruggeven i.p.v. een tweede te starten — dat
       // zou de uren dubbel laten tikken.
-      if (running) return NextResponse.json({ ok: true, running, already: true })
+      if (running) {
+        return NextResponse.json({
+          ok: true, already: true,
+          running: runningShape(running as { id: string; started_at: string }),
+        })
+      }
       const { data, error } = await admin.from('sales_time_entries')
         .insert({ setter_id: setter.id, started_at: new Date().toISOString(), source: 'timer' })
         .select('id, started_at').single()
       if (error) throw new Error(error.message)
-      return NextResponse.json({ ok: true, running: data })
+      return NextResponse.json({ ok: true, running: runningShape(data as { id: string; started_at: string }) })
     }
 
     if (b.action === 'stop') {

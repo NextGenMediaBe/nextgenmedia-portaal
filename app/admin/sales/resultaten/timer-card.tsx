@@ -65,7 +65,12 @@ export function TimerCard({ alreadyEarnedCents, onChanged }: {
     return <div className="card-base py-10 text-center text-gray-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></div>
   }
 
-  const seconds = running ? Math.max(0, Math.floor((Date.now() - new Date(running.startedAt).getTime()) / 1000)) : 0
+  // Onbruikbare starttijd nooit laten doorwerken: dan liever 0 dan "NaN" op
+  // het scherm en in de bedragen.
+  const startedMs = running ? new Date(running.startedAt).getTime() : NaN
+  const seconds = Number.isFinite(startedMs)
+    ? Math.max(0, Math.floor((Date.now() - startedMs) / 1000))
+    : 0
   const rate = me?.hourlyRateCents ?? 5000
   const sessionCents = earnedCents(seconds, rate)
 
@@ -110,7 +115,9 @@ export function TimerCard({ alreadyEarnedCents, onChanged }: {
 
       {running && (
         <p className="text-[11px] text-gray-500 mt-3">
-          Gestart om {new Date(running.startedAt).toLocaleTimeString('nl-BE', { hour: '2-digit', minute: '2-digit' })}.
+          {Number.isFinite(startedMs)
+            ? `Gestart om ${new Date(startedMs).toLocaleTimeString('nl-BE', { hour: '2-digit', minute: '2-digit' })}.`
+            : 'De timer loopt.'}{' '}
           Vergeet niet te stoppen als je klaar bent — de teller loopt anders door.
         </p>
       )}
