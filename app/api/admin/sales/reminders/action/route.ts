@@ -21,16 +21,22 @@ export async function POST(req: NextRequest) {
     if (!actor) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const b = await req.json()
 
-    const appointmentId = String(b.appointmentId ?? '')
     const action = String(b.action ?? '')
-    if (!appointmentId) return NextResponse.json({ error: 'Afspraak ontbreekt' }, { status: 400 })
+    // Eén afspraak of een selectie; opschonen en tegenhouden werken op beide.
+    const raw: string[] = Array.isArray(b.appointmentIds)
+      ? b.appointmentIds.map((v: unknown) => String(v))
+      : [String(b.appointmentId ?? '')]
+    const wanted = raw.filter(Boolean)
+    if (wanted.length === 0) return NextResponse.json({ error: 'Afspraak ontbreekt' }, { status: 400 })
 
-    // De afspraak moet van ons zijn; een id van buiten mag hier niets doen.
+    // Enkel afspraken van ons; ids van buiten vallen er hier uit.
     const admin = createAdminSupabaseClient()
     const org = await getOrCreateSalesOrg()
-    const { data: own } = await admin.from('sales_appointments')
-      .select('id').eq('id', appointmentId).eq('sales_client_id', org.id).maybeSingle()
-    if (!own) return NextResponse.json({ error: 'Afspraak niet gevonden' }, { status: 404 })
+    const { data: ownRows } = await admin.from('sales_appointments')
+      .select('id').in('id', wanted).eq('sales_client_id', org.id)
+    const ids = ((ownRows ?? []) as { id: string }[]).map((r) => r.id)
+    if (ids.length === 0) return NextResponse.json({ error: 'Afspraak niet gevonden' }, { status: 404 })
+    const appointmentId = ids[0]
 
     const meta = requestMeta(req)
     const log = (summary: string) => logAudit({
@@ -40,10 +46,70 @@ export async function POST(req: NextRequest) {
     })
 
     if (action === 'cancel') {
-      const res = await cancelReminderManually(appointmentId, actor.id)
-      if (!res.ok) return NextResponse.json({ error: res.error }, { status: 400 })
-      await log('Verkoop: herinneringsmail tegengehouden')
-      return NextResponse.json({ ok: true, message: res.message })
+      // Bij een selectie gaat elke mail apart; wat niet lukt, melden we los.
+      const problems: string[] = []
+      let done = 0
+      for (const id of ids) {
+        const res = await cancelReminderManually(id, actor.id)
+        if (res.ok) done++
+        else problems.push(res.error)
+      }
+      await log(`Verkoop: ${done} herinneringsmail(s) tegengehouden`)
+      if (done === 0) return NextResponse.json({ error: problems[0] ?? 'Tegenhouden mislukt' }, { status: 400 })
+      return NextResponse.json({
+        ok: true,
+        message: problems.length
+          ? `${done} tegengehouden, ${problems.length} niet: ${problems[0]}`
+          : `${done} mail(s) gaan niet uit.`,
+      })
+    }
+
+    /**
+     * Opschonen: de regel uit de lijst halen. De afspraak blijft staan.
+     *
+     * Een mail die nog moet vertrekken kan NIET opgeschoond worden. Anders
+     * verdwijnt hij uit beeld terwijl hij gewoon nog uitgaat, en dat is precies
+     * het soort verrassing dat dit scherm hoort te voorkomen. Houd hem eerst
+     * tegen; dan mag hij weg.
+     */
+    if (action === 'hide' || action === 'unhide') {
+      const hide = action === 'hide'
+      let blocked = 0
+      let target = ids
+
+      if (hide) {
+        const { data: pending } = await admin.from('sales_appointment_reminders')
+          .select('appointment_id, cancelled_at, scheduled_for')
+          .in('appointment_id', ids)
+        const stillGoing = new Set(
+          ((pending ?? []) as { appointment_id: string; cancelled_at: string | null; scheduled_for: string | null }[])
+            .filter((r) => !r.cancelled_at && r.scheduled_for && new Date(r.scheduled_for).getTime() > Date.now())
+            .map((r) => r.appointment_id),
+        )
+        target = ids.filter((id) => !stillGoing.has(id))
+        blocked = ids.length - target.length
+      }
+
+      if (target.length > 0) {
+        const { error } = await admin.from('sales_appointments')
+          .update({ mail_hidden_at: hide ? new Date().toISOString() : null }).in('id', target)
+        if (error) {
+          if (/mail_hidden_at|PGRST204|schema cache/i.test(error.message)) {
+            return NextResponse.json({
+              error: 'Opschonen kan pas na de migratie (kolom mail_hidden_at ontbreekt nog).',
+            }, { status: 503 })
+          }
+          throw new Error(error.message)
+        }
+      }
+
+      await log(`Verkoop: ${target.length} regel(s) ${hide ? 'opgeschoond' : 'teruggehaald'}`)
+      return NextResponse.json({
+        ok: true,
+        message: blocked > 0
+          ? `${target.length} opgeschoond. ${blocked} niet: die mail staat nog klaar — houd hem eerst tegen.`
+          : hide ? `${target.length} regel(s) opgeschoond.` : `${target.length} regel(s) teruggehaald.`,
+      })
     }
 
     if (action === 'send_now') {

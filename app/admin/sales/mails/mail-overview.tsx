@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import {
   Loader2, RefreshCw, Clock, CheckCircle2, AlertTriangle, MailX, Send, Inbox, Ban, CalendarClock, X,
+  Trash2, Undo2,
 } from 'lucide-react'
 
 type Item = {
@@ -56,18 +57,57 @@ export function MailOverview() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [hint, setHint] = useState<string | null>(null)
+  // Opgeschoonde regels staan standaard niet in beeld, maar zijn op te vragen.
+  const [showHidden, setShowHidden] = useState(false)
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
 
   const load = useCallback(async (quiet = false) => {
     if (quiet) setRefreshing(true)
     try {
-      const r = await fetch('/api/admin/sales/reminders', { cache: 'no-store' })
+      const r = await fetch(`/api/admin/sales/reminders${showHidden ? '?hidden=1' : ''}`, { cache: 'no-store' })
       const j = await r.json(); if (!r.ok) throw new Error(j.error)
       setItems(j.items ?? [])
       setHint(j.hint ?? null)
+      // Selectie leegmaken: id's uit de vorige lijst slaan nergens meer op.
+      setPicked(new Set())
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Laden mislukt') }
     finally { setLoading(false); setRefreshing(false) }
-  }, [])
+  }, [showHidden])
   useEffect(() => { load() }, [load])
+
+  /** Actie op de hele selectie. */
+  const bulk = async (action: 'hide' | 'unhide' | 'cancel') => {
+    if (picked.size === 0) return
+    if (action === 'cancel' && !confirm(
+      `${picked.size} mail(s) tegenhouden?
+
+Die prospects krijgen dan geen herinnering.`,
+    )) return
+    if (action === 'hide' && !confirm(
+      `${picked.size} regel(s) opschonen?
+
+De afspraken blijven gewoon staan; enkel deze regels ` +
+      'verdwijnen uit de lijst. Je haalt ze terug met "Toon opgeschoonde".',
+    )) return
+
+    setBulkBusy(true)
+    try {
+      const r = await fetch('/api/admin/sales/reminders/action', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, appointmentIds: [...picked] }),
+      })
+      const j = await r.json(); if (!r.ok) throw new Error(j.error)
+      toast.success(j.message ?? 'Klaar.')
+      await load(true)
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Mislukt') } finally { setBulkBusy(false) }
+  }
+
+  const toggle = (id: string) => setPicked((p) => {
+    const n = new Set(p)
+    if (n.has(id)) n.delete(id); else n.add(id)
+    return n
+  })
 
   if (loading) {
     return <div className="card-base py-12 text-center text-gray-400"><Loader2 className="h-5 w-5 animate-spin mx-auto" /></div>
@@ -91,10 +131,39 @@ export function MailOverview() {
         <Stat n={sent.length - failed.length} label="verstuurd" tone="text-green-700" />
         {failed.length > 0 && <Stat n={failed.length} label="niet aangekomen" tone="text-red-700" />}
         {blocked.length > 0 && <Stat n={blocked.length} label="gaan niet uit" tone="text-amber-700" />}
-        <button onClick={() => load(true)} disabled={refreshing} className="btn-secondary text-sm ml-auto">
+        <label className="text-xs text-gray-600 flex items-center gap-1.5 cursor-pointer ml-auto">
+          <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} />
+          Toon opgeschoonde
+        </label>
+        <button onClick={() => load(true)} disabled={refreshing} className="btn-secondary text-sm">
           {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}Ververs
         </button>
       </div>
+
+      {/* Balk met bulk-acties; verschijnt enkel als er iets aangevinkt is. */}
+      {picked.size > 0 && (
+        <div className="flex items-center gap-2 flex-wrap rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+          <span className="text-sm font-medium">{picked.size} geselecteerd</span>
+          {showHidden ? (
+            <button onClick={() => bulk('unhide')} disabled={bulkBusy} className="btn-secondary text-sm">
+              <Undo2 className="h-3.5 w-3.5" />Terughalen
+            </button>
+          ) : (
+            <>
+              <button onClick={() => bulk('cancel')} disabled={bulkBusy} className="btn-secondary text-sm">
+                <Ban className="h-3.5 w-3.5" />Tegenhouden
+              </button>
+              <button onClick={() => bulk('hide')} disabled={bulkBusy} className="btn-danger text-sm">
+                <Trash2 className="h-3.5 w-3.5" />Opschonen
+              </button>
+            </>
+          )}
+          <button onClick={() => setPicked(new Set())} className="text-xs text-gray-500 hover:text-black ml-auto">
+            Selectie wissen
+          </button>
+          {bulkBusy && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}
+        </div>
+      )}
 
       <Section
         title="Gaat nog uit"
@@ -102,6 +171,7 @@ export function MailOverview() {
         empty="Er staat op dit moment niets klaar."
         rows={open}
         showDue
+        picked={picked} onToggle={toggle} onPickAll={setPicked}
         onChanged={() => load(true)}
       />
 
@@ -112,6 +182,7 @@ export function MailOverview() {
           empty=""
           rows={blocked}
           showDue={false}
+          picked={picked} onToggle={toggle} onPickAll={setPicked}
           onChanged={() => load(true)}
         />
       )}
@@ -123,7 +194,14 @@ export function MailOverview() {
         rows={sent}
         showDue
         past
+        picked={picked} onToggle={toggle} onPickAll={setPicked}
       />
+
+      <p className="text-[11px] text-gray-500">
+        Opschonen haalt regels enkel uit deze lijst — de afspraken zelf blijven staan. Een mail die nog moet
+        vertrekken kan niet opgeschoond worden; houd hem eerst tegen, anders zou hij uit beeld verdwijnen
+        terwijl hij gewoon nog uitgaat.
+      </p>
     </div>
   )
 }
@@ -137,15 +215,27 @@ function Stat({ n, label, tone }: { n: number; label: string; tone: string }) {
   )
 }
 
-function Section({ title, icon: Icon, empty, rows, showDue, past, onChanged }: {
+function Section({ title, icon: Icon, empty, rows, showDue, past, picked, onToggle, onPickAll, onChanged }: {
   title: string
   icon: typeof Clock
   empty: string
   rows: Item[]
   showDue: boolean
   past?: boolean
+  picked: Set<string>
+  onToggle: (id: string) => void
+  onPickAll: (next: Set<string>) => void
   onChanged?: () => void
 }) {
+  const ids = rows.map((r) => r.appointmentId)
+  const allPicked = ids.length > 0 && ids.every((id) => picked.has(id))
+  /** Alles in DEZE sectie aan- of uitvinken, zonder de rest te verliezen. */
+  const toggleAll = () => {
+    const next = new Set(picked)
+    if (allPicked) ids.forEach((id) => next.delete(id))
+    else ids.forEach((id) => next.add(id))
+    onPickAll(next)
+  }
   if (rows.length === 0 && !empty) return null
   return (
     <div className="card-base p-0 overflow-hidden">
@@ -164,6 +254,10 @@ function Section({ title, icon: Icon, empty, rows, showDue, past, onChanged }: {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100">
+                <th className="table-th w-8">
+                  <input type="checkbox" aria-label="Alles in deze lijst selecteren"
+                    checked={allPicked} onChange={toggleAll} />
+                </th>
                 <th className="table-th">Bedrijf</th>
                 <th className="table-th">Merk</th>
                 <th className="table-th">Naar</th>
@@ -175,7 +269,12 @@ function Section({ title, icon: Icon, empty, rows, showDue, past, onChanged }: {
             </thead>
             <tbody className="divide-y divide-gray-50">
               {rows.map((i) => (
-                <tr key={i.appointmentId} className="hover:bg-gray-50">
+                <tr key={i.appointmentId}
+                  className={`hover:bg-gray-50 ${picked.has(i.appointmentId) ? 'bg-[#fff848]/10' : ''}`}>
+                  <td className="table-td">
+                    <input type="checkbox" aria-label="Selecteer deze regel"
+                      checked={picked.has(i.appointmentId)} onChange={() => onToggle(i.appointmentId)} />
+                  </td>
                   <td className="table-td">
                     <div className="font-medium truncate">{i.company ?? 'Afspraak zonder lead'}</div>
                     {i.contact && <div className="text-[11px] text-gray-500 truncate">{i.contact}</div>}

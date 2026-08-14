@@ -2040,3 +2040,8 @@ DO $sales$ BEGIN
   CREATE TRIGGER trg_sales_payouts_updated BEFORE UPDATE ON public.sales_payouts
     FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 EXCEPTION WHEN duplicate_object THEN NULL; END $sales$;
+
+-- Opgeschoonde regels in het mailoverzicht. De afspraak zelf blijft ongemoeid;
+-- enkel de regel verdwijnt uit de lijst, en is met één klik weer op te halen.
+ALTER TABLE public.sales_appointments
+  ADD COLUMN IF NOT EXISTS mail_hidden_at timestamptz;

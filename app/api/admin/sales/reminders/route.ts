@@ -1,5 +1,5 @@
 import { safeMessage } from '@/lib/api-error'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { getEmailStatus, RESTRICTED_KEY_HINT, resendKeyFor } from '@/lib/email'
 import { listPipelines } from '@/lib/sales/pipelines'
@@ -39,7 +39,7 @@ type Item = {
 // voor een normale week, en het scherm blijft snel.
 const MAX_STATUS_LOOKUPS = 60
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     if (!(await requireStaff())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
     const admin = createAdminSupabaseClient()
@@ -52,14 +52,31 @@ export async function GET() {
     // je kunt nakijken wat er de voorbije weken vertrokken is.
     const from = new Date(now - 30 * 86400000).toISOString()
 
-    const { data: apptRows } = await admin
+    // Opgeschoonde regels blijven bewaard maar staan standaard niet in beeld.
+    const showHidden = req.nextUrl.searchParams.get('hidden') === '1'
+    let q = admin
       .from('sales_appointments')
-      .select('id, starts_at, created_at, status, attendee_email, pipeline_id, lead_id, calendar_id')
+      .select('id, starts_at, created_at, status, attendee_email, pipeline_id, lead_id, calendar_id, mail_hidden_at')
       .eq('sales_client_id', org.id)
       .neq('status', 'cancelled')
       .gte('starts_at', from)
       .order('starts_at', { ascending: true })
       .limit(300)
+    q = showHidden ? q.not('mail_hidden_at', 'is', null) : q.is('mail_hidden_at', null)
+
+    let { data: apptRows, error: apptErr } = await q
+    // Vóór de migratie bestaat mail_hidden_at nog niet; dan gewoon alles tonen.
+    if (apptErr && /mail_hidden_at|PGRST204|schema cache|column/i.test(apptErr.message ?? '')) {
+      const fallback = await admin
+        .from('sales_appointments')
+        .select('id, starts_at, created_at, status, attendee_email, pipeline_id, lead_id, calendar_id')
+        .eq('sales_client_id', org.id)
+        .neq('status', 'cancelled')
+        .gte('starts_at', from)
+        .order('starts_at', { ascending: true })
+        .limit(300)
+      apptRows = (fallback.data ?? []).map((r) => ({ ...r, mail_hidden_at: null }))
+    }
 
     const appts = (apptRows ?? []) as {
       id: string; starts_at: string; created_at: string; status: string
@@ -186,6 +203,7 @@ export async function GET() {
 
     return NextResponse.json({
       items: [...upcoming, ...history],
+      showingHidden: showHidden,
       hint: missingCols
         ? 'De laatste migratie is nog niet gedraaid, dus we kunnen niet zien welke mails al ingepland zijn. Draai supabase/migrations/99999999_SYNC_ALL.sql — tot dan klopt dit overzicht niet.'
         : restrictedKey ? RESTRICTED_KEY_HINT : null,
