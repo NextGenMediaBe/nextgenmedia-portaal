@@ -2,6 +2,7 @@ import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff } from '@/lib/supabase/server'
 import { getOrCreateSetter } from '@/lib/sales/setters'
+import { syncRecentSetterInvoices } from '@/lib/sales/setter-invoices'
 
 export const dynamic = 'force-dynamic'
 
@@ -87,6 +88,9 @@ export async function POST(req: NextRequest) {
         .update({ ended_at: new Date().toISOString(), note: String(b.note ?? '').trim() || null })
         .eq('id', (running as { id: string }).id)
       if (error) throw new Error(error.message)
+      // Meteen de urenfactuur van deze maand bijwerken. Faalt dat, dan blijft
+      // de tijdregistratie gewoon staan — het scherm werkt hem later alsnog bij.
+      await syncRecentSetterInvoices()
       return NextResponse.json({ ok: true, running: null })
     }
 

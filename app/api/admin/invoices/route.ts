@@ -6,6 +6,7 @@ import {
   inclFromExcl, lastDayOfMonth, billingDateFor, expandRevenueForMonth, normalizeInvoiceStatus,
   recurringActiveInMonth, INVOICE_STATUSES, INVOICE_DAYS, DEFAULT_VAT, type RevenueEntry, type RecurringInvoice,
 } from '@/lib/invoices'
+import { syncRecentSetterInvoices } from '@/lib/sales/setter-invoices'
 import { createInvoiceTask, completeInvoiceTask, clickupConfigured, INVOICE_ASSIGNEE_NAME } from '@/lib/clickup'
 
 // Gebruikt cookies/sessie: nooit statisch renderen.
@@ -93,6 +94,10 @@ type Row = {
   billing_date: string; clickup_task_id: string | null
   recurring_start: string | null; recurring_end: string | null; invoice_day: string | null
   contract_id: string | null; contract_title: string | null
+  /** 'client' = onze omzet; setter_hours/setter_commission = een afrekening
+   *  die een appointment setter ONS stuurt. */
+  invoiceKind: string
+  setterName: string | null
 }
 
 // GET ?month=YYYY-MM → samengevoegde facturen (eenmalig + recurring) + omzet + klanten
@@ -102,6 +107,11 @@ export async function GET(req: NextRequest) {
     const month = req.nextUrl.searchParams.get('month')
     if (!month) return NextResponse.json({ error: 'month vereist' }, { status: 400 })
     const admin = createAdminSupabaseClient()
+
+    // De afrekeningen van de setters bijwerken vóór we lezen, zodat het scherm
+    // altijd de actuele uren en commissie toont. Faalt dat, dan tonen we gewoon
+    // wat er is.
+    await syncRecentSetterInvoices()
 
     const [{ data: invoices }, { data: recurring }, { data: recMonths }, { data: revenue }, { data: clients }] = await Promise.all([
       admin.from('invoices').select('*').eq('invoice_month', month),
@@ -121,6 +131,17 @@ export async function GET(req: NextRequest) {
       }
     } catch { /* kolom kan ontbreken vóór migratie */ }
 
+    // Namen van de setters, om te tonen van wie een afrekening komt.
+    const setterNames = new Map<string, string>()
+    try {
+      const sids = Array.from(new Set(((invoices ?? []) as Record<string, unknown>[])
+        .map((i) => i.setter_id).filter(Boolean))) as string[]
+      if (sids.length > 0) {
+        const { data: st } = await admin.from('sales_setters').select('id, name').in('id', sids)
+        for (const x of (st ?? []) as { id: string; name: string }[]) setterNames.set(x.id, x.name)
+      }
+    } catch { /* kolom of tabel kan ontbreken vóór migratie */ }
+
     const rows: Row[] = []
     for (const i of (invoices ?? []) as Record<string, unknown>[]) {
       rows.push({
@@ -132,6 +153,8 @@ export async function GET(req: NextRequest) {
         recurring_start: null, recurring_end: null, invoice_day: null,
         contract_id: (i.contract_id ?? null) as string | null,
         contract_title: i.contract_id ? (contractTitles.get(i.contract_id as string) ?? null) : null,
+        invoiceKind: (i.kind as string | null) ?? 'client',
+        setterName: i.setter_id ? (setterNames.get(i.setter_id as string) ?? null) : null,
       })
     }
     const recRow = new Map((recMonths ?? []).map((m: { recurring_id: string; status: string; clickup_task_id: string | null }) => [m.recurring_id, m]))
@@ -145,6 +168,8 @@ export async function GET(req: NextRequest) {
         status: normalizeInvoiceStatus(mr?.status ?? 'te_versturen'), revenue_id: r.revenue_id,
         billing_date: billingDateFor(month, r.invoice_day), clickup_task_id: mr?.clickup_task_id ?? null,
         recurring_start: (r.start_month ?? '').slice(0, 7) || null, recurring_end: r.end_month ? r.end_month.slice(0, 7) : null, invoice_day: r.invoice_day ?? 'last',
+        // Terugkerende facturen zijn altijd klantfacturen.
+        invoiceKind: 'client', setterName: null,
         contract_id: null, contract_title: null,
       })
     }

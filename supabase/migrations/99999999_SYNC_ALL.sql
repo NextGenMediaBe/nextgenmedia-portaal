@@ -2045,3 +2045,25 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $sales$;
 -- enkel de regel verdwijnt uit de lijst, en is met één klik weer op te halen.
 ALTER TABLE public.sales_appointments
   ADD COLUMN IF NOT EXISTS mail_hidden_at timestamptz;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- FACTUREN — inkomende afrekeningen van appointment setters
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Een setter factureert ONS: gewerkte uren en commissie, twee losse facturen
+-- per maand. Ze staan in dezelfde tabel zodat je ze op het facturenscherm ziet,
+-- maar met een `kind` erbij.
+--
+-- KRITISCH: de omzet in Financiën wordt uit deze tabel berekend. Zonder dit
+-- onderscheid zou de kost van een setter als ONZE omzet meetellen. Alles wat
+-- niet 'client' is, blijft daarom buiten de omzet en telt als kost.
+ALTER TABLE public.invoices
+  ADD COLUMN IF NOT EXISTS kind      text NOT NULL DEFAULT 'client',  -- client | setter_hours | setter_commission
+  ADD COLUMN IF NOT EXISTS setter_id uuid,
+  -- 'auto' = door de app bijgehouden; handmatige wijzigingen blijven staan.
+  ADD COLUMN IF NOT EXISTS source    text NOT NULL DEFAULT 'manual';
+
+-- Eén automatische factuur per setter, per maand, per soort.
+CREATE UNIQUE INDEX IF NOT EXISTS invoices_setter_month_kind
+  ON public.invoices (setter_id, invoice_month, kind)
+  WHERE setter_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_invoices_kind ON public.invoices (kind);

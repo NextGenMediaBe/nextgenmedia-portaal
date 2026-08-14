@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireAdmin } from '@/lib/supabase/server'
 import { getOrCreateSalesOrg } from '@/lib/sales/service'
 import { commissionCents } from '@/lib/sales/earnings'
+import { syncRecentSetterInvoices } from '@/lib/sales/setter-invoices'
 import { logAudit, requestMeta } from '@/lib/audit'
 
 export const dynamic = 'force-dynamic'
@@ -92,6 +93,9 @@ export async function POST(req: NextRequest) {
       }
       throw new Error(error.message)
     }
+
+    // De commissiefactuur volgt de maand van AFSLUITEN, dus die moet nu bij.
+    await syncRecentSetterInvoices()
 
     const meta = requestMeta(req)
     await logAudit({

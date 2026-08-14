@@ -14,6 +14,8 @@ export type InvoiceRow = {
   status: string | null             // te_factureren | gefactureerd | betaald | geannuleerd
   client_id: string | null
   service_slug: string | null
+  /** client = onze omzet; setter_hours/setter_commission = onze kost. */
+  kind?: string | null
 }
 
 export type FinanceCore = {
@@ -56,6 +58,9 @@ export function computeCore(
     }
     for (const i of invoices) {
       if ((i.invoice_month ?? '') !== key) continue
+      // ALLEEN klantfacturen zijn omzet. Een setter factureert ONS; die staat
+      // in dezelfde tabel en zou hier anders als inkomsten meetellen.
+      if ((i.kind ?? 'client') !== 'client') continue
       add(Number(i.amount_excl ?? 0), i.status)
     }
     for (const r of recurring) {
@@ -88,6 +93,10 @@ export function computeCore(
   // niet in kostenManual gemengd: die staat voor de handmatig ingevoerde
   // kostenposten, en dit wordt automatisch berekend uit gewerkte uren en
   // toegekende commissies.
+  //
+  // Deze bedragen komen uit dezelfde bron als de setterfacturen (uren en
+  // commissie). Ze worden hier ÉÉN keer als kost geteld; de facturen zelf staan
+  // bewust buiten de omzet- én kostenberekening, anders telde alles dubbel.
   const setters = Array.from({ length: 12 }, (_, mi) => Number(setterPerMonth[mi] ?? 0))
   const setterCostFY = setters.reduce((s, v) => s + v, 0)
 
@@ -123,7 +132,7 @@ export async function loadCore(year: number): Promise<FinanceCore> {
     admin.from('cost_entries').select('*').order('created_at', { ascending: false }),
     admin.from('fiscal_settings').select('*').eq('year', year).maybeSingle(),
     // Omzetbron: losse facturen van dit boekjaar…
-    admin.from('invoices').select('invoice_month, amount_excl, status, client_id, service_slug').like('invoice_month', `${year}-%`),
+    admin.from('invoices').select('invoice_month, amount_excl, status, client_id, service_slug, kind').like('invoice_month', `${year}-%`),
     // …plus terugkerende facturen (met hun per-maand status).
     admin.from('recurring_invoices').select('*'),
     admin.from('recurring_invoice_months').select('recurring_id, month, status').like('month', `${year}-%`),

@@ -100,11 +100,16 @@ export function monthPeriod(d = new Date()): Period {
 /**
  * Cijfers van één of alle setters over een periode.
  *
- * De uren komen uit de tijdregistratie, de commissie uit de afspraken die als
- * gewonnen zijn afgesloten. Die commissie wordt NIET hier berekend maar
- * overgenomen zoals ze bij het afsluiten is vastgelegd — anders zou een latere
- * wijziging van het percentage met terugwerkende kracht doorwerken in wat
- * iemand al had verdiend.
+ * TWEE VERSCHILLENDE VENSTERS, en dat is bewust:
+ *  • afspraken tellen mee in de maand waarin ze PLAATSVINDEN;
+ *  • gewonnen/verloren en de commissie tellen in de maand waarin het contract
+ *    is AFGESLOTEN. Een afspraak van augustus die in oktober getekend wordt,
+ *    levert commissie in oktober — dat is wanneer de verplichting ontstaat, en
+ *    wanneer de setter ervoor factureert.
+ *
+ * De commissie wordt NIET hier berekend maar overgenomen zoals ze bij het
+ * afsluiten is vastgelegd — anders zou een latere wijziging van het percentage
+ * met terugwerkende kracht doorwerken in wat iemand al had verdiend.
  */
 export async function statsFor(period: Period, setterId?: string): Promise<SetterStats[]> {
   const admin = createAdminSupabaseClient()
@@ -130,6 +135,14 @@ export async function statsFor(period: Period, setterId?: string): Promise<Sette
       .lt('starts_at', toIso),
   ])
 
+  // Afgesloten contracten van DEZE maand, ongeacht wanneer de afspraak stond.
+  const { data: closed } = await admin.from('sales_appointments')
+    .select('setter_profile_id, status, outcome, deal_value_cents, commission_cents, outcome_at')
+    .in('setter_profile_id', ids)
+    .not('outcome', 'is', null)
+    .gte('outcome_at', fromIso)
+    .lt('outcome_at', toIso)
+
   const timeBySetter = new Map<string, Interval[]>()
   for (const t of (times ?? []) as { setter_id: string; started_at: string; ended_at: string | null }[]) {
     const list = timeBySetter.get(t.setter_id) ?? []
@@ -153,8 +166,13 @@ export async function statsFor(period: Period, setterId?: string): Promise<Sette
       deal_value_cents: number | null; commission_cents: number | null
     }[]).filter((a) => a.setter_profile_id === setter.id && a.status !== 'cancelled')
 
-    const won = mine.filter((a) => a.outcome === 'won')
-    const lost = mine.filter((a) => a.outcome === 'lost')
+    const closedMine = ((closed ?? []) as {
+      setter_profile_id: string; status: string; outcome: string | null
+      deal_value_cents: number | null; commission_cents: number | null
+    }[]).filter((a) => a.setter_profile_id === setter.id && a.status !== 'cancelled')
+
+    const won = closedMine.filter((a) => a.outcome === 'won')
+    const lost = closedMine.filter((a) => a.outcome === 'lost')
     const commission = won.reduce((sum, a) => sum + (a.commission_cents ?? 0), 0)
     const hours = earnedCents(seconds, setter.hourly_rate_cents)
 
@@ -168,7 +186,8 @@ export async function statsFor(period: Period, setterId?: string): Promise<Sette
       appointments: mine.length,
       won: won.length,
       lost: lost.length,
-      open: mine.length - won.length - lost.length,
+      // Afspraken van deze maand waar nog geen uitkomst op staat.
+      open: mine.filter((a) => !a.outcome).length,
       dealValueCents: won.reduce((sum, a) => sum + (a.deal_value_cents ?? 0), 0),
       commissionCents: commission,
       totalCents: hours + commission,

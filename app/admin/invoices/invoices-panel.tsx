@@ -17,6 +17,14 @@ type Row = {
   billing_date: string; clickup_task_id: string | null
   recurring_start: string | null; recurring_end: string | null; invoice_day: string | null
   contract_id?: string | null; contract_title?: string | null
+  /** 'client' = onze omzet; setter_* = een afrekening die WIJ ontvangen. */
+  invoiceKind?: string
+  setterName?: string | null
+}
+
+const SETTER_KIND: Record<string, string> = {
+  setter_hours: 'Uren appointment setter',
+  setter_commission: 'Commissie appointment setter',
 }
 type ClientOpt = { id: string; company_name: string }
 type Summary = { omzetExcl: number; linkedExcl: number; verschil: number; pct: number }
@@ -201,10 +209,19 @@ export function InvoicesPanel() {
                 <div className="flex items-start justify-between gap-3 flex-wrap">
                   <div className="min-w-0">
                     <div className="font-medium flex items-center gap-2 flex-wrap">
-                      {r.client_id ? (clientName.get(r.client_id) ?? '—') : '—'}
+                      {r.setterName
+                        ? r.setterName
+                        : r.client_id ? (clientName.get(r.client_id) ?? '—') : '—'}
                       <span className={`status-badge text-[10px] inline-flex items-center gap-1 ${r.kind === 'recurring' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'}`}>
                         {r.kind === 'recurring' ? <><Repeat className="h-3 w-3" />Recurring</> : <><FileText className="h-3 w-3" />Eenmalig</>}
                       </span>
+                      {/* Een afrekening die WIJ ontvangen — geen omzet. Dat moet
+                          in één oogopslag duidelijk zijn tussen de klantfacturen. */}
+                      {r.invoiceKind && r.invoiceKind !== 'client' && (
+                        <span className="status-badge text-[10px] bg-orange-100 text-orange-800">
+                          Te betalen · {SETTER_KIND[r.invoiceKind] ?? 'appointment setter'}
+                        </span>
+                      )}
                       {conf != null && <span className="inline-flex items-center gap-1 text-[10px] text-gray-500" title="Vertrouwensscore koppeling"><span className={`h-2 w-2 rounded-full ${scoreDot(conf)}`} />{conf}%</span>}
                     </div>
                     <div className="text-xs text-gray-400 mt-0.5 flex flex-wrap gap-x-2">
