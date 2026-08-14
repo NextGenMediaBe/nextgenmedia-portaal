@@ -19,7 +19,7 @@ export default async function FinanceOverviewPage({ searchParams }: { searchPara
   const omzetPeriod = slice.reduce((s, m) => s + m.omzet, 0)
   const invoicedPeriod = slice.reduce((s, m) => s + m.omzetInvoiced, 0)
   const openPeriod = slice.reduce((s, m) => s + m.omzetOpen, 0)
-  const kostenPeriod = slice.reduce((s, m) => s + m.kostenManual, 0)
+  const kostenPeriod = slice.reduce((s, m) => s + m.kostenManual + (c.setterPerMonth[m.mi] ?? 0), 0)
   const winstPeriod = omzetPeriod - kostenPeriod
   const periodLabel = period === 'fy' ? `boekjaar ${year}` : period === 'quarter' ? `Q${quarter} ${year}` : `${MONTHS[month - 1]} ${year}`
 

@@ -13,7 +13,7 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
 
   // Gerealiseerd t.e.m. nu binnen het boekjaar
   const lastRealized = year < now.getFullYear() ? 11 : year > now.getFullYear() ? -1 : now.getMonth()
-  const realized = (key: 'omzet' | 'kosten') => c.monthly.slice(0, lastRealized + 1).reduce((s, m) => s + (key === 'omzet' ? m.omzet : m.kostenManual + c.socialPerMonth), 0)
+  const realized = (key: 'omzet' | 'kosten') => c.monthly.slice(0, lastRealized + 1).reduce((s, m) => s + (key === 'omzet' ? m.omzet : m.kostenManual + c.socialPerMonth + (c.setterPerMonth[m.mi] ?? 0)), 0)
   const cashIn = realized('omzet')
   const cashOut = realized('kosten')
   const netto = cashIn - cashOut
@@ -24,7 +24,8 @@ export default async function CashflowPage({ searchParams }: { searchParams: Pro
   const forecastQuarter = recurringNetMonth * 3
 
   const chartData = c.monthly.map(m => {
-    const k = m.kostenManual + c.socialPerMonth
+    // Setterkost telt mee in de maanduitgaven — die wordt ook echt betaald.
+    const k = m.kostenManual + c.socialPerMonth + (c.setterPerMonth[m.mi] ?? 0)
     return { label: MONTHS[m.mi], omzet: Math.round(m.omzet), kosten: Math.round(k), winst: Math.round(m.omzet - k) }
   })
 

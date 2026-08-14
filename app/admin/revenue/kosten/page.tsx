@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic'
 
 import { formatEuro } from '@/lib/utils'
-import { TrendingDown, Repeat2, ArrowDownRight } from 'lucide-react'
+import { TrendingDown, Repeat2, ArrowDownRight, PhoneCall } from 'lucide-react'
 import { loadCore, readPeriodParams, MONTHS } from '@/lib/finance-data'
 import { costActive, toMonthly, type CostEntry } from '@/lib/finance'
 import { Kpi } from '../kpi'
@@ -25,13 +25,18 @@ export default async function KostenPage({ searchParams }: { searchParams: Promi
 
   const recurringCostFY = c.costs.filter(x => x.type === 'recurring').reduce((s, x) => s + costYearValue(x, year), 0)
   const oneTimeCostFY = c.costs.filter(x => x.type === 'one_time').reduce((s, x) => s + costYearValue(x, year), 0)
-  const totaalFY = c.kostenManualFY + c.socialAsCostFY
+  // Setterkost (uren + commissie) telt gewoon mee als bedrijfskost.
+  const totaalFY = c.kostenManualFY + c.socialAsCostFY + c.setterCostFY
 
-  const monthlyChart = c.monthly.map(m => ({ label: MONTHS[m.mi], kosten: Math.round(m.kostenManual + c.socialPerMonth) }))
+  const monthlyChart = c.monthly.map(m => ({
+    label: MONTHS[m.mi],
+    kosten: Math.round(m.kostenManual + c.socialPerMonth + (c.setterPerMonth[m.mi] ?? 0)),
+  }))
 
   const perCat: Record<string, number> = {}
   for (const x of c.costs) { const v = costYearValue(x, year); if (v > 0) { const cat = x.category || 'Overig'; perCat[cat] = (perCat[cat] ?? 0) + v } }
   if (c.socialAsCostFY > 0) perCat['Sociale bijdragen'] = (perCat['Sociale bijdragen'] ?? 0) + c.socialAsCostFY
+  if (c.setterCostFY > 0) perCat['Appointment setters'] = (perCat['Appointment setters'] ?? 0) + c.setterCostFY
   const categories = Object.entries(perCat).sort(([, a], [, b]) => b - a).map(([name, value]) => ({ name, value: Math.round(value) }))
   const catTotal = categories.reduce((s, x) => s + x.value, 0)
 
@@ -43,7 +48,19 @@ export default async function KostenPage({ searchParams }: { searchParams: Promi
         <Kpi label={`Totale kosten ${year}`} value={formatEuro(totaalFY)} sub="excl. btw" color="text-red-600" Icon={TrendingDown} />
         <Kpi label="Recurring kosten" value={formatEuro(recurringCostFY)} sub={`per maand nu: ${formatEuro(c.recurringCostNow)}`} color="text-red-600" Icon={Repeat2} />
         <Kpi label="Eenmalige kosten" value={formatEuro(oneTimeCostFY)} color="text-orange-600" Icon={ArrowDownRight} />
+        <Kpi label="Appointment setters" value={formatEuro(c.setterCostFY)}
+          sub={`deze maand: ${formatEuro(c.setterPerMonth[new Date().getMonth()] ?? 0)}`}
+          color="text-red-600" Icon={PhoneCall} />
       </div>
+
+      {/* Deze post wordt niet ingetikt maar berekend, en dat hoort erbij te staan:
+          anders zoek je je blauw naar de kostenregel die er niet is. */}
+      {c.setterCostFY > 0 && (
+        <p className="text-[11px] text-gray-500">
+          De post <b>Appointment setters</b> wordt automatisch berekend uit gelogde uren en toegekende
+          commissies, en loopt op terwijl er gebeld wordt. Je vindt de details onder Verkoop → Resultaten.
+        </p>
+      )}
 
       <KostenCharts monthly={monthlyChart} categories={categories} year={year} />
 

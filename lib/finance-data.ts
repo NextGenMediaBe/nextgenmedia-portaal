@@ -1,4 +1,5 @@
 import { createAdminSupabaseClient } from '@/lib/supabase/server'
+import { setterCostByMonth } from '@/lib/sales/setters'
 import {
   mergeFiscalSettings, estimateCorporateTax, estimateSocialContribution,
   revenueForMonth, costForMonth, currentMRR, currentRecurringCost, remainingRecurringRevenue,
@@ -27,6 +28,8 @@ export type FinanceCore = {
   monthly: { mi: number; omzet: number; omzetInvoiced: number; omzetOpen: number; omzetRec: number; omzetOne: number; kostenManual: number }[]
   omzetFY: number; omzetInvoicedFY: number; omzetOpenFY: number; omzetRecFY: number; omzetOneFY: number
   kostenManualFY: number; ebitdaFY: number
+  /** Kost van de appointment setters (uren + commissie), per maand en per jaar. */
+  setterPerMonth: number[]; setterCostFY: number
   jaarloon: number; socialAnnual: number; socialPerQuarter: number
   socialAsCostFY: number; socialPerMonth: number
   winstFY: number; taxFY: number; netFY: number
@@ -37,6 +40,8 @@ export function computeCore(
   entries: RevenueEntry[], costs: CostEntry[], settings: FiscalSettings, year: number,
   clientMap: Map<string, string>, invoices: InvoiceRow[] = [],
   recurring: RecurringInvoice[] = [], recurringStatus: Map<string, string> = new Map(),
+  /** Kost van de appointment setters per maand, in euro. */
+  setterPerMonth: number[] = [],
 ): FinanceCore {
   // Omzet komt uit FACTUREN — losse facturen ÉN terugkerende facturen.
   // Geannuleerde tellen niet mee; bedragen excl. btw (= omzet).
@@ -78,7 +83,15 @@ export function computeCore(
   const omzetRecFY = monthly.reduce((s, m) => s + m.omzetRec, 0)
   const omzetOneFY = monthly.reduce((s, m) => s + m.omzetOne, 0)
   const kostenManualFY = monthly.reduce((s, m) => s + m.kostenManual, 0)
-  const ebitdaFY = omzetFY - kostenManualFY
+
+  // Setterkost telt mee als gewone bedrijfskost. Bewust apart bijgehouden en
+  // niet in kostenManual gemengd: die staat voor de handmatig ingevoerde
+  // kostenposten, en dit wordt automatisch berekend uit gewerkte uren en
+  // toegekende commissies.
+  const setters = Array.from({ length: 12 }, (_, mi) => Number(setterPerMonth[mi] ?? 0))
+  const setterCostFY = setters.reduce((s, v) => s + v, 0)
+
+  const ebitdaFY = omzetFY - kostenManualFY - setterCostFY
 
   const jaarloon = Number(settings.salary_gross_monthly) * Number(settings.salary_months)
   const social = estimateSocialContribution(jaarloon, settings)
@@ -92,6 +105,7 @@ export function computeCore(
   return {
     settings, entries, costs, invoices, clientMap, year, monthly,
     omzetFY, omzetInvoicedFY, omzetOpenFY, omzetRecFY, omzetOneFY, kostenManualFY, ebitdaFY,
+    setterPerMonth: setters, setterCostFY,
     jaarloon, socialAnnual: social.annual, socialPerQuarter: social.perQuarter,
     socialAsCostFY, socialPerMonth, winstFY, taxFY, netFY,
     mrr: currentMRR(entries), recurringCostNow: currentRecurringCost(costs),
@@ -120,9 +134,16 @@ export async function loadCore(year: number): Promise<FinanceCore> {
     ((recMonths ?? []) as { recurring_id: string; month: string; status: string }[])
       .map((m) => [`${m.recurring_id}|${m.month}`, m.status] as const),
   )
+  // Kost van de appointment setters. Faalt dit (bv. tabellen nog niet
+  // aangemaakt), dan tonen we de financiën gewoon zonder die post in plaats van
+  // het hele dashboard te laten stuklopen.
+  let setterPerMonth: number[] = []
+  try { setterPerMonth = await setterCostByMonth(year) } catch { setterPerMonth = [] }
+
   return computeCore(
     (entries ?? []) as RevenueEntry[], (costs ?? []) as CostEntry[], settings, year, clientMap,
     (invoices ?? []) as InvoiceRow[], (recurring ?? []) as RecurringInvoice[], recStatus,
+    setterPerMonth,
   )
 }
 

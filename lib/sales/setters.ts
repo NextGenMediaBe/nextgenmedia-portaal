@@ -213,3 +213,70 @@ export async function payoutsFor(month: Date): Promise<Payout[]> {
   }
   return out
 }
+
+/**
+ * Kost van de appointment setters per maand van een boekjaar, in EURO.
+ *
+ * Voor Financiën, dat in euro's rekent. De kost van een maand is wat er die
+ * maand verdiend is: gewerkte uren plus commissie op de deals die toen gewonnen
+ * zijn. Een lopende timer telt mee tot nu — daardoor zie je de kost van vandaag
+ * meegroeien terwijl er gebeld wordt.
+ *
+ * Eén query over het hele jaar in plaats van twaalf losse: dit draait op elke
+ * weergave van het financiële dashboard.
+ */
+export async function setterCostByMonth(year: number): Promise<number[]> {
+  const admin = createAdminSupabaseClient()
+  const months = Array.from({ length: 12 }, () => 0)
+
+  const setters = await listSetters()
+  if (setters.length === 0) return months
+  const rateById = new Map(setters.map((s) => [s.id, s.hourly_rate_cents]))
+  const ids = setters.map((s) => s.id)
+
+  const from = new Date(year, 0, 1)
+  const to = new Date(year + 1, 0, 1)
+  const now = Date.now()
+
+  const [{ data: times }, { data: appts }] = await Promise.all([
+    admin.from('sales_time_entries')
+      .select('setter_id, started_at, ended_at')
+      .in('setter_id', ids)
+      .lt('started_at', to.toISOString())
+      .or(`ended_at.is.null,ended_at.gte.${from.toISOString()}`),
+    admin.from('sales_appointments')
+      .select('setter_profile_id, outcome, commission_cents, outcome_at, starts_at, status')
+      .in('setter_profile_id', ids)
+      .eq('outcome', 'won'),
+  ])
+
+  const centsPerMonth = Array.from({ length: 12 }, () => 0)
+
+  for (const t of (times ?? []) as { setter_id: string; started_at: string; ended_at: string | null }[]) {
+    const rate = rateById.get(t.setter_id)
+    if (!rate) continue
+    // Per maand knippen: een blok dat over de maandgrens loopt hoort niet
+    // volledig in één maand terecht te komen.
+    for (let mi = 0; mi < 12; mi++) {
+      const mStart = new Date(year, mi, 1).getTime()
+      const mEnd = new Date(year, mi + 1, 1).getTime()
+      const s = Math.max(new Date(t.started_at).getTime(), mStart)
+      const e = Math.min(t.ended_at ? new Date(t.ended_at).getTime() : now, mEnd)
+      if (e > s) centsPerMonth[mi] += earnedCents(Math.floor((e - s) / 1000), rate)
+    }
+  }
+
+  for (const a of (appts ?? []) as {
+    outcome: string | null; commission_cents: number | null
+    outcome_at: string | null; starts_at: string; status: string
+  }[]) {
+    if (a.status === 'cancelled' || !a.commission_cents) continue
+    // De commissie valt in de maand waarin de deal is afgesloten; is dat niet
+    // bekend, dan in de maand van de afspraak.
+    const when = new Date(a.outcome_at ?? a.starts_at)
+    if (when.getFullYear() !== year) continue
+    centsPerMonth[when.getMonth()] += a.commission_cents
+  }
+
+  return centsPerMonth.map((c) => c / 100)
+}
