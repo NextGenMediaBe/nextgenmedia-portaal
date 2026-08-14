@@ -84,7 +84,7 @@ export default async function KostenPage({ searchParams }: { searchParams: Promi
         )}
       </div>
 
-      <CostTable costs={c.costs} />
+      <CostTable costs={c.costs} setterCostFY={c.setterCostFY} year={year} />
     </div>
   )
 }

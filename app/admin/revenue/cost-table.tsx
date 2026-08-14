@@ -20,7 +20,17 @@ export type Cost = {
 
 const FREQ_LABEL: Record<string, string> = { monthly: 'maandelijks', quarterly: 'per kwartaal', annual: 'jaarlijks' }
 
-export function CostTable({ costs }: { costs: Cost[] }) {
+/**
+ * De kostenlijst.
+ *
+ * `setterCostFY` is geen ingevoerde kostenpost maar een berekend bedrag (uren en
+ * commissie van de appointment setters). Het staat hier bewust wél in de lijst —
+ * anders tel je de tabel op en kom je niet aan het totaal dat er bovenaan staat.
+ * Zonder knoppen, want er valt niets te wijzigen of te verwijderen.
+ */
+export function CostTable({ costs, setterCostFY = 0, year }: {
+  costs: Cost[]; setterCostFY?: number; year?: number
+}) {
   const router = useRouter()
   const [busy, setBusy] = useState<string | null>(null)
 
@@ -33,7 +43,7 @@ export function CostTable({ costs }: { costs: Cost[] }) {
     } finally { setBusy(null) }
   }
 
-  if (costs.length === 0) {
+  if (costs.length === 0 && setterCostFY <= 0) {
     return (
       <div className="card-base">
         <h2 className="font-semibold mb-2">Alle kosten</h2>
@@ -41,6 +51,23 @@ export function CostTable({ costs }: { costs: Cost[] }) {
       </div>
     )
   }
+
+  const setterRow = setterCostFY > 0 ? (
+    <tr className="border-b border-gray-50 bg-gray-50/60">
+      <td className="py-2.5">
+        <div className="font-medium">Appointment setters</div>
+        <div className="text-[11px] text-gray-500">Automatisch — gelogde uren en toegekende commissies</div>
+      </td>
+      <td className="py-2.5 text-gray-600">Appointment setters</td>
+      <td className="py-2.5 text-gray-600">Doorlopend{year ? ` · ${year}` : ''}</td>
+      <td className="py-2.5 text-right tabular">{formatEuro(setterCostFY)}</td>
+      <td className="py-2.5 text-right text-gray-400">—</td>
+      <td className="py-2.5 text-right tabular">{formatEuro(setterCostFY)}</td>
+      <td className="py-2.5 text-right">
+        <span className="text-[11px] text-gray-400">berekend</span>
+      </td>
+    </tr>
+  ) : null
 
   return (
     <div className="card-base">
@@ -59,6 +86,7 @@ export function CostTable({ costs }: { costs: Cost[] }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
+            {setterRow}
             {costs.map((c) => {
               const incl = Number(c.amount_excl) * (1 + Number(c.vat_pct) / 100)
               const period = c.type === 'recurring'

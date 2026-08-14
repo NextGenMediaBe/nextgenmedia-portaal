@@ -20,7 +20,8 @@ export async function FinanceWidget() {
     gefactureerd = m?.omzetInvoiced ?? 0
     teFactureren = m?.omzetOpen ?? 0
     omzet = m?.omzet ?? 0
-    kosten = m?.kostenManual ?? 0
+    // Appointment setting hoort bij de kosten van de maand, net als elders.
+    kosten = (m?.kostenManual ?? 0) + (core.setterPerMonth[mi] ?? 0)
   } catch {
     return null // tabellen nog niet aangemaakt → widget verbergen
   }
