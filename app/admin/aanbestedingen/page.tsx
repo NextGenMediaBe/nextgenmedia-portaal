@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Stamp, Plus, Loader2, Trash2, RefreshCw, Users, Mail, X } from 'lucide-react'
+import { Stamp, Plus, Loader2, Trash2, RefreshCw, Gauge, Users, Mail, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 /**
@@ -61,7 +61,7 @@ export default function AanbestedingenPage() {
   const [laden, setLaden] = useState(true)
   const [form, setForm] = useState<Formulier | null>(null)
   const [bezig, setBezig] = useState(false)
-  const [ophalend, setOphalend] = useState<string | null>(null)
+  const [bezigMet, setBezigMet] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -125,20 +125,22 @@ export default function AanbestedingenPage() {
     }
   }
 
-  const ophalen = async (w: Workspace) => {
-    setOphalend(w.id)
+  /** Ophalen kost niets; beoordelen kost een paar cent. Zelfde afhandeling,
+   *  maar de melding vertelt wél wat het gekost heeft. */
+  const draai = async (w: Workspace, wat: 'ophalen' | 'scoren') => {
+    setBezigMet(`${w.id}:${wat}`)
     try {
-      const r = await fetch('/api/admin/aanbestedingen/ophalen', {
+      const r = await fetch(`/api/admin/aanbestedingen/${wat}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filterId: w.id }),
       })
       const j = await r.json()
       if (!r.ok) throw new Error(j.error)
-      toast.success(j.resultaat ?? 'Opgehaald')
+      toast.success(j.resultaat ?? 'Klaar')
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Ophalen mislukt')
+      toast.error(e instanceof Error ? e.message : 'Mislukt')
     } finally {
-      setOphalend(null)
+      setBezigMet(null)
     }
   }
 
@@ -211,13 +213,24 @@ export default function AanbestedingenPage() {
 
               <div className="flex items-center gap-1 pt-1 mt-auto border-t border-gray-100">
                 <button
-                  onClick={() => ophalen(w)} disabled={ophalend === w.id}
+                  onClick={() => draai(w, 'ophalen')} disabled={!!bezigMet}
+                  title="Nieuwe opdrachten ophalen bij publicprocurement.be. Kost niets."
                   className="h-7 px-2 rounded-lg text-xs hover:bg-gray-100 text-gray-600 flex items-center gap-1 disabled:opacity-50"
                 >
-                  {ophalend === w.id
+                  {bezigMet === `${w.id}:ophalen`
                     ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     : <RefreshCw className="h-3.5 w-3.5" />}
                   Ophalen
+                </button>
+                <button
+                  onClick={() => draai(w, 'scoren')} disabled={!!bezigMet}
+                  title="Nieuwe opdrachten laten beoordelen op titel en CPV-code. Kost ongeveer een cent per tien opdrachten."
+                  className="h-7 px-2 rounded-lg text-xs hover:bg-gray-100 text-gray-600 flex items-center gap-1 disabled:opacity-50"
+                >
+                  {bezigMet === `${w.id}:scoren`
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : <Gauge className="h-3.5 w-3.5" />}
+                  Beoordelen
                 </button>
                 {isAdmin && (
                   <>
