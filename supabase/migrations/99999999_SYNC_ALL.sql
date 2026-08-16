@@ -2301,3 +2301,20 @@ DO $aanb$ BEGIN
   CREATE TRIGGER trg_aanbesteding_kennis_updated BEFORE UPDATE ON public.aanbesteding_kennis
     FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 EXCEPTION WHEN duplicate_object THEN NULL; END $aanb$;
+
+-- ── Aanbestedingen: workspaces zonder werknemer ─────────────────────────────
+-- Een workspace (bv. "Software & IT", "Marketing") wordt in de module zelf
+-- aangemaakt en hoeft niet aan een werknemer te hangen. Hangt er niemand aan,
+-- dan zien enkel de beheerders hem en gaan de mails naar info@nextgenmedia.be.
+-- Daarom mag `eigenaar` leeg zijn. Bestaande rijen blijven ongemoeid.
+DO $aanb$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name  = 'aanbestedingen_filters'
+      AND column_name = 'eigenaar'
+      AND is_nullable = 'NO'
+  ) THEN
+    ALTER TABLE public.aanbestedingen_filters ALTER COLUMN eigenaar DROP NOT NULL;
+  END IF;
+END $aanb$;

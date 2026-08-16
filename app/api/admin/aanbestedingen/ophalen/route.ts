@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient, requireStaff, requireAdmin } from '@/lib/supabase/server'
 import { BdaClient, bdaConfigured } from '@/lib/aanbestedingen/bda'
 import { bewaarOpdrachten } from '@/lib/aanbestedingen/store'
+import { workspaceVoor, workspacesVoor, type Workspace } from '@/lib/aanbestedingen/workspaces'
 import { logAudit, requestMeta } from '@/lib/audit'
 
 export const dynamic = 'force-dynamic'
@@ -32,25 +33,25 @@ export async function POST(req: NextRequest) {
     const b = await req.json().catch(() => ({}))
     const admin = createAdminSupabaseClient()
 
-    // Welke filter? Een medewerker: de zijne. Een admin mag kiezen.
-    let q = admin.from('aanbestedingen_filters').select('*')
-    q = b.filterId ? q.eq('id', String(b.filterId)) : q
-    if (!isAdmin) q = q.eq('eigenaar', actor.id)
-    const { data: filterRow, error: filterErr } = await q.limit(1).maybeSingle()
-
-    if (filterErr && /aanbestedingen_filters|does not exist|schema cache/i.test(filterErr.message)) {
-      return NextResponse.json({
-        error: 'De tabellen voor Aanbestedingen bestaan nog niet. Draai eerst de migratie.',
-      }, { status: 503 })
+    // Welke workspace? Toegang loopt via de gedeelde laag; hier staat geen
+    // eigen rechtencontrole meer.
+    let filter: Workspace | null = null
+    try {
+      filter = b.filterId
+        ? await workspaceVoor(String(b.filterId), actor.id, isAdmin)
+        : (await workspacesVoor(actor.id, isAdmin))[0] ?? null
+    } catch (e) {
+      if (/aanbestedingen_filters|does not exist|schema cache/i.test(e instanceof Error ? e.message : '')) {
+        return NextResponse.json({
+          error: 'De tabellen voor Aanbestedingen bestaan nog niet. Draai eerst de migratie.',
+        }, { status: 503 })
+      }
+      throw e
     }
-    if (!filterRow) {
+    if (!filter) {
       return NextResponse.json({
-        error: 'Geen filter gevonden. Stel eerst een filterlink in bij Werknemers.',
+        error: 'Geen workspace gevonden. Maak er eerst een aan bij Aanbestedingen.',
       }, { status: 404 })
-    }
-
-    const filter = filterRow as {
-      id: string; naam: string; short_link: string; include_closed: boolean
     }
 
     // Run vastleggen zodat de voortgangsbalk (volgende stap) iets heeft om te lezen.

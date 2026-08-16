@@ -4,6 +4,7 @@ import { createAdminSupabaseClient, requireStaff, requireAdmin } from '@/lib/sup
 import { bdaConfigured } from '@/lib/aanbestedingen/bda'
 import { workspaceIdUit } from '@/lib/aanbestedingen/normalize'
 import { haalDocumentenOp } from '@/lib/aanbestedingen/documents'
+import { workspaceVoor } from '@/lib/aanbestedingen/workspaces'
 import { logAudit, requestMeta } from '@/lib/audit'
 
 export const dynamic = 'force-dynamic'
@@ -50,16 +51,9 @@ export async function POST(req: NextRequest) {
 
     const opdracht = rij as { filter_id: string; referentienummer: string; titel: string | null; link: string | null }
 
-    // Een medewerker mag enkel bij de filters die van hem zijn.
-    if (!isAdmin) {
-      const { data: eigen } = await admin
-        .from('aanbestedingen_filters')
-        .select('id')
-        .eq('id', opdracht.filter_id)
-        .eq('eigenaar', actor.id)
-        .maybeSingle()
-      if (!eigen) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
-    }
+    // Toegang loopt via de gedeelde laag, niet via een eigen check hier.
+    const ws = await workspaceVoor(opdracht.filter_id, actor.id, isAdmin)
+    if (!ws) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
 
     const workspaceId = workspaceIdUit(opdracht.link ?? '')
     if (!workspaceId) {
