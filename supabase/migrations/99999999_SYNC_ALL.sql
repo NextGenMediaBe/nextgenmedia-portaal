@@ -2067,3 +2067,237 @@ CREATE UNIQUE INDEX IF NOT EXISTS invoices_setter_month_kind
   ON public.invoices (setter_id, invoice_month, kind)
   WHERE setter_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_invoices_kind ON public.invoices (kind);
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- AANBESTEDINGEN — datamodel
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Monitort Belgische overheidsopdrachten (BDA), scoort ze 0–100, leest de
+-- bestekken uit en stelt een dossier samen. De app dient NOOIT zelf in.
+--
+-- "Filter" is wat in de losse voorloper een workspace heette: een bewaarde
+-- zoekopdracht van publicprocurement.be, met een eigenaar. Elke medewerker met
+-- de rol kan er een eigen hebben (advertising, marketing, software, ...).
+
+CREATE TABLE IF NOT EXISTS public.aanbestedingen_filters (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  naam           text NOT NULL,
+  short_link     text NOT NULL,                    -- bv. 'v2-abc123'
+  include_closed boolean NOT NULL DEFAULT false,   -- ook afgesloten opdrachten?
+  eigenaar       uuid NOT NULL,                    -- auth-gebruiker
+  ai_top_x       integer NOT NULL DEFAULT 25,      -- max volledige analyses per run
+  mail_drempel   integer NOT NULL DEFAULT 70,      -- vanaf welke score "interessant"
+  auto_enabled     boolean NOT NULL DEFAULT false,
+  auto_dagen       integer[] NOT NULL DEFAULT '{1,2,3,4,5,6,7}',  -- 1=ma … 7=zo
+  auto_uur         integer NOT NULL DEFAULT 5,     -- Belgische tijd
+  auto_laatste_run date,                           -- voorkomt dubbel draaien
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  updated_at     timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS aanbestedingen_filters_eigenaar
+  ON public.aanbestedingen_filters (eigenaar);
+
+CREATE TABLE IF NOT EXISTS public.aanbestedingen (
+  filter_id                    uuid NOT NULL REFERENCES public.aanbestedingen_filters (id) ON DELETE CASCADE,
+  referentienummer             text NOT NULL,
+  dossiernummer                text,
+  titel                        text,
+  beschrijving                 text DEFAULT '',
+  organisatie                  text,
+  cpv_hoofdcode                text,
+  cpv_hoofd_omschrijving       text,
+  cpv_bijkomende_codes         text,
+  aard                         text,
+  procedure                    text,
+  publicatiedatum              date,
+  publicatiedatum_raw          text,
+  uiterste_indieningsdatum     timestamptz,        -- UTC
+  uiterste_indieningsdatum_raw text,               -- originele Belgische tijd
+  status                       text,
+  -- Detailpagina. Het LAATSTE PADSEGMENT is de publicationWorkspaceId die nodig
+  -- is om de bestekdocumenten op te halen — altijd volledig bewaren.
+  link                         text,
+  bron                         text DEFAULT 'BDA',
+  ingediend                    boolean NOT NULL DEFAULT false,
+  ingediend_at                 timestamptz,
+  genegeerd                    boolean NOT NULL DEFAULT false,
+  documenten_opgeruimd_at      timestamptz,
+  record_status                text NOT NULL DEFAULT 'nieuw'
+    CHECK (record_status IN ('nieuw', 'bestaand', 'verdwenen')),
+  first_seen_at                timestamptz NOT NULL DEFAULT now(),
+  last_seen_at                 timestamptz NOT NULL DEFAULT now(),
+  uitkomst       text CHECK (uitkomst IS NULL OR uitkomst IN ('gewonnen','verloren')),
+  uitkomst_op    timestamptz,
+  omzet_bedrag   numeric,
+  verlies_reden  text,
+  verbeterpunten text,
+  PRIMARY KEY (filter_id, referentienummer)
+);
+CREATE INDEX IF NOT EXISTS aanbestedingen_filter_idx   ON public.aanbestedingen (filter_id);
+CREATE INDEX IF NOT EXISTS aanbestedingen_deadline_idx ON public.aanbestedingen (uiterste_indieningsdatum);
+
+CREATE TABLE IF NOT EXISTS public.aanbesteding_analyse (
+  filter_id           uuid NOT NULL,
+  referentienummer    text NOT NULL,
+  score               integer CHECK (score IS NULL OR (score BETWEEN 0 AND 100)),
+  volledig            boolean NOT NULL DEFAULT false,   -- enkel gescoord, of uitgewerkt?
+  kwalificatie_reden  text,
+  uitleg_kort         text,
+  samenvatting        text,
+  plan_van_aanpak     text,
+  gekozen_referenties jsonb,
+  prijs_bedrag        numeric,
+  prijs_type          text,
+  prijs_detail        jsonb,
+  prijs_onderbouwing  text,
+  prijs_bevestigd     boolean NOT NULL DEFAULT false,
+  bestek_status        text,
+  bestek_bronnen       jsonb,
+  bestek_samenvatting  text,
+  selectiecriteria     jsonb,
+  gevraagde_documenten jsonb,
+  gunningscriteria     jsonb,
+  checklist            jsonb,
+  model          text,
+  input_tokens   integer DEFAULT 0,
+  output_tokens  integer DEFAULT 0,
+  kost_usd       numeric DEFAULT 0,
+  content_hash   text,           -- caching: nooit twee keer hetzelfde analyseren
+  gezien_op      timestamptz,    -- NULL = toon de "nieuw"-badge
+  gegenereerd_op timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (filter_id, referentienummer),
+  FOREIGN KEY (filter_id, referentienummer)
+    REFERENCES public.aanbestedingen (filter_id, referentienummer) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS aanbesteding_analyse_score_idx
+  ON public.aanbesteding_analyse (filter_id, score DESC NULLS LAST);
+
+CREATE TABLE IF NOT EXISTS public.aanbesteding_documenten (
+  filter_id        uuid NOT NULL,
+  referentienummer text NOT NULL,
+  version_id       text NOT NULL,
+  filename         text,
+  file_hash        text,          -- hergebruik over opdrachten heen
+  doc_type         text,
+  size_bytes       bigint DEFAULT 0,
+  page_count       integer DEFAULT 0,
+  char_count       integer DEFAULT 0,
+  leesbaar         boolean NOT NULL DEFAULT false,
+  status           text,
+  tekst            text,
+  opgehaald_op     timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (filter_id, referentienummer, version_id),
+  FOREIGN KEY (filter_id, referentienummer)
+    REFERENCES public.aanbestedingen (filter_id, referentienummer) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS aanbesteding_documenten_hash_idx
+  ON public.aanbesteding_documenten (file_hash);
+
+-- ── Kennisbank per filter ───────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.aanbesteding_kennis (
+  filter_id          uuid PRIMARY KEY REFERENCES public.aanbestedingen_filters (id) ON DELETE CASCADE,
+  visie              text DEFAULT '',
+  ondernemingsnummer text DEFAULT '',
+  adres              text DEFAULT '',
+  tekenbevoegde      text DEFAULT '',
+  contact_naam       text DEFAULT '',
+  contact_email      text DEFAULT '',
+  contact_telefoon   text DEFAULT '',
+  updated_at         timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.aanbesteding_referenties (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  filter_id    uuid NOT NULL REFERENCES public.aanbestedingen_filters (id) ON DELETE CASCADE,
+  klant        text DEFAULT '',
+  wat_we_deden text DEFAULT '',
+  resultaat    text DEFAULT '',
+  sector_type  text DEFAULT '',
+  created_at   timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.aanbesteding_tarieven (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  filter_id  uuid NOT NULL REFERENCES public.aanbestedingen_filters (id) ON DELETE CASCADE,
+  dienst     text NOT NULL,
+  tarief     numeric(12,2) NOT NULL,
+  eenheid    text NOT NULL DEFAULT 'uur',
+  opmerking  text DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.aanbesteding_kennisdocumenten (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  filter_id    uuid NOT NULL REFERENCES public.aanbestedingen_filters (id) ON DELETE CASCADE,
+  name         text NOT NULL,
+  storage_path text NOT NULL,
+  size_bytes   bigint DEFAULT 0,
+  mime         text DEFAULT '',
+  kind         text NOT NULL DEFAULT 'portfolio',   -- 'portfolio' | 'prijslijst'
+  tekst        text,
+  tekst_status text,
+  tekst_op     timestamptz,
+  created_at   timestamptz NOT NULL DEFAULT now()
+);
+
+-- ── Runs (voedt de live voortgangsbalk) ─────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.aanbesteding_runs (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  filter_id        uuid NOT NULL REFERENCES public.aanbestedingen_filters (id) ON DELETE CASCADE,
+  status           text NOT NULL DEFAULT 'aangevraagd'
+    CHECK (status IN ('aangevraagd','bezig','klaar','mislukt')),
+  fase             text DEFAULT '',
+  stap_nu          integer NOT NULL DEFAULT 0,
+  stap_totaal      integer NOT NULL DEFAULT 0,
+  omschrijving     text DEFAULT '',
+  resultaat        text DEFAULT '',
+  aangevraagd_door text DEFAULT '',
+  aangevraagd_op   timestamptz NOT NULL DEFAULT now(),
+  gestart_op       timestamptz,
+  klaar_op         timestamptz
+);
+CREATE INDEX IF NOT EXISTS aanbesteding_runs_filter_idx
+  ON public.aanbesteding_runs (filter_id, aangevraagd_op DESC);
+
+-- ── RLS: admin-only; de app leest server-side via de service-role ───────────
+-- De kennisbank bevat tarieven en verliesredenen, dus commercieel gevoelige
+-- informatie. Dat een medewerker zijn EIGEN filter mag zien, regelen de guards
+-- in de app — niet een ruimere policy hier.
+ALTER TABLE public.aanbestedingen_filters        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.aanbestedingen                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.aanbesteding_analyse          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.aanbesteding_documenten       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.aanbesteding_kennis           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.aanbesteding_referenties      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.aanbesteding_tarieven         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.aanbesteding_kennisdocumenten ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.aanbesteding_runs             ENABLE ROW LEVEL SECURITY;
+
+DO $aanb$
+DECLARE
+  t text;
+  polnaam text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY[
+    'aanbestedingen_filters','aanbestedingen','aanbesteding_analyse',
+    'aanbesteding_documenten','aanbesteding_kennis','aanbesteding_referenties',
+    'aanbesteding_tarieven','aanbesteding_kennisdocumenten','aanbesteding_runs'
+  ] LOOP
+    polnaam := t || ' admin all';
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', polnaam, t);
+    EXECUTE format(
+      'CREATE POLICY %I ON public.%I FOR ALL TO authenticated '
+      'USING (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = ''admin'')) '
+      'WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = ''admin''))',
+      polnaam, t);
+  END LOOP;
+END $aanb$;
+
+DO $aanb$ BEGIN
+  CREATE TRIGGER trg_aanbestedingen_filters_updated BEFORE UPDATE ON public.aanbestedingen_filters
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+EXCEPTION WHEN duplicate_object THEN NULL; END $aanb$;
+
+DO $aanb$ BEGIN
+  CREATE TRIGGER trg_aanbesteding_kennis_updated BEFORE UPDATE ON public.aanbesteding_kennis
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+EXCEPTION WHEN duplicate_object THEN NULL; END $aanb$;
