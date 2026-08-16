@@ -147,7 +147,7 @@ export class BdaClient {
       const binnen = (v.document ?? {}) as Record<string, unknown>
       const naam = String(binnen.originalFileName ?? '')
       // Alleen formaten waar tekst uit te halen valt.
-      if (naam && !/\.(pdf|docx|doc|zip|rtf)$/i.test(naam)) continue
+      if (naam && !/\.(pdf|docx|xlsx|doc|zip|rtf)$/i.test(naam)) continue
       uit.push({
         version_id: String(v.id),
         filename: naam,
@@ -166,11 +166,17 @@ export class BdaClient {
       `${BASE}/api/dos/publication-workspace-document-versions/${encodeURIComponent(versionId)}/download-url`,
       { headers: await this.headers(), cache: 'no-store' },
     )
+    // Niet elk document is publiek op te halen: in de praktijk geeft de BDA
+    // hier soms 403 of 404 (bv. een ESPD-formulier). Dat is een normale
+    // toestand, geen storing — dan slaan we dat ene document over in plaats
+    // van de hele run te laten klappen.
+    if (res.status === 403 || res.status === 404) return null
     if (!res.ok) throw new BdaError(`Download-URL mislukt (${res.status})`, res.status)
     const url = (await res.json() as { value?: string }).value
     if (!url) return null
 
     const bestand = await fetch(url, { cache: 'no-store' })   // GEEN auth-headers
+    if (bestand.status === 403 || bestand.status === 404) return null
     if (!bestand.ok) throw new BdaError(`Bestand ophalen mislukt (${bestand.status})`, bestand.status)
     const buf = new Uint8Array(await bestand.arrayBuffer())
     // Te groot? Dan overslaan in plaats van het geheugen vol te trekken.
