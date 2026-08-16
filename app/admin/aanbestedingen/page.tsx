@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Stamp, Plus, Loader2, Trash2, RefreshCw, Gauge, Users, Mail, X } from 'lucide-react'
+import { Stamp, Plus, Loader2, Trash2, RefreshCw, Gauge, FileSearch, Users, Mail, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 /**
@@ -127,7 +127,7 @@ export default function AanbestedingenPage() {
 
   /** Ophalen kost niets; beoordelen kost een paar cent. Zelfde afhandeling,
    *  maar de melding vertelt wél wat het gekost heeft. */
-  const draai = async (w: Workspace, wat: 'ophalen' | 'scoren') => {
+  const draai = async (w: Workspace, wat: 'ophalen' | 'scoren' | 'analyseren') => {
     setBezigMet(`${w.id}:${wat}`)
     try {
       const r = await fetch(`/api/admin/aanbestedingen/${wat}`, {
@@ -137,6 +137,9 @@ export default function AanbestedingenPage() {
       const j = await r.json()
       if (!r.ok) throw new Error(j.error)
       toast.success(j.resultaat ?? 'Klaar')
+      // Een half dossier ziet er even net uit als een volledig; die
+      // waarschuwing mag dus niet onder de gewone melding verdwijnen.
+      if (j.waarschuwing) toast.warning(j.waarschuwing, { duration: 10_000 })
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Mislukt')
     } finally {
@@ -231,6 +234,16 @@ export default function AanbestedingenPage() {
                     ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     : <Gauge className="h-3.5 w-3.5" />}
                   Beoordelen
+                </button>
+                <button
+                  onClick={() => draai(w, 'analyseren')} disabled={!!bezigMet}
+                  title={`De ${w.ai_top_x} best scorende opdrachten vanaf score ${w.mail_drempel} volledig uitwerken, met de bestekken erbij. Kost ongeveer zeven cent per dossier.`}
+                  className="h-7 px-2 rounded-lg text-xs hover:bg-gray-100 text-gray-600 flex items-center gap-1 disabled:opacity-50"
+                >
+                  {bezigMet === `${w.id}:analyseren`
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : <FileSearch className="h-3.5 w-3.5" />}
+                  Uitwerken
                 </button>
                 {isAdmin && (
                   <>
