@@ -2318,3 +2318,27 @@ DO $aanb$ BEGIN
     ALTER TABLE public.aanbestedingen_filters ALTER COLUMN eigenaar DROP NOT NULL;
   END IF;
 END $aanb$;
+
+-- ── Aanbestedingen: runs kunnen geannuleerd worden ──────────────────────────
+-- Ophalen, beoordelen en uitwerken lopen als één lange aanvraag. Het venster
+-- sluiten stopt die niet; daarom vragen we het annuleren via een vlag in de
+-- database en kijkt de lopende run daar tussen twee stappen naar.
+ALTER TABLE public.aanbesteding_runs
+  ADD COLUMN IF NOT EXISTS annuleren_gevraagd boolean NOT NULL DEFAULT false;
+
+-- 'geannuleerd' toevoegen aan de toegestane statussen. Eerst weg, dan opnieuw:
+-- zo is het herhaalbaar en blijft bestaande data ongemoeid.
+ALTER TABLE public.aanbesteding_runs DROP CONSTRAINT IF EXISTS aanbesteding_runs_status_check;
+ALTER TABLE public.aanbesteding_runs ADD CONSTRAINT aanbesteding_runs_status_check
+  CHECK (status IN ('aangevraagd','bezig','klaar','mislukt','geannuleerd'));
+
+-- Lengte van de uitgelezen tekst apart bewaren. Zonder deze kolom moest het
+-- kennisbankscherm de volledige tekst van elk document ophalen om er enkel de
+-- lengte van te tellen — tot enkele megabytes per schermlading.
+ALTER TABLE public.aanbesteding_kennisdocumenten
+  ADD COLUMN IF NOT EXISTS char_count integer NOT NULL DEFAULT 0;
+
+-- Bestaande rijen bijwerken, één keer.
+UPDATE public.aanbesteding_kennisdocumenten
+   SET char_count = length(tekst)
+ WHERE tekst IS NOT NULL AND char_count = 0;

@@ -96,8 +96,14 @@ export class BdaClient {
    */
   async alleOpdrachten(
     shortLink: string,
-    opties: { includeClosed?: boolean; onPage?: (opgehaald: number, totaal: number) => void | Promise<void> } = {},
-  ): Promise<{ records: Record<string, unknown>[]; totaal: number }> {
+    opties: {
+      includeClosed?: boolean
+      onPage?: (opgehaald: number, totaal: number) => void | Promise<void>
+      /** Tussen twee pagina's gevraagd. Geeft dit true, dan stoppen we en
+       *  leveren we wat we tot dan toe hebben — geen halve pagina. */
+      stoppen?: () => Promise<boolean>
+    } = {},
+  ): Promise<{ records: Record<string, unknown>[]; totaal: number; gestopt: boolean }> {
     const filter = await this.filterVanShortLink(shortLink)
     const basis: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(filter)) if (TOEGESTAAN.has(k)) basis[k] = v
@@ -107,6 +113,7 @@ export class BdaClient {
     const records: Record<string, unknown>[] = []
     let totaal = -1
     let page = 1
+    let gestopt = false
 
     // Harde bovengrens: bij een onverwacht antwoord nooit eindeloos doorgaan.
     for (let ronde = 0; ronde < 200; ronde++) {
@@ -125,10 +132,11 @@ export class BdaClient {
       await opties.onPage?.(records.length, totaal)
 
       if (pubs.length === 0 || records.length >= totaal) break
+      if (await opties.stoppen?.()) { gestopt = true; break }
       page++
       await new Promise((r) => setTimeout(r, 1000))
     }
-    return { records, totaal: totaal < 0 ? records.length : totaal }
+    return { records, totaal: totaal < 0 ? records.length : totaal, gestopt }
   }
 
   /** De bestekdocumenten van één opdracht (workspace). */

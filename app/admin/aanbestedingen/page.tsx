@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Stamp, Plus, Loader2, Trash2, RefreshCw, Gauge, FileSearch, Users, Mail, X } from 'lucide-react'
+import { Stamp, Plus, Loader2, Trash2, RefreshCw, Gauge, FileSearch, BookOpen, Users, Mail, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 /**
@@ -30,6 +30,11 @@ type Workspace = {
 }
 
 type StaffLid = { id: string; naam: string | null; email: string | null }
+
+type RunInfo = {
+  bezig: { id: string; fase: string; stap_nu: number; stap_totaal: number; omschrijving: string; annuleren_gevraagd: boolean } | null
+  laatste: { fase: string; status: string; resultaat: string; klaar_op: string | null } | null
+}
 
 type Formulier = {
   id?: string
@@ -63,6 +68,18 @@ export default function AanbestedingenPage() {
   const [form, setForm] = useState<Formulier | null>(null)
   const [bezig, setBezig] = useState(false)
   const [bezigMet, setBezigMet] = useState<string | null>(null)
+  const [runs, setRuns] = useState<Record<string, RunInfo>>({})
+
+  /** De lopende taak van één workspace ophalen. Het scherm polst hier zolang
+   *  er iets bezig is, ook als je het venster tussendoor gesloten had. */
+  const leesRun = useCallback(async (id: string) => {
+    try {
+      const r = await fetch(`/api/admin/aanbestedingen/run?filterId=${encodeURIComponent(id)}`, { cache: 'no-store' })
+      if (!r.ok) return
+      const j = await r.json()
+      setRuns((v) => ({ ...v, [id]: { bezig: j.bezig ?? null, laatste: j.laatste ?? null } }))
+    } catch { /* een mislukte peiling is geen fout om te tonen */ }
+  }, [])
 
   const load = useCallback(async () => {
     try {
@@ -80,6 +97,20 @@ export default function AanbestedingenPage() {
     }
   }, [])
   useEffect(() => { load() }, [load])
+
+  // Eén keer bij het laden, en daarna elke drie seconden zolang er ergens iets
+  // draait. Staat alles stil, dan stopt het pollen vanzelf.
+  useEffect(() => {
+    if (workspaces.length === 0) return
+    workspaces.forEach((w) => leesRun(w.id))
+    const tik = setInterval(() => {
+      const actief = workspaces.filter((w) => runs[w.id]?.bezig)
+      if (actief.length === 0) return
+      actief.forEach((w) => leesRun(w.id))
+    }, 3000)
+    return () => clearInterval(tik)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaces, leesRun, JSON.stringify(Object.keys(runs).map((k) => !!runs[k].bezig))])
 
   const bewerk = (w: Workspace) => setForm({
     id: w.id, naam: w.naam,
@@ -130,6 +161,9 @@ export default function AanbestedingenPage() {
    *  maar de melding vertelt wél wat het gekost heeft. */
   const draai = async (w: Workspace, wat: 'ophalen' | 'scoren' | 'analyseren') => {
     setBezigMet(`${w.id}:${wat}`)
+    // Even later beginnen te polsen: de run bestaat pas als de server hem
+    // heeft aangemaakt, en anders zie je de balk pas op het einde.
+    const start = setTimeout(() => leesRun(w.id), 800)
     try {
       const r = await fetch(`/api/admin/aanbestedingen/${wat}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -144,7 +178,25 @@ export default function AanbestedingenPage() {
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Mislukt')
     } finally {
+      clearTimeout(start)
       setBezigMet(null)
+      leesRun(w.id)
+    }
+  }
+
+  const annuleer = async (w: Workspace) => {
+    try {
+      const r = await fetch('/api/admin/aanbestedingen/run', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filterId: w.id }),
+      })
+      const j = await r.json()
+      if (!r.ok) throw new Error(j.error)
+      // Geen "gestopt!" melden: dat is het nog niet. Zeg wat er echt gebeurt.
+      toast.info(j.bericht, { duration: 8000 })
+      leesRun(w.id)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Annuleren mislukt')
     }
   }
 
@@ -215,9 +267,52 @@ export default function AanbestedingenPage() {
                 </span>
               </div>
 
-              <div className="flex items-center gap-1 pt-1 mt-auto border-t border-gray-100">
+              {(() => {
+                const run = runs[w.id]
+                if (run?.bezig) {
+                  const b = run.bezig
+                  const pct = b.stap_totaal > 0 ? Math.round((b.stap_nu / b.stap_totaal) * 100) : null
+                  return (
+                    <div className="rounded-lg bg-gray-50 p-2.5 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <span className="font-medium capitalize">{b.fase}</span>
+                        <button
+                          onClick={() => annuleer(w)} disabled={b.annuleren_gevraagd}
+                          className="h-6 px-2 rounded text-[11px] text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:hover:bg-transparent"
+                        >
+                          {b.annuleren_gevraagd ? 'Stopt…' : 'Annuleren'}
+                        </button>
+                      </div>
+                      {/* Zonder totaal geen percentage verzinnen: dan een
+                          onbepaalde balk, want een valse 50% is misleidend. */}
+                      <div className="h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                        <div
+                          className={`h-full bg-gray-900 ${pct === null ? 'animate-pulse w-1/3' : ''}`}
+                          style={pct === null ? undefined : { width: `${pct}%` }}
+                        />
+                      </div>
+                      <div className="text-[11px] text-gray-500 break-words">
+                        {b.omschrijving || 'Bezig…'}
+                      </div>
+                    </div>
+                  )
+                }
+                if (run?.laatste?.resultaat) {
+                  const l = run.laatste
+                  const kleur = l.status === 'mislukt' ? 'text-red-600'
+                    : l.status === 'geannuleerd' ? 'text-amber-700' : 'text-gray-500'
+                  return (
+                    <div className={`text-[11px] ${kleur} break-words`}>
+                      <span className="capitalize">{l.fase}</span>: {l.resultaat}
+                    </div>
+                  )
+                }
+                return null
+              })()}
+
+              <div className="flex items-center gap-1 pt-1 mt-auto border-t border-gray-100 flex-wrap">
                 <button
-                  onClick={() => draai(w, 'ophalen')} disabled={!!bezigMet}
+                  onClick={() => draai(w, 'ophalen')} disabled={!!bezigMet || !!runs[w.id]?.bezig}
                   title="Nieuwe opdrachten ophalen bij publicprocurement.be. Kost niets."
                   className="h-7 px-2 rounded-lg text-xs hover:bg-gray-100 text-gray-600 flex items-center gap-1 disabled:opacity-50"
                 >
@@ -227,7 +322,7 @@ export default function AanbestedingenPage() {
                   Ophalen
                 </button>
                 <button
-                  onClick={() => draai(w, 'scoren')} disabled={!!bezigMet}
+                  onClick={() => draai(w, 'scoren')} disabled={!!bezigMet || !!runs[w.id]?.bezig}
                   title="Nieuwe opdrachten laten beoordelen op titel en CPV-code. Kost ongeveer een cent per tien opdrachten."
                   className="h-7 px-2 rounded-lg text-xs hover:bg-gray-100 text-gray-600 flex items-center gap-1 disabled:opacity-50"
                 >
@@ -237,7 +332,7 @@ export default function AanbestedingenPage() {
                   Beoordelen
                 </button>
                 <button
-                  onClick={() => draai(w, 'analyseren')} disabled={!!bezigMet}
+                  onClick={() => draai(w, 'analyseren')} disabled={!!bezigMet || !!runs[w.id]?.bezig}
                   title={`De ${w.ai_top_x} best scorende opdrachten vanaf score ${w.mail_drempel} volledig uitwerken, met de bestekken erbij. Kost ongeveer zeven cent per dossier.`}
                   className="h-7 px-2 rounded-lg text-xs hover:bg-gray-100 text-gray-600 flex items-center gap-1 disabled:opacity-50"
                 >
@@ -246,6 +341,13 @@ export default function AanbestedingenPage() {
                     : <FileSearch className="h-3.5 w-3.5" />}
                   Uitwerken
                 </button>
+                <Link
+                  href={`/admin/aanbestedingen/${w.id}/kennis`}
+                  title="Wat de AI over ons weet: visie, referenties en tarieven. Zonder tarieven noemt een dossier geen prijs."
+                  className="h-7 px-2 rounded-lg text-xs hover:bg-gray-100 text-gray-600 flex items-center gap-1"
+                >
+                  <BookOpen className="h-3.5 w-3.5" />Kennisbank
+                </Link>
                 {isAdmin && (
                   <>
                     <button onClick={() => bewerk(w)} className="h-7 px-2 rounded-lg text-xs hover:bg-gray-100 text-gray-600">

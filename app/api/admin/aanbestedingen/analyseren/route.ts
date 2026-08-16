@@ -1,9 +1,10 @@
 import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminSupabaseClient, requireStaff, requireAdmin } from '@/lib/supabase/server'
+import { requireStaff, requireAdmin } from '@/lib/supabase/server'
 import { workspaceVoor, workspacesVoor, type Workspace } from '@/lib/aanbestedingen/workspaces'
 import { analyseerWorkspace } from '@/lib/aanbestedingen/analyse'
 import { bdaConfigured } from '@/lib/aanbestedingen/bda'
+import { startRun, updateRun, isGeannuleerd, rondAf } from '@/lib/aanbestedingen/runs'
 import { logAudit, requestMeta } from '@/lib/audit'
 
 export const dynamic = 'force-dynamic'
@@ -46,20 +47,8 @@ export async function POST(req: NextRequest) {
     }
     if (!ws) return NextResponse.json({ error: 'Geen workspace gevonden.' }, { status: 404 })
 
-    const admin = createAdminSupabaseClient()
-    const { data: runRow } = await admin.from('aanbesteding_runs').insert({
-      filter_id: ws.id,
-      status: 'bezig',
-      fase: 'analyseren',
-      omschrijving: 'Dossiers uitwerken…',
-      aangevraagd_door: actor.email ?? '',
-      gestart_op: new Date().toISOString(),
-    }).select('id').single()
-    const runId = (runRow as { id: string } | null)?.id ?? null
-
-    const bijwerken = async (velden: Record<string, unknown>) => {
-      if (runId) await admin.from('aanbesteding_runs').update(velden).eq('id', runId)
-    }
+    const runId = await startRun(ws.id, 'analyseren', 'Dossiers uitwerken…', actor.email ?? '')
+    const bijwerken = (velden: Record<string, unknown>) => updateRun(runId, velden)
 
     try {
       const res = await analyseerWorkspace(ws, {
@@ -69,6 +58,7 @@ export async function POST(req: NextRequest) {
             omschrijving: wat ? `${nu + 1} van ${totaal}: ${wat.slice(0, 120)}` : '',
           })
         },
+        stoppen: () => isGeannuleerd(runId),
       })
 
       const resultaat = res.aangeboden === 0
@@ -76,6 +66,7 @@ export async function POST(req: NextRequest) {
         // anders lijkt het alsof er iets stuk is.
         ? `Niets te doen: geen opdracht haalde score ${ws.mail_drempel} of hoger.`
         : [
+          res.gestopt ? 'Geannuleerd' : null,
           `${res.aangeboden} in aanmerking`,
           `${res.geanalyseerd} uitgewerkt`,
           res.overgeslagen > 0 ? `${res.overgeslagen} ongewijzigd` : null,
@@ -84,10 +75,7 @@ export async function POST(req: NextRequest) {
           `$${res.kost_usd.toFixed(2)}`,
         ].filter(Boolean).join(' · ')
 
-      await bijwerken({
-        status: 'klaar', fase: '', resultaat,
-        omschrijving: '', klaar_op: new Date().toISOString(),
-      })
+      await rondAf(runId, res.gestopt ? 'geannuleerd' : 'klaar', resultaat)
 
       const meta = requestMeta(req)
       await logAudit({
@@ -107,9 +95,7 @@ export async function POST(req: NextRequest) {
       })
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Analyseren mislukt'
-      await bijwerken({
-        status: 'mislukt', fase: '', resultaat: msg, klaar_op: new Date().toISOString(),
-      })
+      await rondAf(runId, 'mislukt', msg)
       return NextResponse.json({ error: msg }, { status: 502 })
     }
   } catch (err) {

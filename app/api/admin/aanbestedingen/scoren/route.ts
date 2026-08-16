@@ -1,8 +1,9 @@
 import { safeMessage } from '@/lib/api-error'
 import { NextRequest, NextResponse } from 'next/server'
-import { createAdminSupabaseClient, requireStaff, requireAdmin } from '@/lib/supabase/server'
+import { requireStaff, requireAdmin } from '@/lib/supabase/server'
 import { workspaceVoor, workspacesVoor, type Workspace } from '@/lib/aanbestedingen/workspaces'
 import { scoreWorkspace } from '@/lib/aanbestedingen/score'
+import { startRun, updateRun, isGeannuleerd, rondAf } from '@/lib/aanbestedingen/runs'
 import { logAudit, requestMeta } from '@/lib/audit'
 
 export const dynamic = 'force-dynamic'
@@ -44,20 +45,8 @@ export async function POST(req: NextRequest) {
     }
     if (!ws) return NextResponse.json({ error: 'Geen workspace gevonden.' }, { status: 404 })
 
-    const admin = createAdminSupabaseClient()
-    const { data: runRow } = await admin.from('aanbesteding_runs').insert({
-      filter_id: ws.id,
-      status: 'bezig',
-      fase: 'scoren',
-      omschrijving: 'Opdrachten beoordelen…',
-      aangevraagd_door: actor.email ?? '',
-      gestart_op: new Date().toISOString(),
-    }).select('id').single()
-    const runId = (runRow as { id: string } | null)?.id ?? null
-
-    const bijwerken = async (velden: Record<string, unknown>) => {
-      if (runId) await admin.from('aanbesteding_runs').update(velden).eq('id', runId)
-    }
+    const runId = await startRun(ws.id, 'scoren', 'Opdrachten beoordelen…', actor.email ?? '')
+    const bijwerken = (velden: Record<string, unknown>) => updateRun(runId, velden)
 
     try {
       const res = await scoreWorkspace(ws.id, {
@@ -67,9 +56,11 @@ export async function POST(req: NextRequest) {
             omschrijving: `${nu} van ${totaal} beoordeeld…`,
           })
         },
+        stoppen: () => isGeannuleerd(runId),
       })
 
       const resultaat = [
+        res.gestopt ? 'Geannuleerd' : null,
         `${res.bekeken} opdracht(en) bekeken`,
         `${res.gescoord} beoordeeld`,
         res.overgeslagen > 0 ? `${res.overgeslagen} ongewijzigd of niet meer relevant` : null,
@@ -77,10 +68,7 @@ export async function POST(req: NextRequest) {
         `$${res.kost_usd.toFixed(3)}`,
       ].filter(Boolean).join(' · ')
 
-      await bijwerken({
-        status: 'klaar', fase: '', resultaat,
-        omschrijving: '', klaar_op: new Date().toISOString(),
-      })
+      await rondAf(runId, res.gestopt ? 'geannuleerd' : 'klaar', resultaat)
 
       const meta = requestMeta(req)
       await logAudit({
@@ -93,9 +81,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, runId, ...res, resultaat })
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Beoordelen mislukt'
-      await bijwerken({
-        status: 'mislukt', fase: '', resultaat: msg, klaar_op: new Date().toISOString(),
-      })
+      await rondAf(runId, 'mislukt', msg)
       return NextResponse.json({ error: msg }, { status: 502 })
     }
   } catch (err) {

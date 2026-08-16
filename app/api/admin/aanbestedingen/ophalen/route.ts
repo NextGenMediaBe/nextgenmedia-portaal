@@ -4,6 +4,7 @@ import { createAdminSupabaseClient, requireStaff, requireAdmin } from '@/lib/sup
 import { BdaClient, bdaConfigured } from '@/lib/aanbestedingen/bda'
 import { bewaarOpdrachten } from '@/lib/aanbestedingen/store'
 import { workspaceVoor, workspacesVoor, type Workspace } from '@/lib/aanbestedingen/workspaces'
+import { startRun, updateRun, isGeannuleerd, rondAf } from '@/lib/aanbestedingen/runs'
 import { logAudit, requestMeta } from '@/lib/audit'
 
 export const dynamic = 'force-dynamic'
@@ -54,25 +55,18 @@ export async function POST(req: NextRequest) {
       }, { status: 404 })
     }
 
-    // Run vastleggen zodat de voortgangsbalk (volgende stap) iets heeft om te lezen.
-    const { data: runRow } = await admin.from('aanbesteding_runs').insert({
-      filter_id: filter.id,
-      status: 'bezig',
-      fase: 'ophalen',
-      omschrijving: 'Opdrachten ophalen bij publicprocurement.be…',
-      aangevraagd_door: actor.email ?? '',
-      gestart_op: new Date().toISOString(),
-    }).select('id').single()
-    const runId = (runRow as { id: string } | null)?.id ?? null
-
-    const bijwerken = async (velden: Record<string, unknown>) => {
-      if (runId) await admin.from('aanbesteding_runs').update(velden).eq('id', runId)
-    }
+    // Run vastleggen zodat de voortgangsbalk iets heeft om te lezen, en zodat
+    // er iets is om het annuleren aan te hangen.
+    const runId = await startRun(
+      filter.id, 'ophalen', 'Opdrachten ophalen bij publicprocurement.be…', actor.email ?? '',
+    )
+    const bijwerken = (velden: Record<string, unknown>) => updateRun(runId, velden)
 
     try {
       const client = new BdaClient()
-      const { records, totaal } = await client.alleOpdrachten(filter.short_link, {
+      const { records, totaal, gestopt } = await client.alleOpdrachten(filter.short_link, {
         includeClosed: filter.include_closed,
+        stoppen: () => isGeannuleerd(runId),
         onPage: async (opgehaald, tot) => {
           await bijwerken({
             stap_nu: opgehaald, stap_totaal: tot,
@@ -86,17 +80,18 @@ export async function POST(req: NextRequest) {
       // Vertel de HELE keten, niet enkel een getal. "0 dossiers" zonder uitleg
       // levert alleen maar vragen op.
       const resultaat = [
+        gestopt ? 'Geannuleerd' : null,
         `${res.totaal} opdracht(en) in je filter`,
         `${res.nieuw} nieuw`,
         `${res.bijgewerkt} bestaand`,
         res.verdwenen > 0 ? `${res.verdwenen} niet meer gevonden` : null,
-        records.length < totaal ? `LET OP: ${records.length} van ${totaal} opgehaald` : null,
+        // Bij annuleren is dit geen waarschuwing maar een gevolg; dan
+        // hoeven we er niet nog eens "LET OP" bij te zetten.
+        !gestopt && records.length < totaal ? `LET OP: ${records.length} van ${totaal} opgehaald` : null,
+        gestopt ? `gestopt na ${records.length} van ${totaal}` : null,
       ].filter(Boolean).join(' · ')
 
-      await bijwerken({
-        status: 'klaar', fase: '', resultaat,
-        omschrijving: '', klaar_op: new Date().toISOString(),
-      })
+      await rondAf(runId, gestopt ? 'geannuleerd' : 'klaar', resultaat)
 
       const meta = requestMeta(req)
       await logAudit({
@@ -106,14 +101,12 @@ export async function POST(req: NextRequest) {
         ip: meta.ip, userAgent: meta.userAgent,
       })
 
-      return NextResponse.json({ ok: true, runId, totalCount: totaal, ...res, resultaat })
+      return NextResponse.json({ ok: true, runId, gestopt, totalCount: totaal, ...res, resultaat })
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Ophalen mislukt'
       // Een mislukte run zichtbaar laten falen; stil "niets gevonden" tonen is
       // hoe je maandenlang niet merkt dat er iets stuk is.
-      await bijwerken({
-        status: 'mislukt', fase: '', resultaat: msg, klaar_op: new Date().toISOString(),
-      })
+      await rondAf(runId, 'mislukt', msg)
       return NextResponse.json({ error: msg }, { status: 502 })
     }
   } catch (err) {
