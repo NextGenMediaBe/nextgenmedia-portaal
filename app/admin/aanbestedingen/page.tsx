@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { Stamp, Plus, Loader2, Trash2, RefreshCw, Gauge, FileSearch, Users, Mail, X } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -185,10 +186,10 @@ export default function AanbestedingenPage() {
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {workspaces.map((w) => (
             <div key={w.id} className="card-base flex flex-col gap-3">
-              <div className="min-w-0">
-                <div className="font-medium truncate">{w.naam}</div>
+              <Link href={`/admin/aanbestedingen/${w.id}`} className="min-w-0 group">
+                <div className="font-medium truncate group-hover:underline">{w.naam}</div>
                 <div className="text-xs text-gray-400 truncate">{w.short_link}</div>
-              </div>
+              </Link>
 
               <div className="text-xs text-gray-600 space-y-1">
                 <div className="flex items-start gap-1.5">
