@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Stamp, Plus, Loader2, Trash2, RefreshCw, Gauge, FileSearch, BookOpen, Users, Mail, X } from 'lucide-react'
+import { Stamp, Plus, Loader2, Trash2, RefreshCw, Gauge, FileSearch, BookOpen, Send, Users, Mail, X } from 'lucide-react'
 import { toast } from 'sonner'
 
 /**
@@ -159,7 +159,7 @@ export default function AanbestedingenPage() {
 
   /** Ophalen kost niets; beoordelen kost een paar cent. Zelfde afhandeling,
    *  maar de melding vertelt wél wat het gekost heeft. */
-  const draai = async (w: Workspace, wat: 'ophalen' | 'scoren' | 'analyseren') => {
+  const draai = async (w: Workspace, wat: 'ophalen' | 'scoren' | 'analyseren' | 'mailen') => {
     setBezigMet(`${w.id}:${wat}`)
     // Even later beginnen te polsen: de run bestaat pas als de server hem
     // heeft aangemaakt, en anders zie je de balk pas op het einde.
@@ -341,6 +341,16 @@ export default function AanbestedingenPage() {
                     : <FileSearch className="h-3.5 w-3.5" />}
                   Uitwerken
                 </button>
+                <button
+                  onClick={() => draai(w, 'mailen')} disabled={!!bezigMet || !!runs[w.id]?.bezig}
+                  title={`Eén mail met alles wat nieuw is en score ${w.mail_drempel} of hoger haalt. Over dezelfde opdracht wordt nooit twee keer gemaild.`}
+                  className="h-7 px-2 rounded-lg text-xs hover:bg-gray-100 text-gray-600 flex items-center gap-1 disabled:opacity-50"
+                >
+                  {bezigMet === `${w.id}:mailen`
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : <Send className="h-3.5 w-3.5" />}
+                  Mailen
+                </button>
                 <Link
                   href={`/admin/aanbestedingen/${w.id}/kennis`}
                   title="Wat de AI over ons weet: visie, referenties en tarieven. Zonder tarieven noemt een dossier geen prijs."
@@ -445,7 +455,7 @@ export default function AanbestedingenPage() {
                     type="checkbox" checked={form.autoEnabled}
                     onChange={(e) => setForm({ ...form, autoEnabled: e.target.checked })}
                   />
-                  Automatisch ophalen
+                  Automatisch ophalen, beoordelen, uitwerken en mailen
                 </label>
 
                 {form.autoEnabled && (
@@ -470,12 +480,18 @@ export default function AanbestedingenPage() {
                       })}
                     </div>
                     <div>
-                      <label className="text-sm">Om (Belgische tijd)</label>
+                      <label className="text-sm">Niet vóór (Belgische tijd)</label>
                       <input
                         type="number" min={0} max={23} value={form.autoUur}
                         onChange={(e) => setForm({ ...form, autoUur: Number(e.target.value) })}
                         className="input-base mt-1 w-24"
                       />
+                      {/* Geen klokslag beloven die we niet kunnen halen: de
+                          hosting laat enkel dagelijkse schema's toe. */}
+                      <p className="text-xs text-gray-500 mt-1">
+                        We kijken twee keer per dag, rond 7u en rond 14u. Zet je hier 14, dan draait hij in
+                        de namiddagronde — niet om klokslag twee.
+                      </p>
                     </div>
                   </div>
                 )}

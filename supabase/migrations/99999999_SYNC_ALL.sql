@@ -2342,3 +2342,8 @@ ALTER TABLE public.aanbesteding_kennisdocumenten
 UPDATE public.aanbesteding_kennisdocumenten
    SET char_count = length(tekst)
  WHERE tekst IS NOT NULL AND char_count = 0;
+
+-- Wanneer is er over deze opdracht gemaild? Zonder dit veld zou elke run
+-- opnieuw over dezelfde opdrachten mailen.
+ALTER TABLE public.aanbesteding_analyse
+  ADD COLUMN IF NOT EXISTS gemaild_op timestamptz;
