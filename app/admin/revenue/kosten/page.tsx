@@ -24,6 +24,10 @@ export default async function KostenPage({ searchParams }: { searchParams: Promi
   const c = await loadCore(year)
 
   const recurringCostFY = c.costs.filter(x => x.type === 'recurring').reduce((s, x) => s + costYearValue(x, year), 0)
+  // Hoeveel abonnementen lopen er nu echt? Een bedrag zonder aantal zegt weinig,
+  // en dit is het getal waarop je gaat opruimen.
+  const nu = new Date()
+  const abonnementenNu = c.costs.filter(x => x.type === 'recurring' && costActive(x, nu.getFullYear(), nu.getMonth())).length
   const oneTimeCostFY = c.costs.filter(x => x.type === 'one_time').reduce((s, x) => s + costYearValue(x, year), 0)
   // Setterkost (uren + commissie) telt gewoon mee als bedrijfskost.
   const totaalFY = c.kostenManualFY + c.socialAsCostFY + c.setterCostFY
@@ -46,7 +50,9 @@ export default async function KostenPage({ searchParams }: { searchParams: Promi
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         <Kpi label={`Totale kosten ${year}`} value={formatEuro(totaalFY)} sub="excl. btw" color="text-red-600" Icon={TrendingDown} />
-        <Kpi label="Recurring kosten" value={formatEuro(recurringCostFY)} sub={`per maand nu: ${formatEuro(c.recurringCostNow)}`} color="text-red-600" Icon={Repeat2} />
+        <Kpi label="Abonnementen" value={formatEuro(recurringCostFY)}
+          sub={`${abonnementenNu} lopend · ${formatEuro(c.recurringCostNow)} per maand`}
+          color="text-red-600" Icon={Repeat2} />
         <Kpi label="Eenmalige kosten" value={formatEuro(oneTimeCostFY)} color="text-orange-600" Icon={ArrowDownRight} />
         <Kpi label="Appointment setters" value={formatEuro(c.setterCostFY)}
           sub={`deze maand: ${formatEuro(c.setterPerMonth[new Date().getMonth()] ?? 0)}`}

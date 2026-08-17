@@ -85,7 +85,7 @@ export function CostForm() {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90dvh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-gray-100 sticky top-0 bg-white rounded-t-2xl">
-          <h3 className="font-semibold text-gray-900">Kost toevoegen</h3>
+          <h3 className="font-semibold text-gray-900">{type === 'recurring' ? 'Abonnement toevoegen' : 'Kost toevoegen'}</h3>
           <button onClick={() => { setOpen(false); reset() }} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-gray-100"><X className="h-4 w-4" /></button>
         </div>
 
@@ -95,14 +95,22 @@ export function CostForm() {
               <button key={t} type="button" onClick={() => setType(t)}
                 className={`flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-colors ${type === t ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
                 {t === 'recurring' ? <Repeat2 className="h-4 w-4" /> : <ArrowDownRight className="h-4 w-4" />}
-                {t === 'recurring' ? 'Recurring' : 'Eenmalig'}
+                {t === 'recurring' ? 'Abonnement' : 'Eenmalig'}
               </button>
             ))}
           </div>
 
+          {/* Zeggen wat er gebeurt na het opslaan. "Recurring" alleen laat je
+              raden of het één keer of elke maand telt. */}
+          <p className="text-xs text-gray-500 -mt-1">
+            {type === 'recurring'
+              ? 'Telt automatisch elke maand mee als kost, zolang het loopt. Je zet het later stop in de lijst hieronder; de maanden die al geteld hebben blijven staan.'
+              : 'Telt één keer mee, in de maand van de datum die je kiest.'}
+          </p>
+
           <div>
             <label className={lbl}>Naam *</label>
-            <input required className={inp} value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="bv. Adobe Creative Cloud, freelance editor…" />
+            <input required className={inp} value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder={type === 'recurring' ? 'bv. Adobe Creative Cloud, Google Workspace…' : 'bv. nieuwe laptop, freelance editor…'} />
           </div>
 
           <div>
@@ -137,6 +145,7 @@ export function CostForm() {
                 <div>
                   <label className={lbl}>Einddatum (optioneel)</label>
                   <input type="date" className={inp} value={form.end_date} onChange={e => setForm(p => ({ ...p, end_date: e.target.value }))} />
+                  <p className="text-[11px] text-gray-400 mt-1">Leeg = loopt door tot je het stopzet.</p>
                 </div>
               </div>
             </>
