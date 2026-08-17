@@ -111,8 +111,16 @@ function Dialog({ staff, onClose, onDone }: { staff: Staff | null; onClose: () =
         <div className="p-5 space-y-3">
           <div className="grid grid-cols-2 gap-2">
             <div><label className="block text-xs font-medium text-gray-600 mb-1">Naam</label><input className={inp} value={name} onChange={(e) => setName(e.target.value)} /></div>
-            <div><label className="block text-xs font-medium text-gray-600 mb-1">E-mail *</label><input type="email" disabled={isEdit} className={inp} value={email} onChange={(e) => setEmail(e.target.value)} /></div>
+            <div><label className="block text-xs font-medium text-gray-600 mb-1">E-mail *</label><input type="email" className={inp} value={email} onChange={(e) => setEmail(e.target.value)} /></div>
           </div>
+          {/* Het adres is ook de login. Dat hoort erbij te staan, want anders
+              wijzig je het en verandert er ongemerkt meer dan je dacht. */}
+          {isEdit && email.trim().toLowerCase() !== (staff?.email ?? '').toLowerCase() && (
+            <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              Dit adres is ook waarmee deze werknemer inlogt. Na het opslaan werkt <b>{staff?.email}</b> niet
+              meer om aan te melden; dat wordt <b>{email.trim()}</b>. Het wachtwoord en de rechten blijven zoals ze zijn.
+            </div>
+          )}
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1"><KeyRound className="h-3 w-3 inline mr-1" />{isEdit ? 'Nieuw wachtwoord (optioneel)' : 'Wachtwoord *'}</label>
             <input type="text" className={inp} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={isEdit ? 'Laat leeg om niet te wijzigen' : 'Min. 8 tekens'} />
