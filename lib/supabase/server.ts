@@ -36,6 +36,11 @@ export function createAdminSupabaseClient() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return createAdminClient<any>(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
+    // Deze database wordt gedeeld met een tweede applicatie, die in een eigen
+    // schema woont. Wij pinnen ons expliciet op `public` in plaats van op de
+    // standaard te vertrouwen: dan kan een wijziging elders nooit stilletjes
+    // onze queries naar het verkeerde schema laten wijzen.
+    db: { schema: 'public' },
   })
 }
 

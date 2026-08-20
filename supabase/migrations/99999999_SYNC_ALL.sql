@@ -2367,3 +2367,19 @@ CREATE INDEX IF NOT EXISTS sales_appointments_bellijst_idx
 -- de agenda. Een adres in de omschrijving verstoppen doet dat niet.
 ALTER TABLE public.sales_appointments
   ADD COLUMN IF NOT EXISTS adres text;
+
+-- ── Gedeelde database: onze kant dichtzetten ────────────────────────────────
+-- Deze database wordt gedeeld met een tweede applicatie (schema `ngs`). Elke
+-- gebruiker daarvan heeft een geldig token voor DIT project, en komt dus langs
+-- onze RLS. Alles in public is gebonden aan auth.uid() — op één plek na.
+--
+-- `terms read active` gaf leestoegang op `active = true`, zonder enige controle
+-- op wie je bent. Dat was ongevaarlijk toen wij de enige app waren; met een
+-- gedeelde auth.users is het de enige deur waar een vreemde gebruiker door kan.
+DROP POLICY IF EXISTS "terms read active" ON public.terms;
+CREATE POLICY "terms read active" ON public.terms
+  FOR SELECT TO authenticated
+  USING (
+    active = true
+    AND EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid())
+  );
