@@ -170,6 +170,40 @@ export type EmailStatusResult =
   | { ok: true; status: EmailStatus }
   | { ok: false; restricted: boolean }
 
+/** Wat een Resend-sleutel mag. */
+export type SleutelRechten = 'ontbreekt' | 'volledig' | 'beperkt' | 'onbekend'
+
+/**
+ * Nagaan of een sleutel méér mag dan versturen, ZONDER een mail te sturen.
+ *
+ * We vragen een mail op met een id dat niet bestaat. Mag de sleutel lezen, dan
+ * antwoordt Resend "niet gevonden" (404) — dat is precies wat we willen weten.
+ * Mag hij het niet, dan komt er een 401/403 met "restricted to only send".
+ *
+ * Waarom dit bestaat: een beperkte sleutel verstuurt gewoon, dus alles lijkt te
+ * werken — tot je een ingeplande mail wil intrekken of verzetten. Dan pas krijg
+ * je de melding, en dat is te laat. Hiermee kan je het vooraf zien.
+ */
+export async function sleutelRechten(key?: string | null): Promise<SleutelRechten> {
+  const apiKey = key || process.env.RESEND_API_KEY
+  if (!apiKey) return 'ontbreekt'
+  try {
+    const res = await fetch('https://api.resend.com/emails/00000000-0000-0000-0000-000000000000', {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      cache: 'no-store',
+    })
+    if (res.status === 404) return 'volledig'
+    if (res.status === 401 || res.status === 403) return 'beperkt'
+    const json = await res.json().catch(() => ({})) as { message?: string }
+    if (isRestrictedKeyError(json?.message)) return 'beperkt'
+    // 200 kan niet (dat id bestaat niet), en de rest kunnen we niet duiden.
+    // Dan liever 'onbekend' dan een geruststelling die nergens op slaat.
+    return res.ok ? 'volledig' : 'onbekend'
+  } catch {
+    return 'onbekend'
+  }
+}
+
 export async function getEmailStatus(id: string, key?: string | null): Promise<EmailStatusResult> {
   const apiKey = key || process.env.RESEND_API_KEY
   if (!apiKey || !id) return { ok: false, restricted: false }
