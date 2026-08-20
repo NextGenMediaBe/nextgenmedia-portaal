@@ -65,47 +65,121 @@ export async function POST(req: NextRequest) {
 }
 
 /**
- * PATCH — een abonnement stopzetten of weer laten doorlopen.
+ * PATCH — een kost wijzigen, of een abonnement stopzetten of hervatten.
  *
- * Stopzetten is GEEN verwijderen: de maanden die al geteld hebben moeten blijven
- * staan, anders verandert je boekjaar met terugwerkende kracht. We zetten enkel
- * een einddatum, en de rekenkern telt tot en met die maand mee.
+ * Beide gaan door dezelfde deur, maar met een verschil dat ertoe doet: enkel de
+ * velden die je MEESTUURT worden aangepast. De stopzet-knop stuurt alleen
+ * `end_date` mee en raakt de rest dus niet aan.
  *
- * `end_date: null` maakt het weer doorlopend — handig als je per ongeluk de
- * verkeerde stopzet.
+ * Stopzetten is nooit verwijderen: de maanden die al geteld hebben blijven
+ * staan, anders verandert een afgesloten boekjaar met terugwerkende kracht.
  */
 export async function PATCH(req: NextRequest) {
   try {
     if (!(await requireAdmin())) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })
-    const { id, end_date } = await req.json()
+    const body = await req.json()
+    const { id } = body
     if (!id) return NextResponse.json({ error: 'id vereist' }, { status: 400 })
 
     const admin = createAdminSupabaseClient()
-    const { data: bestaand } = await admin
-      .from('cost_entries').select('type, name, start_date').eq('id', id).maybeSingle()
-    if (!bestaand) return NextResponse.json({ error: 'Kost niet gevonden' }, { status: 404 })
-    if ((bestaand as { type: string }).type !== 'recurring') {
-      return NextResponse.json({ error: 'Alleen een abonnement kan stopgezet worden.' }, { status: 400 })
+    const { data: rij } = await admin
+      .from('cost_entries').select('*').eq('id', id).maybeSingle()
+    if (!rij) return NextResponse.json({ error: 'Kost niet gevonden' }, { status: 404 })
+    const bestaand = rij as {
+      type: string; name: string | null; start_date: string | null
+      cost_date: string | null; end_date: string | null
     }
 
-    let einde: string | null = null
-    if (end_date) {
-      const d = new Date(String(end_date))
-      if (Number.isNaN(d.getTime())) return NextResponse.json({ error: 'Ongeldige datum' }, { status: 400 })
-      // Vóór de start stoppen zou een abonnement opleveren dat nooit geteld
-      // heeft, terwijl het er in de lijst wél staat. Dan liever verwijderen.
-      const start = (bestaand as { start_date: string | null }).start_date
-      if (start && String(end_date) < String(start).slice(0, 10)) {
-        return NextResponse.json({
-          error: 'Die datum ligt vóór de startdatum. Wil je dat dit abonnement nooit geteld heeft, verwijder het dan.',
-        }, { status: 400 })
+    const heeft = (k: string) => Object.prototype.hasOwnProperty.call(body, k)
+    const patch: Record<string, unknown> = {}
+
+    // Type mag wijzigen: iets dat je als eenmalig invoerde blijkt een
+    // abonnement, of omgekeerd. De datumvelden van het oude type worden dan
+    // leeggemaakt, anders blijft er een startdatum hangen bij een eenmalige
+    // kost en klopt de lijst niet meer met de cijfers.
+    const nieuwType = heeft('type')
+      ? (body.type === 'recurring' ? 'recurring' : 'one_time')
+      : bestaand.type
+    if (heeft('type') && nieuwType !== bestaand.type) {
+      patch.type = nieuwType
+      if (nieuwType === 'recurring') patch.cost_date = null
+      else { patch.start_date = null; patch.end_date = null }
+    }
+
+    if (heeft('name')) {
+      const naam = String(body.name ?? '').trim()
+      if (!naam) return NextResponse.json({ error: 'Naam is verplicht' }, { status: 400 })
+      patch.name = naam
+    }
+    if (heeft('category')) patch.category = String(body.category ?? '').trim() || null
+    if (heeft('notes')) patch.notes = String(body.notes ?? '').trim() || null
+
+    if (heeft('amount_excl')) {
+      const bedrag = Number(body.amount_excl)
+      if (!Number.isFinite(bedrag) || bedrag <= 0) {
+        return NextResponse.json({ error: 'Bedrag moet groter zijn dan nul' }, { status: 400 })
       }
-      einde = String(end_date).slice(0, 10)
+      patch.amount_excl = bedrag
+    }
+    if (heeft('vat_pct')) {
+      const btw = Number(body.vat_pct)
+      if (!Number.isFinite(btw) || btw < 0 || btw > 100) {
+        return NextResponse.json({ error: 'BTW moet tussen 0 en 100 liggen' }, { status: 400 })
+      }
+      patch.vat_pct = btw
+    }
+    if (heeft('billing_frequency')) {
+      patch.billing_frequency = VALID_FREQ.includes(body.billing_frequency) ? body.billing_frequency : 'monthly'
     }
 
-    const { error } = await admin.from('cost_entries').update({ end_date: einde }).eq('id', id)
+    const geldigeDatum = (v: unknown) => !Number.isNaN(new Date(String(v)).getTime())
+
+    if (heeft('cost_date') && nieuwType === 'one_time') {
+      if (!body.cost_date || !geldigeDatum(body.cost_date)) {
+        return NextResponse.json({ error: 'Geef een geldige datum op' }, { status: 400 })
+      }
+      patch.cost_date = String(body.cost_date).slice(0, 10)
+    }
+
+    if (heeft('start_date') && nieuwType === 'recurring') {
+      if (!body.start_date || !geldigeDatum(body.start_date)) {
+        return NextResponse.json({ error: 'Geef een geldige startdatum op' }, { status: 400 })
+      }
+      patch.start_date = String(body.start_date).slice(0, 10)
+    }
+
+    if (heeft('end_date')) {
+      // Een einddatum hoort alleen bij een abonnement. Op een eenmalige kost is
+      // hij betekenisloos en zou hij enkel verwarring geven in de lijst.
+      if (nieuwType !== 'recurring') {
+        return NextResponse.json({ error: 'Alleen een abonnement heeft een einddatum.' }, { status: 400 })
+      }
+      if (body.end_date) {
+        if (!geldigeDatum(body.end_date)) {
+          return NextResponse.json({ error: 'Ongeldige datum' }, { status: 400 })
+        }
+        // Vóór de start stoppen zou een abonnement opleveren dat nooit geteld
+        // heeft, terwijl het er in de lijst wel staat. Dan liever verwijderen.
+        const start = String(patch.start_date ?? bestaand.start_date ?? '').slice(0, 10)
+        if (start && String(body.end_date).slice(0, 10) < start) {
+          return NextResponse.json({
+            error: 'Die datum ligt voor de startdatum. Wil je dat dit abonnement nooit geteld heeft, verwijder het dan.',
+          }, { status: 400 })
+        }
+        patch.end_date = String(body.end_date).slice(0, 10)
+      } else {
+        patch.end_date = null
+      }
+    }
+
+    if (Object.keys(patch).length === 0) {
+      return NextResponse.json({ error: 'Niets om te wijzigen' }, { status: 400 })
+    }
+
+    const { data, error } = await admin
+      .from('cost_entries').update(patch).eq('id', id).select('*').single()
     if (error) throw new Error(error.message)
-    return NextResponse.json({ ok: true, end_date: einde })
+    return NextResponse.json({ ok: true, cost: data })
   } catch (err) {
     return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
   }

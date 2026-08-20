@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Trash2, Loader2, Repeat2, ArrowDownRight, CircleStop, RotateCcw, X } from 'lucide-react'
+import { Trash2, Loader2, Repeat2, ArrowDownRight, CircleStop, RotateCcw, Pencil, X } from 'lucide-react'
+import { CostDialog } from './cost-form'
 import { formatEuro, formatDate } from '@/lib/utils'
 
 export type Cost = {
@@ -16,6 +17,7 @@ export type Cost = {
   billing_frequency: string | null
   amount_excl: number
   vat_pct: number
+  notes?: string | null
 }
 
 const FREQ_LABEL: Record<string, string> = { monthly: 'maandelijks', quarterly: 'per kwartaal', annual: 'jaarlijks' }
@@ -59,6 +61,7 @@ export function CostTable({ costs, setterCostFY = 0, year }: {
   const router = useRouter()
   const [busy, setBusy] = useState<string | null>(null)
   const [stoppen, setStoppen] = useState<Cost | null>(null)
+  const [bewerken, setBewerken] = useState<Cost | null>(null)
   const [laatsteMaand, setLaatsteMaand] = useState('')
   const [fout, setFout] = useState<string | null>(null)
 
@@ -193,6 +196,9 @@ export function CostTable({ costs, setterCostFY = 0, year }: {
                           <RotateCcw className="h-3.5 w-3.5" />Hervatten
                         </button>
                       ))}
+                      <button onClick={() => setBewerken(c)} className="text-gray-400 hover:text-gray-700 p-1" title="Wijzigen">
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
                       <button onClick={() => remove(c.id)} disabled={busy === c.id} className="text-red-400 hover:text-red-600 p-1" title="Verwijderen">
                         {busy === c.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                       </button>
@@ -204,6 +210,8 @@ export function CostTable({ costs, setterCostFY = 0, year }: {
           </tbody>
         </table>
       </div>
+
+      {bewerken && <CostDialog cost={bewerken} onClose={() => setBewerken(null)} />}
 
       {stoppen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">

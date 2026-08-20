@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, X, Loader2, Repeat2, ArrowDownRight } from 'lucide-react'
+import type { Cost } from './cost-table'
 
 type CostType = 'one_time' | 'recurring'
 type Freq = 'monthly' | 'quarterly' | 'annual'
@@ -19,17 +20,32 @@ const CATEGORIES = [
   'Verplaatsing', 'Opleiding', 'Bankkosten', 'Overig',
 ]
 
-export function CostForm() {
+/**
+ * Eén formulier voor toevoegen en wijzigen.
+ *
+ * Bewust niet twee schermen: een kost heeft genoeg velden dat twee versies
+ * gegarandeerd uit elkaar gaan lopen, en dan valideert de ene wel wat de andere
+ * doorlaat.
+ */
+export function CostDialog({ cost, onClose }: { cost?: Cost | null; onClose: () => void }) {
   const router = useRouter()
-  const [open, setOpen] = useState(false)
+  const isEdit = !!cost
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [type, setType] = useState<CostType>('one_time')
+  const [type, setType] = useState<CostType>(cost?.type ?? 'one_time')
 
   const today = new Date().toISOString().slice(0, 10)
+  const dag = (v: string | null | undefined) => (v ? String(v).slice(0, 10) : '')
   const [form, setForm] = useState({
-    name: '', category: '', amount_excl: '', vat_pct: '21',
-    cost_date: today, start_date: today, end_date: '', billing_frequency: 'monthly' as Freq, notes: '',
+    name: cost?.name ?? '',
+    category: cost?.category ?? '',
+    amount_excl: cost ? String(cost.amount_excl) : '',
+    vat_pct: cost ? String(cost.vat_pct) : '21',
+    cost_date: dag(cost?.cost_date) || today,
+    start_date: dag(cost?.start_date) || today,
+    end_date: dag(cost?.end_date),
+    billing_frequency: (cost?.billing_frequency as Freq) || 'monthly',
+    notes: cost?.notes ?? '',
   })
 
   const inp = 'w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#fff848]/50 focus:border-[#fff848]'
@@ -40,11 +56,6 @@ export function CostForm() {
   const incl = excl * (1 + vat / 100)
   const fmt = (n: number) => new Intl.NumberFormat('nl-BE', { style: 'currency', currency: 'EUR' }).format(n)
 
-  const reset = () => {
-    setForm({ name: '', category: '', amount_excl: '', vat_pct: '21', cost_date: today, start_date: today, end_date: '', billing_frequency: 'monthly', notes: '' })
-    setType('one_time'); setError(null)
-  }
-
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!form.name.trim()) { setError('Geef een naam op'); return }
@@ -52,9 +63,10 @@ export function CostForm() {
     setLoading(true); setError(null)
     try {
       const res = await fetch('/api/admin/costs', {
-        method: 'POST',
+        method: isEdit ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          ...(isEdit ? { id: cost!.id } : {}),
           name: form.name, category: form.category || null, type,
           amount_excl: excl, vat_pct: vat,
           cost_date: type === 'one_time' ? form.cost_date : undefined,
@@ -66,27 +78,18 @@ export function CostForm() {
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
-      setOpen(false); reset(); router.refresh()
+      onClose(); router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Fout')
     } finally { setLoading(false) }
-  }
-
-  if (!open) {
-    return (
-      <button onClick={() => setOpen(true)} className="btn-secondary">
-        <Plus className="h-4 w-4" />
-        Kost toevoegen
-      </button>
-    )
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90dvh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-gray-100 sticky top-0 bg-white rounded-t-2xl">
-          <h3 className="font-semibold text-gray-900">{type === 'recurring' ? 'Abonnement toevoegen' : 'Kost toevoegen'}</h3>
-          <button onClick={() => { setOpen(false); reset() }} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-gray-100"><X className="h-4 w-4" /></button>
+          <h3 className="font-semibold text-gray-900">{isEdit ? (type === 'recurring' ? 'Abonnement wijzigen' : 'Kost wijzigen') : (type === 'recurring' ? 'Abonnement toevoegen' : 'Kost toevoegen')}</h3>
+          <button onClick={onClose} className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-gray-100"><X className="h-4 w-4" /></button>
         </div>
 
         <form onSubmit={submit} className="p-5 space-y-4">
@@ -179,12 +182,26 @@ export function CostForm() {
           <div className="flex gap-2 pt-1">
             <button type="submit" disabled={loading} className="btn-primary flex-1">
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              Toevoegen
+              {isEdit ? 'Opslaan' : 'Toevoegen'}
             </button>
-            <button type="button" onClick={() => { setOpen(false); reset() }} className="btn-secondary">Annuleer</button>
+            <button type="button" onClick={onClose} className="btn-secondary">Annuleer</button>
           </div>
         </form>
       </div>
     </div>
   )
+}
+
+/** De knop op het kostenscherm; opent hetzelfde venster in 'nieuw'-stand. */
+export function CostForm() {
+  const [open, setOpen] = useState(false)
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="btn-secondary">
+        <Plus className="h-4 w-4" />
+        Kost toevoegen
+      </button>
+    )
+  }
+  return <CostDialog onClose={() => setOpen(false)} />
 }
