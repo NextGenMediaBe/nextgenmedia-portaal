@@ -2347,3 +2347,23 @@ UPDATE public.aanbesteding_kennisdocumenten
 -- opnieuw over dezelfde opdrachten mailen.
 ALTER TABLE public.aanbesteding_analyse
   ADD COLUMN IF NOT EXISTS gemaild_op timestamptz;
+
+-- ── Verkoop: bevestigingsbelletje in plaats van een herinneringsmail ────────
+-- We sturen geen herinneringsmail meer naar een prospect. Twee dagen vóór de
+-- afspraak bellen we zelf even: is de uitnodiging aangekomen, staat het nog.
+-- Deze kolommen houden bij wie dat gesprek al gehad heeft, zodat een naam van
+-- de bellijst verdwijnt zodra hij gebeld is.
+ALTER TABLE public.sales_appointments
+  ADD COLUMN IF NOT EXISTS bevestigd_op     timestamptz,
+  ADD COLUMN IF NOT EXISTS bevestigd_door   uuid,
+  ADD COLUMN IF NOT EXISTS bevestig_notitie text;
+
+CREATE INDEX IF NOT EXISTS sales_appointments_bellijst_idx
+  ON public.sales_appointments (starts_at)
+  WHERE bevestigd_op IS NULL;
+
+-- Adres van de afspraak. De closer rijdt ernaartoe, dus dit hoort in het
+-- Google-event als `location` te staan: dan werkt navigeren rechtstreeks vanuit
+-- de agenda. Een adres in de omschrijving verstoppen doet dat niet.
+ALTER TABLE public.sales_appointments
+  ADD COLUMN IF NOT EXISTS adres text;

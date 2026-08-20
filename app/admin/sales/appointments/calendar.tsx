@@ -417,6 +417,7 @@ function BookingPanel({ ownerId, ownerName, start, end, leads, pipelines, initia
   const [touched, setTouched] = useState(false)
   const [email, setEmail] = useState('')
   const [notes, setNotes] = useState('')
+  const [adres, setAdres] = useState('')
   const [clientNote, setClientNote] = useState('')
   const [withMeet, setWithMeet] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -438,7 +439,7 @@ function BookingPanel({ ownerId, ownerName, start, end, leads, pipelines, initia
           ownerId: ownerId || null, pipelineId: pipelineId || null,
           startsAt: start, endsAt: end,
           leadId: leadId || null, attendeeEmail: email.trim() || null,
-          notes, clientNote, withMeet,
+          notes, clientNote, adres, withMeet,
         }),
       })
       const j = await res.json(); if (!res.ok) throw new Error(j.error)
@@ -506,12 +507,26 @@ function BookingPanel({ ownerId, ownerName, start, end, leads, pipelines, initia
           </label>
 
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Notitie</label>
-            <textarea rows={2} className="input-base" value={notes} onChange={(e) => setNotes(e.target.value)} />
+            <label className="block text-xs font-medium text-gray-600 mb-1">Adres van de afspraak</label>
+            <textarea rows={2} className="input-base" value={adres} onChange={(e) => setAdres(e.target.value)}
+              placeholder="Dorpsstraat 12, 2400 Mol" />
+            <p className="text-[11px] text-gray-400 mt-1">
+              Komt in het agenda-item als locatie, zodat de closer er rechtstreeks naartoe kan navigeren.
+            </p>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Extra notitie voor de klant</label>
-            <textarea rows={2} className="input-base" value={clientNote} onChange={(e) => setClientNote(e.target.value)} />
+            <label className="block text-xs font-medium text-gray-600 mb-1">Briefing voor de closer</label>
+            <textarea rows={3} className="input-base" value={notes} onChange={(e) => setNotes(e.target.value)}
+              placeholder="Wat heb je gehoord aan de telefoon? Waar ligt de behoefte, wat is het budget, waar moet hij op inspelen?" />
+            <p className="text-[11px] text-gray-400 mt-1">
+              Dit staat in de agenda van Bram of Marco. Zij openen 's ochtends hun agenda en moeten daaraan
+              genoeg hebben — zonder de app te openen.
+            </p>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Afgesproken met de prospect</label>
+            <textarea rows={2} className="input-base" value={clientNote} onChange={(e) => setClientNote(e.target.value)}
+              placeholder="Bv. vraagt naar referenties uit zijn sector" />
           </div>
         </div>
 

@@ -295,6 +295,9 @@ export type CreatedEvent = { eventId: string; meetUrl: string | null }
 export async function createEvent(connectionId: string, opts: {
   summary: string
   description?: string
+  /** Adres. Hoort in het aparte location-veld en niet enkel in de tekst: enkel
+   *  zo kan de closer vanuit zijn agenda rechtstreeks laten navigeren. */
+  location?: string | null
   startsAt: number
   endsAt: number
   timezone: string
@@ -307,6 +310,7 @@ export async function createEvent(connectionId: string, opts: {
   const body: Record<string, unknown> = {
     summary: opts.summary,
     description: opts.description ?? '',
+    ...(opts.location?.trim() ? { location: opts.location.trim() } : {}),
     start: { dateTime: new Date(opts.startsAt).toISOString(), timeZone: opts.timezone },
     end: { dateTime: new Date(opts.endsAt).toISOString(), timeZone: opts.timezone },
   }

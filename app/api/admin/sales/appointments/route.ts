@@ -6,8 +6,8 @@ import { isBookable } from '@/lib/sales/availability'
 import { APPOINTMENT_STAGE } from '@/lib/sales/stages'
 import { createEvent, moveEvent, deleteEvent } from '@/lib/sales/google-calendar'
 import { normalizePhone } from '@/lib/sales/dedupe'
+import { bouwAgendaOmschrijving, bouwAgendaTitel } from '@/lib/sales/briefing'
 import { listPipelines, defaultPipelineId } from '@/lib/sales/pipelines'
-import { scheduleReminderFor, cancelReminderFor } from '@/lib/sales/reminders'
 import { logAudit, requestMeta } from '@/lib/audit'
 
 export const dynamic = 'force-dynamic'
@@ -135,6 +135,7 @@ export async function POST(req: NextRequest) {
       status: 'scheduled',
       notes: String(b.notes ?? '') || null,
       client_note: String(b.clientNote ?? '') || null,
+      adres: String(b.adres ?? '').trim() || null,
       attendee_email: attendee,
     }).select('id').single()
     if (apptErr || !appt) {
@@ -145,13 +146,37 @@ export async function POST(req: NextRequest) {
     // 3) Google-event aanmaken. Mislukt dit → afspraak terugdraaien.
     let meetUrl: string | null = null
     try {
-      const { data: nameRow } = leadId
-        ? await admin.from('sales_leads').select('sales_companies ( name )').eq('id', leadId).maybeSingle()
+      // Alles wat de closer nodig heeft komt in het agenda-item zelf: hij
+      // opent 's ochtends zijn agenda en mag daarvoor de app niet in hoeven.
+      const { data: infoRow } = leadId
+        ? await admin.from('sales_leads')
+          .select('sales_companies ( name ), sales_contacts ( name, phone, mobile, email )')
+          .eq('id', leadId).maybeSingle()
         : { data: null }
-      const company = (nameRow as { sales_companies?: { name?: string } } | null)?.sales_companies?.name ?? 'Prospect'
+      const info = infoRow as {
+        sales_companies?: { name?: string } | null
+        sales_contacts?: { name?: string; phone?: string; mobile?: string; email?: string } | null
+      } | null
+      const company = info?.sales_companies?.name ?? 'Prospect'
+      const c = info?.sales_contacts ?? null
+      const merk = pipelines.find((p) => p.id === pipelineId)?.name ?? null
+
+      const briefing = {
+        bedrijf: company,
+        contact: c?.name ?? null,
+        telefoon: c?.mobile || c?.phone || null,
+        email: c?.email || attendee || null,
+        adres: String(b.adres ?? '').trim() || null,
+        merk,
+        setter: actor.email ?? null,
+        briefing: String(b.notes ?? '').trim() || null,
+        klantNotitie: String(b.clientNote ?? '').trim() || null,
+      }
+
       const ev = await createEvent(ownerId, {
-        summary: `Afspraak — ${company}`,
-        description: [b.notes, b.clientNote].filter(Boolean).join('\n\n'),
+        summary: bouwAgendaTitel(briefing),
+        description: bouwAgendaOmschrijving(briefing),
+        location: briefing.adres,
         startsAt: start, endsAt: end, timezone: client.timezone,
         attendeeEmail: attendee, withMeet: b.withMeet !== false,
       })
@@ -190,23 +215,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 5) Herinneringsmail inplannen bij Resend op het juiste moment. Mislukt
-    //    dat, dan blijft de afspraak gewoon staan — een boeking mag hier nooit
-    //    op stuklopen. Maar we ZEGGEN het wel: een herinnering die er stil niet
-    //    komt, ontdek je anders pas als de prospect niet is opgedaagd.
-    let reminderWarning: string | null = null
-    try {
-      const r = await scheduleReminderFor(appt.id as string)
-      if (r.outcome === 'error') {
-        reminderWarning = `De herinneringsmail kon niet ingepland worden: ${r.error ?? 'onbekende fout'}`
-      } else if (r.outcome === 'skipped') {
-        reminderWarning = `Er gaat geen herinneringsmail uit: ${r.error ?? 'onbekende reden'}`
-      }
-      // 'too_far' is normaal: die wordt later automatisch ingepland.
-    } catch (e) {
-      reminderWarning = `De herinneringsmail kon niet ingepland worden: ${e instanceof Error ? e.message : 'onbekende fout'}`
-    }
-
     const meta = requestMeta(req)
     await logAudit({
       action: 'sales.appointment.book', entityType: 'sales_appointment', entityId: appt.id as string,
@@ -217,7 +225,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true, id: appt.id, meetUrl,
-      reminderWarning: reminderWarning ?? leadMoveWarning,
+      waarschuwing: leadMoveWarning,
     })
   } catch (err) {
     return NextResponse.json({ error: safeMessage(err) }, { status: 400 })
@@ -285,18 +293,17 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: dup ? 'Er staat al een afspraak op dit moment.' : 'Verplaatsen mislukt' }, { status: 409 })
     }
 
-    // De herinnering hoort bij het OUDE uur: intrekken en opnieuw inplannen.
-    // Was hij al vertrokken, dan sturen we er BEWUST geen tweede achteraan —
-    // twee mails met verschillende uren erin is erger dan één verouderde.
+    // Verzet betekent: opnieuw bevestigen. Een afspraak die je vorige week
+    // telefonisch bevestigd hebt staat nu op een ander uur, dus die hoort weer
+    // op de bellijst — anders belt niemand er nog over.
     let reminderNote: string | null = null
-    try {
-      const { wasSent } = await cancelReminderFor(id)
-      if (wasSent) {
-        reminderNote = 'De herinneringsmail was al vertrokken met het oude uur. Er gaat geen tweede uit — laat de prospect zelf even weten dat het verzet is.'
-      } else {
-        await scheduleReminderFor(id)
-      }
-    } catch { /* vangnet volgt */ }
+    const { data: was } = await admin.from('sales_appointments')
+      .select('bevestigd_op').eq('id', id).maybeSingle()
+    if ((was as { bevestigd_op: string | null } | null)?.bevestigd_op) {
+      await admin.from('sales_appointments')
+        .update({ bevestigd_op: null, bevestigd_door: null }).eq('id', id)
+      reminderNote = 'Deze afspraak was al telefonisch bevestigd. Omdat het uur wijzigt staat hij weer op de bellijst.'
+    }
 
     if (appt.external_event_id) {
       try {
@@ -335,8 +342,6 @@ export async function DELETE(req: NextRequest) {
     if (!appt) return NextResponse.json({ error: 'Afspraak niet gevonden' }, { status: 404 })
 
     await admin.from('sales_appointments').update({ status: 'cancelled' }).eq('id', id)
-    // Een ingeplande herinnering voor een afgezegde afspraak moet weg.
-    try { await cancelReminderFor(id) } catch { /* niet blokkerend */ }
     if (appt.external_event_id) {
       await deleteEvent(appt.calendar_id as string, appt.external_event_id as string)
     }
