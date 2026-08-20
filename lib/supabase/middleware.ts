@@ -27,6 +27,31 @@ function copyAuthCookies(from: NextResponse, to: NextResponse): NextResponse {
 }
 
 export async function updateSession(request: NextRequest) {
+  /**
+   * Zonder deze twee waarden gooit createServerClient hieronder, klapt de hele
+   * middleware, en toont Vercel een kale 500 met MIDDLEWARE_INVOCATION_FAILED.
+   * Daar staat niet in wát er ontbreekt, dus dan zoek je lang.
+   *
+   * We blokkeren bewust alles: de middleware is de toegangspoort, en zonder
+   * Supabase kunnen we niemand herkennen. Doorlaten zou iedereen binnenlaten.
+   *
+   * LET OP bij het instellen: NEXT_PUBLIC_-waarden worden tijdens de BUILD in
+   * de code gebakken. Ze in Vercel invullen is niet genoeg — er moet daarna
+   * opnieuw gedeployd worden.
+   */
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    const ontbreekt = [
+      !process.env.NEXT_PUBLIC_SUPABASE_URL ? 'NEXT_PUBLIC_SUPABASE_URL' : null,
+      !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? 'NEXT_PUBLIC_SUPABASE_ANON_KEY' : null,
+    ].filter(Boolean).join(' en ')
+    return new NextResponse(
+      `Deze omgeving is niet volledig ingesteld: ${ontbreekt} ontbreekt.\n\n` +
+      'Zet die in Vercel bij Settings → Environment Variables en deploy daarna opnieuw. ' +
+      'Een NEXT_PUBLIC_-waarde wordt tijdens de build ingebakken, dus enkel invullen volstaat niet.',
+      { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } },
+    )
+  }
+
   let supabaseResponse = NextResponse.next({ request })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
