@@ -9,6 +9,7 @@ import { usePathname, useSearchParams } from 'next/navigation'
 const TABS = [
   { href: '/admin/revenue/omzet', label: 'Overzicht' },
   { href: '/admin/revenue/kosten', label: 'Kosten' },
+  { href: '/admin/revenue/framer', label: 'Framer' },
 ]
 
 export function TabNav() {

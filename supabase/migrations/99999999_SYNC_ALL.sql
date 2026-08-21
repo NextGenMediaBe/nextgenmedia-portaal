@@ -2383,3 +2383,46 @@ CREATE POLICY "terms read active" ON public.terms
     active = true
     AND EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid())
   );
+
+-- ── Framer-sites ────────────────────────────────────────────────────────────
+-- Welke klantwebsites draaien op Framer, wat kosten ze, en wanneer verlengen ze.
+-- `client_id` mag leeg zijn: niet elke site hoort bij een klant die in de app
+-- staat. `naam` is daarom leidend en verplicht.
+--
+-- `renew_op` is een ANKERDATUM, niet "de volgende keer". De eerstvolgende
+-- verlenging wordt eruit berekend, zodat er nooit een datum uit het verleden
+-- blijft staan omdat niemand hem bijwerkte.
+CREATE TABLE IF NOT EXISTS public.framer_sites (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id    uuid REFERENCES public.clients(id) ON DELETE SET NULL,
+  naam         text NOT NULL,
+  site_url     text,
+  plan         text,                                   -- vrije tekst: Mini, Basic, Pro…
+  bedrag_excl  numeric(12,2) NOT NULL DEFAULT 0,
+  vat_pct      numeric(5,2)  NOT NULL DEFAULT 21,
+  facturatie   text NOT NULL DEFAULT 'annual'
+    CHECK (facturatie IN ('monthly','annual')),
+  renew_op     date,
+  opgezegd_op  date,                                   -- gestopt; blijft staan voor de historiek
+  notitie      text,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  updated_at   timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS framer_sites_renew_idx ON public.framer_sites (renew_op)
+  WHERE opgezegd_op IS NULL;
+CREATE INDEX IF NOT EXISTS framer_sites_client_idx ON public.framer_sites (client_id);
+
+ALTER TABLE public.framer_sites ENABLE ROW LEVEL SECURITY;
+
+DO $fr$ BEGIN
+  CREATE POLICY "framer_sites admin all" ON public.framer_sites
+    FOR ALL TO authenticated
+    USING (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'))
+    WITH CHECK (EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = auth.uid() AND role = 'admin'));
+EXCEPTION WHEN duplicate_object THEN NULL; END $fr$;
+
+DO $fr$ BEGIN
+  CREATE TRIGGER trg_framer_sites_updated BEFORE UPDATE ON public.framer_sites
+    FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+EXCEPTION WHEN duplicate_object THEN NULL; END $fr$;
