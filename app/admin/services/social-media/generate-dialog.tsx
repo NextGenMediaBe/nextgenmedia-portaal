@@ -310,7 +310,7 @@ export function GenerateDialog({ clientId, onClose, onGenerated }: GenerateDialo
               <label className="block text-xs font-medium text-gray-600 mb-2">
                 Frequentie per maand
               </label>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {[
                   { label: 'Posts', value: postsPerMonth, set: setPostsPerMonth },
                   { label: 'Reels', value: reelsPerMonth, set: setReelsPerMonth },

@@ -1,5 +1,51 @@
+// Content-Security-Policy — bewust eerst in REPORT-ONLY.
+// Deze variant blokkeert NIETS; de browser meldt alleen in de console wat er
+// geweigerd zou worden. Zo zie je overtredingen zonder risico op een stukke
+// pagina. Loopt het een tijdje schoon, hernoem dan de header naar
+// 'Content-Security-Policy' (zonder -Report-Only) om hem echt af te dwingen.
+//
+// Toegestane bronnen zijn afgeleid uit de code:
+//  · *.supabase.co        → database, auth en opgeslagen bestanden
+//  · framerusercontent.com→ afbeeldingen uit het Framer-CMS
+//  · cdnjs.cloudflare.com → pdf.js-worker in de contract-editor
+// 'unsafe-inline' is (voorlopig) nodig: Next.js plaatst een inline bootstrap-
+// script en Tailwind gebruikt inline stijlen.
+const cspReportOnly = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com",
+  "worker-src 'self' blob: https://cdnjs.cloudflare.com",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https://*.supabase.co https://framerusercontent.com",
+  "font-src 'self' data:",
+  "connect-src 'self' https://*.supabase.co https://cdnjs.cloudflare.com",
+  "frame-ancestors 'none'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+].join('; ')
+
+// Security response headers. Additive and conservative: these harden the app
+// without changing any application behaviour.
+const securityHeaders = [
+  { key: 'Content-Security-Policy-Report-Only', value: cspReportOnly },
+  // Stop the site being framed (clickjacking protection).
+  { key: 'X-Frame-Options', value: 'SAMEORIGIN' },
+  // Don't let browsers MIME-sniff responses away from the declared type.
+  { key: 'X-Content-Type-Options', value: 'nosniff' },
+  // Only send the origin (not the full path) as referrer to other origins.
+  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+  // Disable powerful browser features the app doesn't use.
+  { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), interest-cohort=()' },
+  // Force HTTPS for two years (browsers only honour this over HTTPS).
+  { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
+  { key: 'X-DNS-Prefetch-Control', value: 'on' },
+]
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Verberg dat dit een Next.js-app is: minder gratis informatie voor een
+  // aanvaller die gericht op frameworkversies zoekt.
+  poweredByHeader: false,
   experimental: {
     serverActions: {
       bodySizeLimit: '10mb',
@@ -12,6 +58,14 @@ const nextConfig = {
         hostname: '*.supabase.co',
       },
     ],
+  },
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: securityHeaders,
+      },
+    ]
   },
 }
 

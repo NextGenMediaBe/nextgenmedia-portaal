@@ -36,6 +36,11 @@ export function createAdminSupabaseClient() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return createAdminClient<any>(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
+    // Deze database wordt gedeeld met een tweede applicatie, die in een eigen
+    // schema woont. Wij pinnen ons expliciet op `public` in plaats van op de
+    // standaard te vertrouwen: dan kan een wijziging elders nooit stilletjes
+    // onze queries naar het verkeerde schema laten wijzen.
+    db: { schema: 'public' },
   })
 }
 
@@ -43,17 +48,57 @@ export function createAdminSupabaseClient() {
  * Server-side admin guard. Returns the authenticated User when the caller has
  * the `admin` role, otherwise null. Use as: `const user = await requireAdmin();
  * if (!user) return NextResponse.json({ error: 'Geen toegang' }, { status: 403 })`.
+ * Rol wordt via service-role gelezen (RLS-proof — zie memory: login-loop les).
  */
 export async function requireAdmin(): Promise<User | null> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
-  const { data } = await supabase
+  const admin = createAdminSupabaseClient()
+  const { data } = await admin
     .from('user_roles')
     .select('role')
     .eq('user_id', user.id)
     .maybeSingle()
   return data?.role === 'admin' ? user : null
+}
+
+/**
+ * Is deze gebruiker een ACTIEVE interne werknemer (staff_members)?
+ * Service-role lezing; staff_members is de bron van waarheid voor werknemer-zijn.
+ */
+export async function isActiveStaff(userId: string): Promise<boolean> {
+  try {
+    const admin = createAdminSupabaseClient()
+    const { data } = await admin
+      .from('staff_members')
+      .select('active')
+      .eq('auth_user_id', userId)
+      .maybeSingle()
+    return !!data && data.active !== false
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Staff-guard voor module-API's: admin óf actieve werknemer.
+ * PER-MODULE afscherming voor werknemers gebeurt centraal in de middleware
+ * (pathToModule op /api/admin-paden); deze guard is de identiteitslaag.
+ * Gevoelige routes (staff-beheer, AI, credentials, …) blijven requireAdmin gebruiken.
+ */
+export async function requireStaff(): Promise<User | null> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
+  const admin = createAdminSupabaseClient()
+  const { data } = await admin
+    .from('user_roles')
+    .select('role')
+    .eq('user_id', user.id)
+    .maybeSingle()
+  if (data?.role === 'admin') return user
+  return (await isActiveStaff(user.id)) ? user : null
 }
 
 /**
@@ -71,4 +116,59 @@ export async function trySignedUrl(admin: SupabaseClient<any>, bucket: string, p
   } catch {
     return null
   }
+}
+
+/**
+ * Insert a row, automatically dropping any column the live schema doesn't have.
+ * PostgREST reports a missing column as code PGRST204 with the column name in the
+ * message. We strip that column and retry, so a write succeeds regardless of which
+ * migrations have been applied. Returns the same shape as a normal insert().select().
+ *
+ * Pass `required` to guarantee certain keys are never dropped (if one of those is
+ * missing the error is surfaced instead of silently swallowed).
+ */
+export async function insertResilient(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  admin: SupabaseClient<any>,
+  table: string,
+  payload: Record<string, unknown>,
+  options?: { select?: string; required?: string[] },
+): Promise<{ data: Record<string, unknown> | null; error: { message: string } | null }> {
+  const selectCols = options?.select ?? 'id'
+  const required = new Set(options?.required ?? [])
+  const working = { ...payload }
+  const maxAttempts = Object.keys(working).length + 1
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const { data, error } = await admin
+      .from(table)
+      .insert(working)
+      .select(selectCols)
+      .single()
+
+    if (!error) return { data: (data as unknown) as Record<string, unknown>, error: null }
+
+    // Detect "column X does not exist" / schema-cache miss
+    const code = (error as { code?: string }).code
+    const msg = error.message ?? ''
+    const isMissingColumn =
+      code === 'PGRST204' ||
+      code === '42703' ||
+      /could not find the '.*' column|column .* does not exist/i.test(msg)
+
+    if (!isMissingColumn) return { data: null, error }
+
+    // Extract the offending column name from the message
+    const match = msg.match(/'([^']+)' column/i) || msg.match(/column "?([a-z0-9_]+)"?/i)
+    const badCol = match?.[1]
+
+    if (!badCol || !(badCol in working) || required.has(badCol)) {
+      // Can't recover — surface the error
+      return { data: null, error }
+    }
+
+    delete working[badCol]
+  }
+
+  return { data: null, error: { message: 'Insert mislukt na meerdere pogingen' } }
 }

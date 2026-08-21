@@ -127,7 +127,15 @@ export function ContentCalendar({
   }
 
   return (
-    <div className="flex flex-col lg:flex-row gap-4">
+    <div className="flex flex-col gap-4">
+      {/* Script panel — on mobile appears ABOVE calendar when an item is selected */}
+      {selected && (
+        <div className="lg:hidden">
+          <ScriptPanel item={selected} mode={mode} actions={actions} onClose={() => setSelectedId(null)} />
+        </div>
+      )}
+
+      <div className="flex flex-col lg:flex-row gap-4">
       {/* Calendar grid */}
       <div className="flex-1 bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
         {/* Toolbar */}
@@ -265,13 +273,16 @@ export function ContentCalendar({
         </div>
       </div>
 
-      {/* Script panel */}
-      <ScriptPanel
-        item={selected}
-        mode={mode}
-        actions={actions}
-        onClose={() => setSelectedId(null)}
-      />
+      {/* Script panel — desktop only (mobile version shown above) */}
+      <div className="hidden lg:block lg:w-[360px]">
+        <ScriptPanel
+          item={selected}
+          mode={mode}
+          actions={actions}
+          onClose={() => setSelectedId(null)}
+        />
+      </div>
+    </div>
     </div>
   )
 }
@@ -297,7 +308,7 @@ function ScriptPanel({
 
   if (!item) {
     return (
-      <aside className="lg:w-[340px] bg-white border border-gray-200 rounded-xl p-5 h-fit sticky top-6 shadow-sm">
+      <aside className="w-full bg-white border border-gray-200 rounded-xl p-5 h-fit shadow-sm">
         <div className="text-center py-8">
           <FileText className="h-8 w-8 text-gray-200 mx-auto mb-3" />
           <p className="text-sm text-gray-400">Klik op een item om details te bekijken</p>
@@ -336,7 +347,7 @@ function ScriptPanel({
   }
 
   return (
-    <aside className="lg:w-[360px] bg-white border border-gray-200 rounded-xl shadow-sm h-fit sticky top-6 max-h-[calc(100vh-5rem)] flex flex-col overflow-hidden">
+    <aside className="w-full bg-white border border-gray-200 rounded-xl shadow-sm h-fit lg:sticky lg:top-6 max-h-[80vh] flex flex-col overflow-hidden">
       {/* Header */}
       <div className="p-4 border-b border-gray-100 flex items-start gap-3">
         <div className="flex-1 min-w-0">
